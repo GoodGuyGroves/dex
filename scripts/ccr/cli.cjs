@@ -131,7 +131,7 @@ function render(group, action, value, options) {
     if (value.last_reload_error) out(`The last hot reload failed, so the previous code is still serving: ${value.last_reload_error}`);
     else if (value.code_stale && value.hot_reload === false) out('The running gateway predates hot reload and keeps serving the code it started with. Run dx router restart once routed sessions finish; later updates then reload in place.');
     else if (value.code_stale) out('The running gateway loaded its code before the current Dex sources. Run dx router reload to load them; routed sessions keep running.');
-    if (value.shim_changed) out('scripts/ccr/extension.cjs changed after the gateway started, and a reload cannot replace it. Run dx router restart once routed sessions finish.');
+    if (value.shim_changed) out('scripts/ccr/extension.cjs or core-plugin.cjs changed after the gateway started, and a reload cannot replace them. Run dx router restart once routed sessions finish.');
     if (value.telemetry_failures) out(`Request telemetry could not be saved ${value.telemetry_failures} times. Inspect private router-state permissions before relying on request diagnostics.`);
     if (value.native_routing) out('Restore independent claude and codex launches with dx router native disable, then start new CLI sessions.');
     return;

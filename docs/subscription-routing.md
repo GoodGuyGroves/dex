@@ -793,8 +793,9 @@ dx router status     # "Hot reloads" count, or the last reload error
 Set `DEX_ROUTER_HOT_RELOAD=0` before `dx router start` to turn off the watcher;
 `dx router reload` still works. What a reload cannot change still needs an idle
 restart: the pinned CCR runtime, ports, the provider and model catalogue CCR was
-configured with, and the shim itself (`extension.cjs`, which `dx router status`
-flags when it changes). A gateway
+configured with, and the two files CCR loads itself: the shim (`extension.cjs`)
+and the core gateway plugin (`core-plugin.cjs`), which reloads only the helpers
+it calls. `dx router status` flags a change to either. A gateway
 started before hot reload existed needs one restart to load the shim.
 
 On a host that deploys Dex by resetting its checkout, every push to `main` that

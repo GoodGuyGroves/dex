@@ -57,8 +57,12 @@ function watch(live) {
   return { close: () => { clearTimeout(timer); handle.close(); } };
 }
 
+// CCR loads the shim and the core gateway plugin once, at start, and no
+// reload replaces either: the plugin only reloads the helpers it calls. A
+// change to either therefore needs a restart, and status has to say so.
+const LOADED_ONCE = [SHIM, path.join(__dirname, 'core-plugin.cjs')];
 function shimChanged(live) {
-  try { return fs.statSync(SHIM).mtimeMs > live.loadedAt; } catch { return false; }
+  return LOADED_ONCE.some(file => { try { return fs.statSync(file).mtimeMs > live.loadedAt; } catch { return false; } });
 }
 
 async function dispatch(live, generation, method, params) {

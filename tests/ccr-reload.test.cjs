@@ -127,6 +127,10 @@ test('a reload replaces the reload logic itself, and a shim edit is reported for
   const health = await ipc.call('health');
   assert.equal(health.host_marker, 'new');
   assert.equal(health.shim_changed, false);
+  // CCR loads the core gateway plugin once too, so an edit to it needs the
+  // same restart and is reported the same way.
+  edit('core-plugin.cjs', source => `${source}\n// edited\n`);
+  assert.ok(await until(async () => (await ipc.call('health')).shim_changed === true));
   edit('extension.cjs', source => `${source}\n// edited\n`);
   assert.ok(await until(async () => (await ipc.call('health')).shim_changed === true));
 });
