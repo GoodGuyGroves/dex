@@ -852,6 +852,25 @@ dx_provider_claude() {
     declare -x "$_budget_line"
   done < <(dx_host_budget_env 2>/dev/null || true)
 
+  # Prompt cache lifetime. Through the router Claude Code believes it is on an
+  # API key and asks for the five-minute cache, so a lifecycle session that
+  # waits on a review wave, CI or a build comes back to an expired cache and
+  # resends its whole conversation. Replaying a day of real traffic, the
+  # one-hour cache cut a lifecycle session's input cost by 76-90% despite its
+  # dearer writes. A review wave or assessment never waits between requests,
+  # so there the longer cache only raises the write price (+13-20%); pin it
+  # to five minutes, since it would otherwise inherit the lifecycle's setting.
+  # DEX_PROMPT_CACHE_TTL tells the Stop hook how long a hold can last. An
+  # explicit CLAUDE_CODE_PROMPT_CACHE_TTL from the user wins for lifecycles.
+  if [[ "$DX_PROVIDER_ENGINE" != "codex-plugin" ]]; then
+    if [[ "${DEX_REVIEW_PASS_ACTIVE:-0}" == 1 || "${DEX_REVIEW_ASSESSMENT_ACTIVE:-0}" == 1 ]]; then
+      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL=5m DEX_PROMPT_CACHE_TTL=5m
+    elif [[ "${DEX_LOOP_ACTIVE:-0}" == 1 ]]; then
+      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL="${CLAUDE_CODE_PROMPT_CACHE_TTL:-1h}"
+      declare -x DEX_PROMPT_CACHE_TTL="$CLAUDE_CODE_PROMPT_CACHE_TTL"
+    fi
+  fi
+
   # The host picture in numbers, so the session knows what else is on this
   # machine instead of assuming it is alone: cores, memory, load, how many Dex
   # sessions are live, how many heavy commands are running, and its own test-job

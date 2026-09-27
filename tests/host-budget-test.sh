@@ -137,6 +137,8 @@ printf 'DX_HOST_CPUS=%s\nDX_HOST_MEM_GB=%s\nDX_HOST_LOAD1=%s\n' \
   "${DX_HOST_CPUS:-unset}" "${DX_HOST_MEM_GB:-unset}" "${DX_HOST_LOAD1:-unset}"
 printf 'DX_HOST_ACTIVE_SESSIONS=%s\nDX_HOST_ACTIVE_HEAVY=%s\n' \
   "${DX_HOST_ACTIVE_SESSIONS:-unset}" "${DX_HOST_ACTIVE_HEAVY:-unset}"
+printf 'CACHE_TTL=%s\nDEX_CACHE_TTL=%s\n' \
+  "${CLAUDE_CODE_PROMPT_CACHE_TTL:-unset}" "${DEX_PROMPT_CACHE_TTL:-unset}"
 STUB
 chmod +x "$TMP_DIR/bin/claude"
 launch_output="$TMP_DIR/launch.out"
@@ -153,6 +155,29 @@ assert_contains "GOFLAGS=-mod=vendor" "$launch_output"
 assert_contains "SUBAGENTS=4" "$launch_output"
 [[ -z "${DX_TEST_JOBS:-}" ]] || assert_at $LINENO
 [[ -z "${VITEST_MAX_THREADS:-}" ]] || assert_at $LINENO
+assert_contains "CACHE_TTL=unset" "$launch_output"
+
+# Prompt cache lifetime: an hour for a lifecycle session, which waits on
+# waves, CI and builds; five minutes for a review wave, which never pauses and
+# would otherwise inherit the lifecycle's hour; the user's own choice wins.
+cache_launch() {
+  (
+    export PATH="$TMP_DIR/bin:$PATH"
+    export DX_PROVIDER_APPLIED=1 DX_PROVIDER_ENGINE=claude DX_PROVIDER_PROFILE_RESOLVED=claude
+    unset DEX_SESSION_ID
+    dx_provider_claude -p test
+  ) > "$TMP_DIR/cache.out"
+}
+DEX_LOOP_ACTIVE=1 cache_launch
+assert_contains "CACHE_TTL=1h" "$TMP_DIR/cache.out"
+assert_contains "DEX_CACHE_TTL=1h" "$TMP_DIR/cache.out"
+DEX_LOOP_ACTIVE=1 DEX_REVIEW_PASS_ACTIVE=1 CLAUDE_CODE_PROMPT_CACHE_TTL=1h DEX_PROMPT_CACHE_TTL=1h cache_launch
+assert_contains "CACHE_TTL=5m" "$TMP_DIR/cache.out"
+assert_contains "DEX_CACHE_TTL=5m" "$TMP_DIR/cache.out"
+DEX_REVIEW_ASSESSMENT_ACTIVE=1 cache_launch
+assert_contains "CACHE_TTL=5m" "$TMP_DIR/cache.out"
+DEX_LOOP_ACTIVE=1 CLAUDE_CODE_PROMPT_CACHE_TTL=5m cache_launch
+assert_contains "CACHE_TTL=5m" "$TMP_DIR/cache.out"
 
 # The host snapshot rides the same launch path, so the session knows what else
 # is on the machine instead of assuming it is alone. Measured values, not
