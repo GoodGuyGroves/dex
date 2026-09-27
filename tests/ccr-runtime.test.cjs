@@ -128,6 +128,10 @@ test('pinned CCR authenticates two accounts and translates OpenAI in the same se
     const followup = await send({ messages: [{ role: 'user', content: 'Create report' }, { role: 'assistant', content: [tool] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: tool.id, content: 'Saved locally' }] }] });
     assert.equal(followup.status, 200); await followup.text();
     assert.ok(calls.at(-1).body.input.some(item => item.type === 'function_call_output' && item.output === 'Saved locally'));
+    // OpenAI routes a turn to the cache holding its prefix by prompt_cache_key;
+    // every turn of this conversation must carry the same one.
+    assert.match(calls[2].body.prompt_cache_key, /^dex-[0-9a-f]{40}$/);
+    assert.equal(calls.at(-1).body.prompt_cache_key, calls[2].body.prompt_cache_key);
     config.phases[0] = { model: 'openai/test-codex', effort: 'xhigh' }; state.write(state.stateFile('config'), config);
     await ipc.call('route', { action: 'auto', session: 'test-session' });
     const thinkingResponse = await send({ output_config: { effort: 'high' }, messages: [

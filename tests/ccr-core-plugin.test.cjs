@@ -8,12 +8,35 @@ const assert = require('node:assert/strict');
 const ipc = require('../scripts/ccr/ipc.cjs');
 const { createGatewayPlugin } = require('../scripts/ccr/core-plugin.cjs');
 
-async function authenticate(t, body, sourceAdapterKey = 'anthropic_messages', provider = 'openai') {
+async function authenticate(t, body, sourceAdapterKey = 'anthropic_messages', provider = 'openai', clientHeaders = {}) {
   t.mock.method(ipc, 'call', async () => ({ headers: { authorization: 'Bearer synthetic' } }));
   const plugin = createGatewayPlugin().providerHooks.find(hook => hook.providerName === `dex-${provider}`);
-  return plugin.authenticate({ sourceAdapterKey, request: { headers: { 'x-ccr-dex-account-ticket': 'synthetic-ticket' } },
+  return plugin.authenticate({ sourceAdapterKey, request: { headers: { 'x-ccr-dex-account-ticket': 'synthetic-ticket', ...clientHeaders } },
     upstreamRequest: { headers: {}, body } });
 }
+
+test('a converted Claude session carries a stable OpenAI prompt cache key', async t => {
+  const session = { 'x-claude-code-session-id': '9b2a4e1c-0000-4000-8000-000000000001' };
+  const first = (await authenticate(t, { input: [] }, 'anthropic_messages', 'openai', session)).value.body.prompt_cache_key;
+  const again = (await authenticate(t, { input: [] }, 'anthropic_messages', 'openai', session)).value.body.prompt_cache_key;
+  assert.match(first, /^dex-[0-9a-f]{40}$/);
+  assert.equal(again, first, 'every turn of one conversation shares the key');
+  assert.ok(!first.includes('9b2a4e1c'), 'the client session id does not leave the host');
+  const subagent = (await authenticate(t, { input: [] }, 'anthropic_messages', 'openai',
+    { ...session, 'x-claude-code-agent-id': 'agent-1' })).value.body.prompt_cache_key;
+  assert.notEqual(subagent, first, 'a subagent has its own prompt, so its own key');
+  const other = (await authenticate(t, { input: [] }, 'anthropic_messages', 'openai',
+    { 'x-claude-code-session-id': '9b2a4e1c-0000-4000-8000-000000000002' })).value.body.prompt_cache_key;
+  assert.notEqual(other, first);
+});
+
+test('the cache key never overrides a client key or reaches other providers', async t => {
+  const session = { 'x-claude-code-session-id': 'session-a' };
+  assert.equal((await authenticate(t, { input: [], prompt_cache_key: 'client-key' }, 'anthropic_messages', 'openai', session)).value.body.prompt_cache_key, 'client-key');
+  assert.equal((await authenticate(t, { input: [] }, 'openai_responses', 'openai', session)).value.body.prompt_cache_key, undefined);
+  assert.equal((await authenticate(t, { input: [] })).value.body.prompt_cache_key, undefined, 'no session header, no key');
+  assert.equal((await authenticate(t, { messages: [] }, 'anthropic_messages', 'anthropic', session)).value.body.prompt_cache_key, undefined);
+});
 
 test('Claude thinking becomes stateless reasoning summaries without losing text or tool history', async t => {
   const body = { input: [

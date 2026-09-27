@@ -62,6 +62,10 @@ function createGatewayPlugin() {
         body = { ...body, store: false, stream: true, instructions: body.instructions || 'You are an engineering assistant.' };
         for (const key of ['max_output_tokens', 'max_tokens', 'temperature', 'top_p']) delete body[key];
         if (input.sourceAdapterKey === 'anthropic_messages' && Array.isArray(body.input)) body.input = body.input.map(convertedReasoning);
+        // A client that set its own key (Codex does) keeps it.
+        const cacheKey = input.sourceAdapterKey === 'anthropic_messages' && typeof body.prompt_cache_key !== 'string'
+          && helpers.policy.openaiCacheKey?.(input.request?.headers);
+        if (cacheKey) body.prompt_cache_key = cacheKey;
       }
       if (PROVIDER_ENDPOINTS[provider].type === 'openai_chat_completions' && body && typeof body === 'object') {
         const effort = chatReasoning(input.request?.body);

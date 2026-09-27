@@ -404,4 +404,28 @@ function validateRequest(body, target, protocol = 'messages') {
   // a token budget. The HTTP reader bounds memory; the provider counts tokens.
 }
 
-module.exports = { PHASES, TERMINAL_PHASE, NATIVE_PROTOCOL, budgetExceeded, spendResetAt, MAX_BUDGET_WAIT, clientModels, explicitChain, PROVIDER_NAMES, PROVIDER_LABELS, PROVIDER_ENDPOINTS, PROFILE, CHAT_EFFORT, chatReasoning, resolveProfiles, rotateForWave, MODEL, model, modelCapacity, phase, route, contextLimit, affinityKey, cooldownKey, candidates, byRank, rankOrder, blockers, retryIn, unavailable, failure, validateRequest };
+// The prompt cache key for a Claude Code request converted to OpenAI Responses.
+// OpenAI routes a request to the cache that holds its prefix by this key; with
+// none, consecutive turns of one conversation land on different machines and
+// read nothing back. The CCR runtime derives it from the Claude Code session
+// header for OpenAI, but deliberately skips the ChatGPT Codex backend that
+// subscription accounts use, so a routed Claude session sent no key and read
+// 70% of its input from cache where the same review waves on Anthropic read
+// 97-99%. A subagent's prompt differs from its parent's, so it keys on its
+// agent too. The value is a digest, so no client identifier leaves the host.
+function openaiCacheKey(headers) {
+  const header = name => {
+    for (const [key, value] of Object.entries(headers || {})) {
+      if (key.toLowerCase() !== name) continue;
+      const text = Array.isArray(value) ? value[0] : value;
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    }
+    return null;
+  };
+  const session = header('x-claude-code-session-id') || header('x-claude-session-id');
+  if (!session) return null;
+  const agent = header('x-claude-code-agent-id');
+  return 'dex-' + require('node:crypto').createHash('sha256').update(agent ? `${session}\n${agent}` : session).digest('hex').slice(0, 40);
+}
+
+module.exports = { openaiCacheKey, PHASES, TERMINAL_PHASE, NATIVE_PROTOCOL, budgetExceeded, spendResetAt, MAX_BUDGET_WAIT, clientModels, explicitChain, PROVIDER_NAMES, PROVIDER_LABELS, PROVIDER_ENDPOINTS, PROFILE, CHAT_EFFORT, chatReasoning, resolveProfiles, rotateForWave, MODEL, model, modelCapacity, phase, route, contextLimit, affinityKey, cooldownKey, candidates, byRank, rankOrder, blockers, retryIn, unavailable, failure, validateRequest };
