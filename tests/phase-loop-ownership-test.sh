@@ -569,6 +569,37 @@ if [[ ! -e "$(dx_paused_file "$SID")" ]]; then report "dynamic timeout leaves li
 dx_completion_cleanup "$SID"
 rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
 
+# The session must not wait by staying awake: every waiting turn resends the
+# conversation, uncached once the prompt cache expires. The block tells it to
+# end the turn, and the hook itself holds the wait and releases as soon as the
+# wave's fence clears.
+assert_out_contains "live wait tells the session to end its turn" "End your turn again now"
+assert_out_lacks "live wait no longer asks the session to keep the turn open" "without narrating or ending the turn"
+
+SID="repo-test-8-hook-holds-the-wait"
+printf '%s\n' "3" > "$DX_STATE_DIR/$SID.phase"
+printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+configure_lifecycle_completion "$SID" 3 "$ROOT/prompts/phase-audits/3-review-loop.md"
+touch "$DX_LOOP_DIR/$SID.active"
+dx_phase_busy_begin "$SID" 3 "hold fixture" 2400 >/dev/null
+HOLD_OUT="$TMP_DIR/hold.out"
+HOLD_START=$(date +%s)
+printf '{"session_id":"claude-hold"}' | env -u DEX_REVIEW_PASS_RECHECK_SECONDS \
+  DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
+  DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_TIMEOUT=3600 \
+  bash "$HOOK" > "$HOLD_OUT" 2>&1 &
+HOLD_PID=$!
+sleep 4
+if kill -0 "$HOLD_PID" 2>/dev/null; then report "hook holds a live wave instead of waking the session" 0; else report "hook holds a live wave instead of waking the session" 1; fi
+# The owner removes the fence when its wave ends.
+rm -f "$(dx_phase_busy_file "$SID" 3)"
+wait "$HOLD_PID" || true
+HOLD_ELAPSED=$(( $(date +%s) - HOLD_START ))
+if [[ "$HOLD_ELAPSED" -lt 30 ]]; then report "hook releases promptly when the wave finishes" 0; else report "hook releases promptly when the wave finishes" 1; fi
+assert_contains "The review wave finished" "$HOLD_OUT"
+dx_completion_cleanup "$SID"
+rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+
 SID="repo-test-8-persisted-timeout-pauses"
 printf '%s\n' "3" > "$DX_STATE_DIR/$SID.phase"
 printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"

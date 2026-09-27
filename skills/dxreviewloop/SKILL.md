@@ -33,8 +33,20 @@ gate, and writes the final receipt. Use it directly; `research/review-loop/`
 contains benchmark tooling, and there is no production review-loop script in
 `bin/`.
 
-Keep the owning session alive while the runner works. If the shell tool
-yields a running job, retain its handle and continue waiting on that job.
+Run the launch command as a background job when your shell tool supports it
+(Claude Code: `run_in_background: true`), then end your turn with a one-line
+status. Do not sleep, poll or tail the job in the shell while it runs. A
+review wave takes tens of minutes, and every turn spent waiting resends the
+whole conversation; once the prompt cache has expired, each one costs about as
+much as the conversation itself. The lifecycle's Stop hook holds the wait
+inside the cache's lifetime and wakes you when a wave finishes, and Claude
+Code also wakes you when the background job exits. When woken, read the job's
+output for the loop's `Wave N` lines and result, act on it, and end the turn
+again if the loop is still running. If you must check on the job yourself,
+keep each shell call under 270 seconds.
+
+If your shell cannot run a background job, run the command in the foreground
+and keep waiting on the job it yields.
 Host-capacity queue messages mean the loop is waiting for a review slot.
 A wave that has started is working even when it prints nothing for many
 minutes: it is reading the change set and asking the model, and a routed

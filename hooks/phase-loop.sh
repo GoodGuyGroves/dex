@@ -1554,7 +1554,16 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
 
     rm -f "$STATE_FILE"
 
-    BUSY_RECHECK_SECONDS_RAW="${DEX_REVIEW_PASS_RECHECK_SECONDS:-45}"
+    # How long the hook holds a stop while the wave runs before it wakes the
+    # session. Every wake is a model turn that resends the whole conversation,
+    # and one that lands after the prompt cache expired resends it uncached:
+    # ten-minute shell waits made that ~500k uncached tokens a wake, most of a
+    # lifecycle's review cost. The hold stays inside the five-minute cache by
+    # default, and stretches toward the hook's 30-minute budget only when the
+    # launch asked for the one-hour cache (DEX_PROMPT_CACHE_TTL=1h).
+    BUSY_RECHECK_DEFAULT=270
+    [[ "${DEX_PROMPT_CACHE_TTL:-}" == "1h" ]] && BUSY_RECHECK_DEFAULT=1500
+    BUSY_RECHECK_SECONDS_RAW="${DEX_REVIEW_PASS_RECHECK_SECONDS:-$BUSY_RECHECK_DEFAULT}"
     BUSY_RECHECK_SECONDS_RAW=$(dx_override_effective "$SESSION_ID" \
       review.recheck-seconds "$BUSY_RECHECK_SECONDS_RAW" 3) || {
       printf '\n%s\n' "Dex found an unsafe or malformed override journal. The review wait gate remains closed." >&2
@@ -1564,6 +1573,8 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
       dx_report_invalid_numeric_limit "DEX_REVIEW_PASS_RECHECK_SECONDS" "$BUSY_RECHECK_SECONDS_RAW"
       exit 2
     fi
+    # The hook itself runs under a 30-minute provider budget; leave margin.
+    [[ "$BUSY_RECHECK_SECONDS" -le 1740 ]] || BUSY_RECHECK_SECONDS=1740
     if [[ "$BUSY_RECHECK_SECONDS" -gt 0 ]]; then
       BUSY_POLL_DEADLINE=$(( $(date +%s) + BUSY_RECHECK_SECONDS ))
       while [[ -f "$PHASE_BUSY_FILE" ]]; do
@@ -1579,17 +1590,21 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     if [[ ! -f "$PHASE_BUSY_FILE" ]]; then
       rm -f "$PHASE_BUSY_NOTICE_FILE"
       dx_stop_json_block \
-        "The review wave finished. Continue dxreviewloop with its result before stopping again." \
+        "The review wave finished. Read the review loop's latest output and act on its result. If the loop has started another wave, end your turn again: Dex holds the wait." \
         "Dex · Review wave finished"
       exit 0
     fi
 
     BUSY_AGE=$(( $(date +%s) - BUSY_EPOCH ))
     if [[ "$BUSY_TIMEOUT" -eq 0 ]]; then
-      BUSY_WAIT_REASON="Review wave still running ($(dx_format_duration "$BUSY_AGE") elapsed; timeout is disabled). Continue waiting on the active dxreviewloop task without narrating or ending the turn."
+      BUSY_WAIT_TEXT="$(dx_format_duration "$BUSY_AGE") elapsed; timeout is disabled"
     else
-      BUSY_WAIT_REASON="Review wave still running ($(dx_format_duration "$BUSY_AGE")/$(dx_format_duration "$BUSY_TIMEOUT")). Continue waiting on the active dxreviewloop task without narrating or ending the turn."
+      BUSY_WAIT_TEXT="$(dx_format_duration "$BUSY_AGE")/$(dx_format_duration "$BUSY_TIMEOUT")"
     fi
+    # Waiting is Dex's job. A turn spent polling or sleeping in the shell keeps
+    # the model awake past the prompt cache and resends the conversation
+    # uncached, so the instruction is to end the turn at once.
+    BUSY_WAIT_REASON="Review wave still running (${BUSY_WAIT_TEXT}). Dex holds this wait and wakes you when the wave finishes. End your turn again now with a one-line status: do not run commands, sleep or poll."
     dx_stop_json_block "$BUSY_WAIT_REASON"
     exit 0
   fi

@@ -151,8 +151,11 @@ expect to queue. Treat CPU and memory as a shared budget:
   review wave `bin/review-check.sh` is that lease.
 - **Use the wait; never poll.** While a build, a queue, CI, or provisioning has
   to finish first, do the work that needs no CPU: read the next file, draft the
-  PR body, write the next test. Use the longest blocking wait the host or tool
-  provides; if nothing blocks, check at most once a minute.
+  PR body, write the next test. When nothing is left to do, end your turn and
+  let the hook or the job's completion wake you. Every turn resends the whole
+  conversation, and after five idle minutes the prompt cache has expired, so a
+  ten-minute blocking wait costs about as much as the conversation itself. If
+  you must block on a tool, keep each call under 270 seconds.
   Never sit in a tool-call loop, sleep a shell loop in the background, or run two watchers.
 - **Own what you start.** `dx ps` lists what this session owns, and the end of
   the phase stops it — including `DX_SESSION_TMP`, the per-phase temp root your

@@ -109,7 +109,7 @@ the gate map.
 | `DEX_REVIEW_CLEAN_PASSES` | Optional higher clean-wave requirement; cannot lower the selected tier's global policy gate | global policy (1/1/2/3 for trivial/small/normal/complex) |
 | `DEX_REVIEW_DISABLE_MCP` | Disable inherited MCP servers in review waves (`0` restores them); read-only assessors always disable them | `1` |
 | `DEX_REVIEW_PASS_TIMEOUT` | Seconds a review wave or risk assessment may run before its provider process tree is stopped and review pauses; `0` disables it | Profile-based: 15m assessment/light, 30m standard, 60m thorough |
-| `DEX_REVIEW_PASS_RECHECK_SECONDS` | Seconds the Stop hook quietly polls for a busy Phase 3 review pass to finish | 45 (45s) |
+| `DEX_REVIEW_PASS_RECHECK_SECONDS` | Seconds the Stop hook holds a busy Phase 3 wait before waking the session; capped at 1740 | 270 (4m 30s); 1500 with `DEX_PROMPT_CACHE_TTL=1h` |
 | `DEX_TEST_JOBS` | Test-runner workers each Dex-launched session may use (1 to 32); exported to every launch as `DX_TEST_JOBS` and the runner variables listed in [docs/host-budget.md](host-budget.md) | half the cores shared across `DEX_REVIEW_MAX_ACTIVE_WAVES` sessions, capped at 4 |
 | `DEX_MAX_ACTIVE_HEAVY` | Heavy commands (project gates, test suites, builds — never a dev server, which starts directly and is session-owned) admitted at once across every Dex session on this host (1 to 8) | `max(1, min(cpus/4, mem_gb/8))`, capped at 8 |
 | `DEX_GATE_TIMEOUT` | Seconds one `dx run-gate` command may run before its process tree is stopped; `0` means no deadline, which is the point — a completed result is never discarded | `0` |
