@@ -48,6 +48,11 @@ Use the integrations configured in dex.md § Integrations. Skip any that are "no
 
 **Ticket tracker:**
 - Read the ticket — title, description, acceptance criteria, relations, comments.
+- Read every sub-issue of the ticket (Phase 0 listed them; re-fetch with
+  `list_issues` and `parentId` if the list is missing). Sub-issues are scope:
+  each one is a work package of this plan, in the parent's stated order, with
+  its own acceptance criteria and verification. A plan that covers the parent
+  but not its sub-issues is incomplete.
 - For Linear tool/API discovery, read the Linear section of
   `prompts/triage-trackers.md`; this skill still governs lifecycle status and approval.
 - If no tracker is configured: gather requirements from the user's request, branch name, and local documentation.
@@ -210,12 +215,12 @@ Present the approaches briefly (2-3 sentences each), then recommend one with rea
 
 Before presenting the plan, verify it against these quality gates:
 
-1. **COMPLETENESS** — Does the plan cover every acceptance criterion? Re-read the ticket/prompt requirements. For each one, confirm there is a task that addresses it. If any criterion is missing or only partially covered, add a task. Every criterion must have a verification command — prose-only criteria must be rewritten as testable assertions.
+1. **COMPLETENESS** — Does the plan cover every acceptance criterion of the ticket and of each of its sub-issues? Re-read the ticket/prompt requirements and every sub-issue. For each one, confirm there is a task that addresses it. If any criterion is missing or only partially covered, add a task. Every criterion must have a verification command — prose-only criteria must be rewritten as testable assertions.
 2. **EDGE CASES** — Have you considered failure modes? What happens with invalid/empty/boundary inputs? What happens when external services are unavailable? Are error messages helpful?
 3. **RESEARCH** — Were common pitfalls for the chosen approach checked? Is there prior art in the codebase? Is a migration strategy documented for breaking changes?
 4. **BETTER-WAY CHECK** — Did you challenge the literal requested implementation against alternatives, current best practice, and holistic codebase fit? If the plan simply implements the first idea without comparison, go back to Step 2.3.
 5. **DEPENDENCIES** — Are tasks correctly ordered? Would any task fail if run before another? Are shared types/interfaces created before consumers?
-6. **SCOPE** — Is the plan minimal and focused? Remove any task not required by the acceptance criteria. Do not plan for hypothetical future work.
+6. **SCOPE** — Is the plan minimal and focused? Remove any task not required by the acceptance criteria. Do not plan for hypothetical future work. Sub-issues are required scope, not future work; dropping one is a scope change that needs the user's explicit agreement.
 7. **RISKS** — Are unknowns identified? For each risk, is there a mitigation, fallback, or explicit user acceptance? Ask about unresolved consequential risks under Step 2.4; document understood risks and their mitigations in the plan.
 8. **ASSUMPTIONS** — Are adopted recommendations supported by the requirements and inspected context, with a brief rationale? Have significant assumptions, requirement gaps, and low-confidence interpretations that could change the outcome been resolved or explicitly deferred by the user? Apply Step 2.4; do not ask solely because certainty is below 100%.
 

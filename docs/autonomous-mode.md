@@ -81,6 +81,13 @@ replacing the lifecycle branch. When the branch does not exist locally or on
 `origin`, Dex renames the untouched placeholder and leaves it unpushed until
 Phase 2 creates the first implementation commit.
 
+A ticket's sub-issues are scope. Phase 0 lists them (Linear: `list_issues`
+with `parentId`), Phase 1 plans a work package for each in the parent's stated
+order, the PR body reports every sub-issue's state, and Phase 6 marks each one
+Done when this PR meets its acceptance criteria. Giving Dex a parent ticket
+means one lifecycle and one PR for all of its children; dropping a sub-issue is
+a scope change that needs the user's agreement, not a default.
+
 Issue and PR hygiene is shared across the lifecycle through
 `prompts/issue-hygiene.md`. Phase 0 performs the full duplicate and related-work
 search, reconciles accepted comment decisions into the working issue, and

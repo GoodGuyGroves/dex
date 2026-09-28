@@ -112,6 +112,7 @@ session-startup-claim-test.sh	fast	all	900	hermetic
 session-telemetry-test.sh	fast	all	300	hermetic
 standalone-provider-test.sh	slow	all	1200	hermetic
 status-line-test.sh	fast	all	600	hermetic
+sub-issue-scope-contract-test.sh	fast	all	600	hermetic
 test-command-cli-test.sh	fast	all	600	hermetic
 test-command-dex-test.sh	fast	all	600	hermetic
 test-command-project-test.sh	fast	all	600	hermetic

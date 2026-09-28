@@ -199,7 +199,10 @@ findings. Update the working issue and PR when their descriptions are stale;
 create deduplicated linked follow-up issues for concrete distinct work. Then
 mark the ticket as Done via the configured tracker (see `dex.md §
 Integrations`) and add a final summary covering implementation, decisions, and
-follow-up identifiers. Skip tracker writes if no tracker is configured.
+follow-up identifiers. Mark each sub-issue Done as well when its acceptance
+criteria are met by this PR; a sub-issue that is not met stays open with a
+comment saying what is missing and which follow-up carries it. Skip tracker
+writes if no tracker is configured.
 
 Invoke the `humanizer` skill on the final ticket summary before posting it. Keep commit SHAs, PR links, ticket IDs, reviewer handles, and verification details exact.
 
@@ -260,7 +263,8 @@ Do not emit `DEX_TICKET_COMPLETE` on this timeout path.
   issue when it matches, automatically create a linked issue for concrete
   distinct work, and ask only when the classification or product choice is
   genuinely ambiguous.
-- The ticket should be marked "Done" (if a tracker is available) once CI is
+- The ticket, and each sub-issue whose acceptance criteria this PR meets, should
+  be marked "Done" (if a tracker is available) once CI is
   green and actionable review feedback is resolved. A missing review or approval
   does not block Phase 6; the maintainer handles any merge-time approval rule.
 - Hard escalations (secrets, scope conflict, architectural disagreement, 3+ CI failures on the same check) stop the loop and surface a structured escalation to the user — never auto-resolve these.

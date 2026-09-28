@@ -64,6 +64,8 @@ If the file exists and has content, include a "Technical Debt" section in the PR
 
 If the plan carried a `## Coherence Contract`, list every deviation from it with its reason, and any review note recorded below the severity floor. A deviation the reviewer can see and weigh is not a defect; a silent one is.
 
+If the ticket has sub-issues, the body lists every one of them with its state in this PR — done, partially done with what is missing, or not done with the reason. A sub-issue absent from that list is a reviewer's question, not an omission the reviewer has to discover.
+
 Check if the project has a PR description template or prompt (referenced in AGENTS.md, CLAUDE.md, or `.dex/dex.md`). If so, follow that template.
 
 Otherwise, read the PR description template from the Dex prompts directory (`prompts/pr-description.md`) and follow its structure. Fill in every section with specifics from the implementation.

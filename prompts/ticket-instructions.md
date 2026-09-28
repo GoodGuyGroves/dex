@@ -9,6 +9,16 @@ without an issue, treat ticket-specific steps as N/A and keep the task branch.
 
    - Read ticket {{TICKET_NUM}} — title, description, acceptance criteria, and relations.
    - Read all comments on the ticket (for Linear: use `list_comments` with the issue ID). Comments often contain clarifications, decisions, and context not captured in the description.
+   - Read the ticket's sub-issues (for Linear: `list_issues` with `parentId` set
+     to the ticket, following `hasNextPage`; for GitHub Issues: the task-list
+     children). **Sub-issues are scope, not references.** Every open sub-issue
+     is implemented in this lifecycle, on this branch and PR, in the order the
+     parent gives (its work-package list, else creation order). Read each one's
+     description, acceptance criteria and comments the same way as the parent.
+     Do not skip, defer or hand off a sub-issue; if one genuinely cannot be done
+     here, the plan must say why and Phase 6 leaves it open with a comment. List
+     the sub-issues in the setup summary. Do not change their status during
+     setup.
    - Read and apply `prompts/issue-hygiene.md`: search open and closed tracker
      items with several semantic queries, read strong duplicate and related
      candidates, and inspect the current branch's existing open PR when one
@@ -59,7 +69,7 @@ without an issue, treat ticket-specific steps as N/A and keep the task branch.
      ```
      Use the tracker's key (e.g. `ENG-999`). If no tracker is configured, only the `current_branch` field is required.
 
-3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip.
+3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip. Leave sub-issues as they are: Phase 6 marks each Done once its acceptance criteria pass.
 
 4. Check the ticket description (if a ticket was found):
    - If the description is empty, unclear, or missing acceptance criteria:
