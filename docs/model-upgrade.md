@@ -15,24 +15,32 @@ current config, and changes only what differs.
 |---|---|---|---|
 | Anthropic | first | Opus 5.5 → Opus 5 → Fable 5.1 | Claude Code: Opus 5.5 → Opus 5 → Fable 5.1 |
 | OpenAI | after Anthropic | GPT-6 Sol → GPT-6 Astra | Codex: GPT-6 Sol → GPT-6 Astra → GPT-5.6 Sol |
-| OpenRouter | last | GLM 5.3 → Qwen 3.8 Max → DeepSeek V4 Pro | none |
+| OpenRouter | last | GLM 5.3 → Kimi K3 → Qwen 3.8 Max → DeepSeek V4 Pro | OpenCode: GLM 5.3 → Kimi K3 → Qwen 3.8 Max → DeepSeek V4 Pro |
 
 - The default model and all seven lifecycle phases use one fallback chain:
   the Anthropic models first, then OpenAI, then OpenRouter. A provider with no
   enabled account is left out. With all three providers, the chain runs
   Opus 5.5 → Opus 5 → Fable 5.1 → GPT-6 Sol → GPT-6 Astra → GLM 5.3 →
-  Qwen 3.8 Max → DeepSeek V4 Pro.
+  Kimi K3 → Qwen 3.8 Max → DeepSeek V4 Pro.
 - Each native tool uses its own provider. Claude Code's `/model` list shows the
-  Dex automatic route plus the Anthropic models, and Codex uses the OpenAI
-  models. If a tool's provider has no account, its route follows the whole
-  stack instead, and Claude Code's list then shows the stack's models.
+  Dex automatic route plus the Anthropic models, Codex uses the OpenAI
+  models, and OpenCode's list shows the Dex automatic route plus the
+  OpenRouter models. OpenCode starts on GLM 5.3 and falls back to Kimi K3,
+  then Qwen, then DeepSeek. If a tool's provider has no account, its route
+  follows the whole stack instead, and Claude Code's and OpenCode's lists
+  then show the stack's models.
+- In every tool, the Dex automatic route (`dex/active`) is the whole stack,
+  starting with Opus 5.5. Picking one model keeps only the fallbacks that
+  follow it from the same provider.
 - OpenRouter bills per token, so it comes last and is only used when the
   subscription accounts can't serve a request.
 - Accounts keep their current order within a provider. New accounts go to the
   end of their provider's group. Disabled accounts are kept and ranked but left
   out of routing.
 - Effort is `xhigh` everywhere, the context budget is 800000, and native
-  routing is on, so plain `claude` and `codex` go through Dex.
+  routing is on, so plain `claude`, `codex` and `opencode` go through Dex.
+  OpenCode is connected only if it's installed; the script leaves it out
+  otherwise.
 - Each Anthropic account must be able to serve the three Anthropic models, and
   each OpenAI account the three Codex models. An account that can't gets a
   fresh login (step 4).
@@ -45,6 +53,9 @@ current config, and changes only what differs.
 - The Codex CLI, kept up to date, if you use OpenAI accounts. OpenAI's model
   list depends on its version; 0.156.1 is known to include GPT-6 Sol.
 - An OpenRouter API key, if you're adding an OpenRouter account.
+- OpenCode, if you want the OpenRouter models in it
+  (`curl -fsSL https://opencode.ai/install | bash`). Install it before running
+  the script, which connects OpenCode only when it finds it.
 
 ## Your steps
 
@@ -62,10 +73,11 @@ default.
    `~/dex-model-upgrade.sh`, shows you the plan and runs a read-only check.
    It changes nothing itself.
 
-2. Close every Claude Code and Codex session on the machine, including the
-   agent's. Use Ctrl-D or `/exit`. Don't use `pkill`, because Claude Code
-   respawns and takes the lock again straight away. If the agent reported an
-   `opencode serve --service` process, stop it with the pid it gave you:
+2. Close every Claude Code, Codex and OpenCode session on the machine,
+   including the agent's. Use Ctrl-D or `/exit`. Don't use `pkill`, because
+   Claude Code respawns and takes the lock again straight away. If the agent
+   reported an `opencode serve --service` process, stop it with the pid it
+   gave you:
 
    ```
    kill <pid>
@@ -88,6 +100,9 @@ default.
 5. Start `claude`, run `/model` and pick Claude Opus 5.5. The script
    rebuilds the list but leaves the current selection alone, so pick it once.
    In `codex`, `/model` → GPT-6 Sol, or the Dex automatic route.
+   `opencode` starts on GLM 5.3 unless your own OpenCode config names a
+   model. Its model list shows the Dex automatic route and the OpenRouter
+   models.
 
 6. Restart opencode if you stopped it.
 
@@ -126,9 +141,9 @@ terminal. Don't try to get around the lock.
    - "None" is a valid answer.
    - Removing or renaming accounts is out of scope.
 
-3. **Dex version.** The target needs Dex at commit `9df7049` or later
+3. **Dex version.** The target needs Dex at commit `e191fcd` or later
    (github.com/mitchellfyi/dex). Check with
-   `git -C "$DEX_DIR" merge-base --is-ancestor 9df7049 HEAD`. If that fails
+   `git -C "$DEX_DIR" merge-base --is-ancestor e191fcd HEAD`. If that fails
    and the tree is clean on `main`, run `git -C "$DEX_DIR" pull --ff-only`.
    Otherwise stop and tell the user.
 
@@ -139,7 +154,9 @@ terminal. Don't try to get around the lock.
 
 5. **Native routing** is on in the target. If `dx router native status` shows
    it's off, ask the user before running `dx router native enable`, because it
-   changes how plain `claude` and `codex` launch.
+   changes how plain `claude`, `codex` and `opencode` launch. The script
+   connects OpenCode only if it's installed (`which opencode`). If the user
+   wants it and it's missing, tell them to install it before applying.
 
 6. **Write the script** below to `~/dex-model-upgrade.sh`, verbatim apart from
    `ADD_ACCOUNTS`. Fill that in from step 2 with one quoted
@@ -148,14 +165,16 @@ terminal. Don't try to get around the lock.
    `chmod +x` the script and run `zsh -n` on it.
 
 7. **Show the plan, then check.** Run `~/dex-model-upgrade.sh --plan` and show
-   the user the rank order, the stack and the two tool routes it works out to.
+   the user the rank order, the stack and the three tool routes it works out to.
    Then run `--check` and report the differences. Every `DIFF` is something
    applying will change. The reauth list is provisional at this stage,
    because applying refreshes every account's model list before it rechecks.
 
 8. **Identify every blocker** the check lists. `claude` sessions close with
-   Ctrl-D or `/exit`. An `opencode serve --service` process holds leases
-   through the `claude`/`codex` processes it spawns, and needs `kill <pid>`.
+   Ctrl-D or `/exit`, and `opencode` sessions with `/exit`, because Dex's
+   OpenCode plugin holds a session while OpenCode runs. An
+   `opencode serve --service` process holds leases the same way, and through
+   any `claude`/`codex` processes it spawns. It needs `kill <pid>`.
 
 9. **Hand over and stop.** Give the user steps 2–6 of "Your steps" with this
    machine's actual pids, and say which new accounts will ask for a login.
@@ -187,7 +206,9 @@ new one:
 1. Edit the target block at the top of the script: `ANTHROPIC_MODELS`,
    `OPENAI_MODELS`, `CODEX_ROUTE` and `OPENROUTER_MODELS`. OpenRouter entries
    need the upstream ID, context window and image support from OpenRouter's
-   model list. Change `EFFORT` or `BUDGET` only if those preferences change.
+   model list (`https://openrouter.ai/api/v1/models`), and their order is also
+   the OpenCode route. Change `EFFORT` or `BUDGET` only if those preferences
+   change.
 2. Update the table in "What it sets up", the title's date, and the model
    names in step 5 and in the agent's Codex check (step 4).
 3. If the script comes to rely on newer Dex behaviour, raise the minimum
@@ -204,11 +225,12 @@ accounts; accounts still to add; and names with spaces.
 
 ```zsh
 #!/bin/zsh
-# Dex preferred-model setup (2026-09-23). Per provider, for whichever
+# Dex preferred-model setup (2026-09-28). Per provider, for whichever
 # accounts exist:
 #   Anthropic   Opus 5.5 -> Opus 5 -> Fable 5.1         (also the Claude Code route)
 #   OpenAI      GPT-6 Sol -> GPT-6 Astra                 (Codex route adds GPT-5.6 Sol)
-#   OpenRouter  GLM 5.3 -> Qwen 3.8 Max -> DeepSeek V4 Pro
+#   OpenRouter  GLM 5.3 -> Kimi K3 -> Qwen 3.8 Max -> DeepSeek V4 Pro
+#                                                        (also the OpenCode route)
 # Accounts rank Anthropic, then OpenAI, then OpenRouter. The fallback stack
 # follows the same order and leaves out any provider with no enabled account.
 #
@@ -233,6 +255,7 @@ CODEX_ROUTE=(openai/gpt-6-sol openai/gpt-6-astra openai/gpt-5.6-sol)
 # id  upstream  default-context  max-context(- for none)  images
 OPENROUTER_MODELS=(
   "openrouter/glm-5.3 z-ai/glm-5.3 1048576 1310720 no"
+  "openrouter/kimi-k3 moonshotai/kimi-k3 1048576 - yes"
   "openrouter/qwen3.8-max-0902 qwen/qwen3.8-max-0902 1000000 - yes"
   "openrouter/deepseek-v4-pro-0813 deepseek/deepseek-v4-pro-0813 1048576 - no"
 )
@@ -246,6 +269,11 @@ fi
 [[ -n "$DEX_DIR" && -f "$DEX_DIR/dx.sh" ]] || { print "DEX_DIR not found; export DEX_DIR and re-run."; exit 1 }
 source "$DEX_DIR/dx.sh" || exit 1
 ROUTER="$HOME/.dex/router"
+# Where native routing installs OpenCode's plugin; "-" when OpenCode is absent,
+# which is how native.cjs decides whether to connect it.
+OPENCODE_DIR="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"
+OPENCODE_PLUGIN=-
+[[ -d "$OPENCODE_DIR" ]] || (( $+commands[opencode] )) && OPENCODE_PLUGIN="$OPENCODE_DIR/plugins/dex-router.js"
 
 step() { print -P "\n%F{cyan}==> $*%f" }
 die()  { print -P "\n%F{red}FAILED: $*%f"; exit 1 }
@@ -263,7 +291,7 @@ import json, os, re, shlex, sys
 mode = sys.argv[1]
 policy = json.load(open(sys.argv[2]))
 accounts = json.load(open(sys.argv[3]))["accounts"]
-settings_path, codex_path = sys.argv[4], sys.argv[5]
+settings_path, codex_path, opencode_plugin = sys.argv[4], sys.argv[5], sys.argv[6]
 E = lambda k: os.environ[k].split()
 ORDER = ["anthropic", "openai", "openrouter"]
 anthropic_models, openai_models, codex_route = E("ANTHROPIC_LIST"), E("OPENAI_LIST"), E("CODEX_LIST")
@@ -298,11 +326,12 @@ stack = [m for p in ORDER if p in present for m in segments[p]]
 # it does with no route at all; setting it explicitly also repairs a stale one.
 claude = anthropic_models if "anthropic" in present else stack
 codex = codex_route if "openai" in present else stack
+opencode = segments["openrouter"] if "openrouter" in present else stack
 
 if mode == "shell":
     arr = lambda k, v: print(f"{k}=({' '.join(shlex.quote(x) for x in v)})")
     arr("PROVIDERS", present); arr("RANKED", ranked); arr("STACK", stack)
-    arr("CLAUDE", claude); arr("CODEX", codex); arr("EXISTING", list(by_name))
+    arr("CLAUDE", claude); arr("CODEX", codex); arr("OPENCODE", opencode); arr("EXISTING", list(by_name))
     arr("DISCOVER", [n for n in ranked if n in by_name and by_name[n].get("enabled") and by_name[n]["provider"] in ("anthropic", "openai")])
     sys.exit(0)
 
@@ -320,6 +349,8 @@ if mode == "plan":
     print("\nDefault model and phases 0-6:\n  " + " -> ".join(stack))
     print("Claude Code route: " + ("full stack (no Anthropic account)" if "anthropic" not in present else " -> ".join(claude)))
     print("Codex route:       " + ("full stack (no OpenAI account)" if "openai" not in present else " -> ".join(codex)))
+    print("OpenCode route:    " + ("full stack (no OpenRouter account)" if "openrouter" not in present else " -> ".join(opencode))
+          + ("" if opencode_plugin != "-" else "  (OpenCode is not installed, so it is not connected)"))
     print(f"Effort {effort} everywhere, context budget {budget}, native routing on.")
     sys.exit(0)
 
@@ -335,14 +366,14 @@ report("default model", policy.get("default_model") == stack[0], str(policy.get(
 for p in map(str, range(7)):
     got = policy.get("phases", {}).get(p)
     report(f"phase {p}", got == route(stack), json.dumps(got))
-for client, chain in (("claude", claude), ("codex", codex)):
+for client, chain in (("claude", claude), ("codex", codex), ("opencode", opencode)):
     got = policy.get("client_routes", {}).get(client)
     report(f"client {client}", got == route(chain), json.dumps(got))
 report("context budget", policy.get("context_budget") == budget, str(policy.get("context_budget")))
 
 print("Catalogue")
 models = {m["id"]: m for m in policy.get("models", [])}
-for mid in dict.fromkeys(stack + claude + codex):
+for mid in dict.fromkeys(stack + claude + codex + opencode):
     report(mid, mid in models, "missing")
 if "openrouter" in present:
     for mid, upstream, ctx, maxctx, images in openrouter:
@@ -385,6 +416,14 @@ if native:
         report("Codex uses dex-ccr", re.search(r'^model_provider\s*=\s*"dex-ccr"', open(codex_path).read(), re.M) is not None, "model_provider is not dex-ccr")
     except OSError as e:
         report("Codex uses dex-ccr", False, str(e))
+    if opencode_plugin == "-":
+        note("OpenCode plugin", "OpenCode is not installed")
+    else:
+        try:
+            managed = open(opencode_plugin).readline().startswith("// Dex native routing: managed OpenCode plugin")
+            report("OpenCode plugin", managed, f"{opencode_plugin} is not Dex's plugin")
+        except OSError:
+            report("OpenCode plugin", False, f"{opencode_plugin} is missing (dx router native sync installs it)")
 
 if stale:
     print("\nThese accounts cannot serve their route yet. Applying refreshes every account's")
@@ -401,7 +440,7 @@ snapshot() {
   dx route policy --json > "$TMPD/policy.json" 2>/dev/null || die "dx route policy --json"
   dx accounts --json > "$TMPD/accounts.json" 2>/dev/null || die "dx accounts --json"
 }
-plan() { python3 "$TMPD/plan.py" "$1" "$TMPD/policy.json" "$TMPD/accounts.json" "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" }
+plan() { python3 "$TMPD/plan.py" "$1" "$TMPD/policy.json" "$TMPD/accounts.json" "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "$OPENCODE_PLUGIN" }
 load_plan() { local out; out=$(plan shell) || die "reading the plan"; eval "$out" }
 
 # Mirrors the gateway's own test (service.cjs active()): a session holds the
@@ -443,8 +482,9 @@ if [[ -n "${blockers[1]:-}" ]]; then
   print "Close each one, then re-run:"
   print "  - Exit Claude Code from inside the session (Ctrl-D or /exit). Do not"
   print "    pkill it: it respawns and re-registers its session immediately."
-  print "  - An 'opencode serve --service' daemon holds leases through the"
-  print "    claude/codex processes it spawns: kill <pid> shown above."
+  print "  - Quit OpenCode with /exit: Dex's plugin holds a session while it runs."
+  print "  - An 'opencode serve --service' daemon holds leases itself and through"
+  print "    the claude/codex processes it spawns: kill <pid> shown above."
   die "catalogue changes need zero active routed sessions"
 fi
 print "None. Proceeding."
@@ -499,7 +539,7 @@ fi
 
 step "Checking every routed model is in the catalogue"
 missing=()
-for m in "${STACK[@]}" "${CLAUDE[@]}" "${CODEX[@]}"; do
+for m in "${STACK[@]}" "${CLAUDE[@]}" "${CODEX[@]}" "${OPENCODE[@]}"; do
   dx model list | grep -qE "^${m//./\\.}[[:space:]]" || missing+=("$m")
 done
 if (( ${#missing} )); then
@@ -531,9 +571,24 @@ if (( ${#CODEX} )); then
   dx route configure "${CODEX[1]}" --client codex "${FB[@]}" --effort "$EFFORT" >/dev/null || die "codex route"
   print "  codex: ${CODEX[*]}"
 fi
+if (( ${#OPENCODE} )); then
+  fallbacks "${OPENCODE[@]}"
+  dx route configure "${OPENCODE[1]}" --client opencode "${FB[@]}" --effort "$EFFORT" >/dev/null || die "opencode route"
+  print "  opencode: ${OPENCODE[*]}"
+fi
+
+# An install from before OpenCode support connects it here. OpenCode reads
+# the route when it starts, so later route changes need no sync.
+step "Connecting OpenCode"
+if [[ "$OPENCODE_PLUGIN" == "-" ]]; then
+  print "  skipped: OpenCode is not installed"
+else
+  dx router native sync >/dev/null || die "dx router native sync"
+  print "  $OPENCODE_PLUGIN"
+fi
 
 step "Verifying"
 snapshot; plan check; code=$?
-(( code == 0 )) && print "\nStart new claude/codex sessions and pick the model with /model."
+(( code == 0 )) && print "\nStart new claude/codex/opencode sessions and pick the model with /model (/models in OpenCode)."
 exit $code
 ```
