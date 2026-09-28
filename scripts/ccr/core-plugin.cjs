@@ -36,12 +36,12 @@ function createGatewayPlugin() {
       follow(result.source_revision);
       const { restoreAnthropic } = helpers.history, { chatReasoning } = helpers.policy;
       const headers = { ...input.upstreamRequest.headers };
-      for (const name of Object.keys(headers)) if (['authorization', 'x-api-key', 'x-ccr-dex-account-ticket', 'x-dex-client'].includes(name.toLowerCase())) delete headers[name];
+      for (const name of Object.keys(headers)) if (['authorization', 'x-api-key', 'x-ccr-dex-account-ticket', 'x-ccr-dex-client'].includes(name.toLowerCase())) delete headers[name];
       Object.assign(headers, result.headers);
       // Claude Code identifies itself to the subscription endpoint. A request
       // converted from Responses does not, and neither does another Messages
       // client such as OpenCode, so Dex supplies what Claude Code would have.
-      const client = input.request?.headers?.['x-dex-client'];
+      const client = input.request?.headers?.['x-ccr-dex-client'];
       const foreign = input.sourceAdapterKey === 'openai_responses' || (typeof client === 'string' && client !== 'claude');
       if (provider === 'anthropic') {
         const betas = `${input.request?.headers?.['anthropic-beta'] || ''},oauth-2025-04-20`.split(',').map(beta => beta.trim()).filter(Boolean);

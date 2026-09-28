@@ -91,10 +91,10 @@ test('OpenCode gets its own capability and names itself to the core plugin on ev
     body: JSON.stringify({ model: 'dex/active', messages: [{ role: 'user', content: 'hello' }] }) });
   assert.equal(response.status, 200);
   assert.equal(calls[0].model, 'dex-anthropic/test');
-  assert.equal(headers[0]['x-dex-client'], 'opencode');
+  assert.equal(headers[0]['x-ccr-dex-client'], 'opencode');
   // A lifecycle launch is Claude Code with no native client recorded.
   assert.equal((await send(await register('lifecycle'))).status, 200);
-  assert.equal(headers[1]['x-dex-client'], undefined);
+  assert.equal(headers[1]['x-ccr-dex-client'], undefined);
   await assert.rejects(service.control('native-auth', { client: 'other', owner_pid: process.pid }), /Expected claude, codex or opencode/);
 });
 
