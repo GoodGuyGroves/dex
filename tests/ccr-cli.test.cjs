@@ -131,6 +131,7 @@ test('route policy displays inherited Claude and explicit Codex routes without a
   const output = writes.join('');
   assert.match(output, /claude\s+inherited from setup\s+anthropic\/test\s+openai\/test\s+high/);
   assert.match(output, /codex\s+configured\s+openai\/test\s+-\s+xhigh/);
+  assert.match(output, /opencode\s+inherited from setup\s+anthropic\/test\s+openai\/test\s+high/);
   assert.match(output, /native configuration \(CCR off\)/);
   assert.deepEqual(state.config(), config);
 });
@@ -494,6 +495,12 @@ test('model registration and phase configuration preserve explicit fallbacks', a
   assert.equal(state.config().phases[2].model, 'openai/codex-test');
   assert.equal(state.config().phases[3].model, 'anthropic/claude-test');
   assert.deepEqual(state.config().client_routes.codex, { model: 'openai/codex-test', fallbacks: ['anthropic/claude-test'], effort: 'xhigh' });
+  // OpenCode is the native tool for metered models; its route is its own too.
+  await cli.modelCommand('add', ['openrouter/glm-test'], { ...options, upstream: 'vendor/glm-test' });
+  await cli.routeCommand('configure', ['openrouter/glm-test'], { client: 'opencode', fallback: [], effort: 'xhigh' });
+  assert.deepEqual(state.config().client_routes.opencode, { model: 'openrouter/glm-test', fallbacks: [], effort: 'xhigh' });
+  assert.equal(state.config().phases[2].model, 'openai/codex-test', 'a client route leaves the phases alone');
+  await assert.rejects(cli.routeCommand('configure', ['openai/codex-test'], { client: 'cursor', fallback: [] }), /claude, codex or opencode/);
   await assert.rejects(cli.routeCommand('configure', ['openai/codex-test'], { client: 'codex', phase: 'setup', fallback: [] }), /either --client or --phase/);
   await assert.rejects(cli.routeCommand('configure', ['unknown/model'], { fallback: [] }), /model/);
   await assert.rejects(cli.modelCommand('add', ['openai/test'], { context: '-1' }), /context/);

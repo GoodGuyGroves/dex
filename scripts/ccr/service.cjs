@@ -155,7 +155,7 @@ class RouterService {
     if (method === 'sessions') return state.sessions().map(publicSession);
     if (method === 'native-auth') {
       const config = state.config();
-      if (!['claude', 'codex'].includes(params.client)) throw new Error('Expected claude or codex.');
+      if (!policy.NATIVE_CLIENTS.includes(params.client)) throw new Error('Expected claude, codex or opencode.');
       const identity = processIdentity(params.owner_pid);
       if (!identity) throw new Error('The native client is no longer running.');
       const id = `native-${params.client}-${params.owner_pid}`;
@@ -353,6 +353,8 @@ class RouterService {
               quota_refresh_unavailable: Boolean(account.usage_error) });
             const headers = { 'content-type': 'application/json', authorization: `Bearer ${this.clientKey}`, 'x-ccr-dex-account-ticket': ticket };
             for (const key of ['anthropic-version', 'anthropic-beta', 'user-agent', 'x-claude-code-session-id', 'x-claude-code-agent-id', 'x-claude-code-parent-agent-id']) if (request.headers[key]) headers[key] = request.headers[key];
+            // The core plugin reads which native client sent this; it never leaves the host.
+            if (session.client) headers['x-dex-client'] = session.client;
             upstream = await this.fetch(`${this.gateway}/v1/${protocol}`, { method: 'POST', headers, body: JSON.stringify(next), redirect: 'error', signal: controller.signal });
             metrics.provider_status = upstream.status;
             metrics.provider_request_id = providerRequestId(upstream.headers);

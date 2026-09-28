@@ -12,6 +12,7 @@ let directory, settings, config, original;
 beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-native-settings-'));
   process.env.DEX_ROUTER_HOME = directory;
+  process.env.OPENCODE_CONFIG_DIR = path.join(directory, 'opencode');
   settings = { gateway: 'http://127.0.0.1:34567' };
   config = { claude_file: path.join(directory, 'claude/settings.json'), codex_file: path.join(directory, 'codex/config.toml') };
   fs.mkdirSync(path.dirname(config.claude_file)); fs.mkdirSync(path.dirname(config.codex_file));
@@ -155,7 +156,7 @@ test('router disable restores native clients offline despite invalid routes and 
   t.mock.method(require('../scripts/ccr/adapter.cjs'), 'start', () => { throw new Error('Rescue must not start the gateway'); });
   t.mock.method(state, 'sessions', () => { throw new Error('Rescue must not inspect active sessions'); });
   const cli = require('../scripts/ccr/cli.cjs');
-  assert.match(await cli.routerCommand('disable', {}), /Start a new terminal session and run claude or codex/);
+  assert.match(await cli.routerCommand('disable', {}), /Start a new terminal session and run claude, codex or opencode/);
   assert.deepEqual(JSON.parse(fs.readFileSync(config.claude_file)), original);
   assert.equal(toml(config.codex_file).model_provider, 'work');
   assert.equal(state.config().enabled, false);
@@ -541,4 +542,124 @@ test('re-enabling keeps a Codex /model pick among offered models and still refus
   native.clientSettings('enable', config, settings);
   fs.writeFileSync(config.codex_file, fs.readFileSync(config.codex_file, 'utf8').replace('model = "dex/active"', 'model = "not-offered"'));
   assert.throws(() => native.clientSettings('enable', config, settings), /Native Codex settings were edited/);
+});
+
+test('OpenCode gets a managed plugin that disable removes and a hand edit keeps', async () => {
+  const opencode = { ...config, opencode_file: path.join(directory, 'opencode/plugins/dex-router.js') };
+  native.clientSettings('enable', opencode, settings);
+  const installed = fs.readFileSync(opencode.opencode_file, 'utf8');
+  assert.equal(installed, native.opencodePlugin());
+  assert.match(installed, /^\/\/ Dex native routing: managed OpenCode plugin/);
+  // The installed module is what OpenCode imports: it has to load and export a plugin.
+  const copy = path.join(directory, 'plugin.mjs'); fs.writeFileSync(copy, installed);
+  const loaded = await import(copy);
+  assert.deepEqual(Object.keys(loaded), ['DexRouter']);
+  assert.equal(typeof loaded.DexRouter, 'function');
+  assert.match(installed, new RegExp(`"root":${JSON.stringify(directory).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  // Re-enabling and syncing an unchanged install leave it alone.
+  native.clientSettings('enable', opencode, settings);
+  const routing = state.config(); routing.native = { ...opencode, enabled: true };
+  assert.equal(native.syncContext(routing).changed, false);
+  assert.equal(fs.readFileSync(opencode.opencode_file, 'utf8'), installed);
+  native.clientSettings('disable', opencode, settings);
+  assert.ok(!fs.existsSync(opencode.opencode_file));
+  assert.deepEqual(JSON.parse(fs.readFileSync(config.claude_file)), original);
+  assert.equal(toml(config.codex_file).model_provider, 'work');
+
+  native.clientSettings('enable', opencode, settings);
+  fs.writeFileSync(opencode.opencode_file, `${installed}// mine\n`);
+  assert.throws(() => native.clientSettings('enable', opencode, settings), /OpenCode plugin was edited/);
+  assert.equal(native.syncContext(routing).preserved.length, 0, 'sync leaves an edited plugin as it is');
+  assert.equal(fs.readFileSync(opencode.opencode_file, 'utf8'), `${installed}// mine\n`);
+  assert.deepEqual(native.clientSettings('disable', opencode, settings).preserved, ['opencode dex-router.js']);
+  assert.equal(fs.readFileSync(opencode.opencode_file, 'utf8'), `${installed}// mine\n`, 'disable keeps what the user wrote');
+});
+
+test('an OpenCode plugin Dex did not write is never taken over', () => {
+  const opencode = { ...config, opencode_file: path.join(directory, 'opencode/plugins/dex-router.js') };
+  fs.mkdirSync(path.dirname(opencode.opencode_file), { recursive: true });
+  fs.writeFileSync(opencode.opencode_file, 'export const Mine = async () => ({});\n');
+  const before = fs.readFileSync(config.claude_file, 'utf8');
+  assert.throws(() => native.clientSettings('enable', opencode, settings), /already exists and is not owned by Dex/);
+  assert.equal(fs.readFileSync(config.claude_file, 'utf8'), before, 'a refused enable changes neither client');
+  assert.ok(!fs.existsSync(path.join(directory, 'credentials/native-client-settings.json')));
+});
+
+test('an install from before OpenCode adopts it on enable and a sync never recreates a removed plugin', async () => {
+  native.clientSettings('enable', config, settings);
+  const opencode = { ...config, opencode_file: path.join(directory, 'opencode/plugins/dex-router.js') };
+  const routing = state.config(); routing.native = { ...opencode, enabled: true };
+  native.syncContext(routing);
+  assert.ok(!fs.existsSync(opencode.opencode_file), 'only enable adopts a new client');
+  // dx router native sync runs enable and records where OpenCode lives.
+  routing.native = { ...config, enabled: true }; state.write(state.stateFile('config'), routing);
+  const plugins = path.join(process.env.OPENCODE_CONFIG_DIR, 'plugins/dex-router.js');
+  fs.mkdirSync(process.env.OPENCODE_CONFIG_DIR, { recursive: true });
+  state.saveBackend({ gateway: settings.gateway, client_key: 'synthetic-local', management_key: 'synthetic-management' });
+  assert.match(await native.command('sync'), /Run claude, codex or opencode/);
+  assert.equal(state.config().native.opencode_file, plugins);
+  assert.ok(fs.existsSync(plugins));
+  assert.match(await native.command('status'), /Plain claude, codex and opencode launches use Dex routing/);
+  fs.rmSync(plugins);
+  native.syncContext(state.config());
+  assert.ok(!fs.existsSync(plugins), 'a plugin the user removed stays removed until they enable again');
+  await native.command('disable');
+  assert.ok(!fs.existsSync(path.join(directory, 'credentials/native-client-settings.json')));
+});
+
+test('OpenCode is offered dex/active and its own route, starting on the route primary', () => {
+  const routing = state.config();
+  routing.models.push(
+    { id: 'openrouter/glm', provider: 'openrouter', context_window: 200000, capabilities: { tools: true, images: false } },
+    { id: 'openrouter/kimi', provider: 'openrouter', context_window: 200000, capabilities: { tools: true, images: true } });
+  routing.models.find(model => model.id === 'anthropic/test').capabilities = { tools: true, images: true };
+  routing.phases[0] = { model: 'anthropic/test', fallbacks: ['openrouter/glm', 'openrouter/kimi'] };
+  let setup = native.opencodeProvider(routing, settings.gateway, 'synthetic-capability');
+  assert.equal(setup.model, 'dex/active', 'with no route of its own OpenCode starts on the automatic route');
+  routing.client_routes = { opencode: { model: 'openrouter/glm', fallbacks: ['openrouter/kimi'] } };
+  setup = native.opencodeProvider(routing, settings.gateway, 'synthetic-capability');
+  assert.equal(setup.token, 'synthetic-capability');
+  assert.equal(setup.model, 'dex/openrouter/glm');
+  assert.equal(setup.provider.npm, '@ai-sdk/anthropic');
+  assert.deepEqual(setup.provider.options, { baseURL: `${settings.gateway}/plugins/dex/v1`, apiKey: 'synthetic-capability' });
+  assert.deepEqual(Object.keys(setup.provider.models), ['active', 'openrouter/glm', 'openrouter/kimi']);
+  const { active, 'openrouter/glm': glm, 'openrouter/kimi': kimi } = setup.provider.models;
+  assert.equal(active.id, 'dex/active');
+  assert.equal(active.name, 'Dex automatic route');
+  assert.equal(active.attachment, false, 'the automatic route can land on a model without images');
+  assert.equal(glm.attachment, false); assert.equal(kimi.attachment, true);
+  for (const entry of [active, glm, kimi]) assert.deepEqual(entry.limit, { context: 128000, output: 32000 });
+  assert.equal(glm.name, 'openrouter/glm (via CCR)');
+});
+
+test('the OpenCode plugin adds the Dex provider and refreshes its capability', async t => {
+  const script = path.join(directory, 'helper.cjs');
+  fs.writeFileSync(script, `const [action, client, root] = process.argv.slice(2);
+if (client !== 'opencode' || root !== ${JSON.stringify(directory)}) { console.error('bad arguments'); process.exit(1); }
+const fs = require('node:fs'); const count = ${JSON.stringify(path.join(directory, 'count'))};
+const next = Number(fs.existsSync(count) ? fs.readFileSync(count, 'utf8') : 0) + 1; fs.writeFileSync(count, String(next));
+if (action === 'provider') console.log(JSON.stringify({ token: 'first', model: 'dex/openrouter/glm', provider: { name: 'Dex (CCR)', models: {} } }));
+else if (process.env.DEX_TEST_FAIL) { console.error('router unavailable'); process.exit(1); }
+else console.log('refreshed-' + next);
+`);
+  const { dexRouter, REFRESH_MS } = require('../scripts/ccr/opencode-plugin.cjs');
+  const hooks = await dexRouter({ node: process.execPath, script, root: directory })();
+  const opencode = { provider: { mine: { name: 'Mine' } } };
+  await hooks.config(opencode);
+  assert.deepEqual(opencode.provider, { mine: { name: 'Mine' }, dex: { name: 'Dex (CCR)', models: {} } });
+  assert.equal(opencode.model, 'dex/openrouter/glm');
+  const chosen = { model: 'mine/model' };
+  await (await dexRouter({ node: process.execPath, script, root: directory })()).config(chosen);
+  assert.equal(chosen.model, 'mine/model', 'a model the user chose in their own config stays theirs');
+
+  const headers = async providerID => { const output = { headers: {} }; await hooks['chat.headers']({ model: { providerID } }, output); return output.headers; };
+  assert.deepEqual(await headers('mine'), {});
+  assert.deepEqual(await headers('dex'), { 'x-api-key': 'first' }, 'the startup capability serves until it is due');
+  let now = Date.now(); t.mock.method(Date, 'now', () => now);
+  now += REFRESH_MS + 1;
+  assert.deepEqual(await headers('dex'), { 'x-api-key': 'refreshed-3' });
+  now += REFRESH_MS + 1; process.env.DEX_TEST_FAIL = '1';
+  try { assert.deepEqual(await headers('dex'), { 'x-api-key': 'refreshed-3' }, 'a failed refresh keeps the capability it had'); }
+  finally { delete process.env.DEX_TEST_FAIL; }
+  await assert.rejects(dexRouter({ node: process.execPath, script, root: 'elsewhere' })().then(plugin => plugin.config({})), /bad arguments/);
 });

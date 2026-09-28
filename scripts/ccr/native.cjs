@@ -7,7 +7,7 @@ const state = require('./state.cjs');
 const policy = require('./policy.cjs');
 const ipc = require('./ipc.cjs');
 const adapter = require('./adapter.cjs');
-const { claudePicker, clientDefault, betaHeader, longContext, plainModel } = require('./claude-picker.cjs');
+const { claudePicker, offeredModels, clientDefault, betaHeader, longContext, plainModel } = require('./claude-picker.cjs');
 
 // Codex looks a model up by the slug its catalogue serves, and falls back to
 // generic metadata — no apply_patch, no skills instructions — for a name it
@@ -37,8 +37,49 @@ function ownerPid(pid = process.ppid) {
   throw new Error('Could not identify the native client requesting authentication.');
 }
 
+// OpenCode loads plugins from its global config directory. Dex installs there
+// only when OpenCode is present, so a machine without it gets no new directory.
+function opencodeFile() {
+  const directory = process.env.OPENCODE_CONFIG_DIR || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode');
+  const onPath = (process.env.PATH || '').split(path.delimiter).some(entry => entry && fs.existsSync(path.join(entry, 'opencode')));
+  return fs.existsSync(directory) || onPath ? path.join(directory, 'plugins', 'dex-router.js') : null;
+}
+
+// The module installed in OpenCode's plugins directory. Dex owns the whole
+// file, so native-config.py treats its exact content as the ownership record.
+function opencodePlugin() {
+  const options = { node: process.execPath, script: path.join(__dirname, 'native.cjs'), root: state.root() };
+  return [
+    '// Dex native routing: managed OpenCode plugin. dx router native disable removes it.',
+    `import dex from ${JSON.stringify(path.join(__dirname, 'opencode-plugin.cjs'))};`,
+    `export const DexRouter = dex.dexRouter(${JSON.stringify(options)});`, ''
+  ].join('\n');
+}
+
+// The provider OpenCode adds at startup. It speaks Messages because Claude
+// Code's OpenRouter traffic already takes that path. It offers dex/active plus
+// this client's models, each with the route's context budget, which is the
+// budget Claude and Codex get too.
+function opencodeProvider(config, gateway, token) {
+  const context = policy.contextLimit(config, 'opencode');
+  const entry = (name, models) => ({ name, tool_call: true, attachment: models.every(item => item.capabilities?.images === true),
+    limit: { context, output: Math.min(...models.map(item => item.max_output_tokens || 32000)) } });
+  const models = { active: { id: 'dex/active', ...entry('Dex automatic route', policy.route(config, {}).models) } };
+  for (const item of offeredModels(config, 'opencode')) models[item.id] = entry(`${item.display_name || item.id} (via CCR)`, [item]);
+  const primary = clientDefault(config, 'opencode');
+  return { token, model: models[primary] ? `dex/${primary}` : 'dex/active',
+    provider: { name: 'Dex (CCR)', npm: '@ai-sdk/anthropic', options: { baseURL: `${gateway}/plugins/dex/v1`, apiKey: token }, models } };
+}
+
+async function opencodeSetup() {
+  const token = await authenticate('opencode');
+  const gateway = state.backend(null)?.gateway;
+  if (typeof gateway !== 'string' || !/^https?:\/\/[^\s/?#]+$/.test(gateway)) throw new Error('The router did not report a usable gateway address. Run dx router status.');
+  return JSON.stringify(opencodeProvider(state.config(), gateway, token));
+}
+
 async function authenticate(client) {
-  if (!['claude', 'codex'].includes(client)) throw new Error('Expected claude or codex.');
+  if (!policy.NATIVE_CLIENTS.includes(client)) throw new Error('Expected claude, codex or opencode.');
   // A routed Dex launch already holds a session capability; the helper hands it back.
   const routed = process.env.DX_ROUTER_SESSION_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN;
   if (client === 'claude' && process.env.DX_ROUTER_SESSION_ID && routed) return routed;
@@ -52,6 +93,9 @@ function clientSettings(action, native, settings, config) {
   const backup = path.join(state.privateDir(path.join(state.root(), 'credentials')), 'native-client-settings.json');
   const request = { action, backup, claude_file: native.claude_file, codex_file: native.codex_file };
   if (action !== 'disable') config ||= state.config();
+  // The plugin reads the route when OpenCode starts, so its content depends
+  // only on the paths to node, this checkout and the router state.
+  if (native.opencode_file) Object.assign(request, { opencode_file: native.opencode_file, ...(action === 'disable' ? {} : { opencode_content: opencodePlugin() }) });
   if (action === 'sync-context') {
     request.claude_picker = claudePicker(config, 'claude');
     request.claude_betas = betaHeader(process.env.ANTHROPIC_BETAS);
@@ -136,7 +180,7 @@ async function disable({ router = false } = {}) {
 async function command(action = 'status') {
   if (action === 'status') {
     const native = state.config().native;
-    return native?.enabled ? 'Plain claude and codex launches use Dex routing. Run dx router native disable to restore independent native launches.'
+    return native?.enabled ? `Plain ${native.opencode_file ? 'claude, codex and opencode' : 'claude and codex'} launches use Dex routing. Run dx router native disable to restore independent native launches.`
       : 'Plain claude and codex launches use their native configuration. Dex routing is scoped to the ccr-subscription profile.';
   }
   if (action === 'sync' && !state.config().native?.enabled) return;
@@ -150,10 +194,13 @@ async function command(action = 'status') {
     if (!config.enabled) throw new Error('Run dx router setup first.');
     native.claude_file ||= path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
     native.codex_file ||= path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
+    // Installs from before OpenCode support adopt it here; dx router native
+    // sync runs this path.
+    native.opencode_file ||= opencodeFile() || undefined;
     policy.contextLimit(config);
     clientSettings('enable', native, settings);
     config.native = { ...native, enabled: true }; state.write(state.stateFile('config'), config);
-    return 'Native routing enabled. Run claude or codex; CCR starts when the client requests authentication. Use dx accounts --live to watch usage.';
+    return `Native routing enabled. Run ${native.opencode_file ? 'claude, codex or opencode' : 'claude or codex'}; CCR starts when the client requests authentication. Use dx accounts --live to watch usage.`;
   });
 }
 
@@ -161,7 +208,8 @@ if (require.main === module) {
   process.umask(0o077);
   const [action, client, root] = process.argv.slice(2);
   if (root) process.env.DEX_ROUTER_HOME = root;
-  const operation = action === 'auth' ? authenticate(client) : command(action);
+  const operation = action === 'auth' ? authenticate(client)
+    : action === 'provider' && client === 'opencode' ? opencodeSetup() : command(action);
   operation.then(result => { if (result) process.stdout.write(`${result}\n`); }).catch(error => { process.stderr.write(`dex: ${error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { ownerPid, authenticate, clientSettings, syncContext, disable, command };
+module.exports = { ownerPid, authenticate, opencodeFile, opencodePlugin, opencodeProvider, clientSettings, syncContext, disable, command };

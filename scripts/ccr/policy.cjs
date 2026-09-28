@@ -54,6 +54,9 @@ const MODEL = new RegExp(`^(${PROVIDER_NAMES.join('|')})\\/[A-Za-z0-9][A-Za-z0-9
 // cools down separately from native traffic on the same account and model.
 const NATIVE_PROTOCOL = { anthropic: 'messages', openai: 'responses', openrouter: 'chat' };
 const PROVIDER_LABELS = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter' };
+// Plain CLIs that native routing connects to the gateway, each with an
+// optional route of its own. OpenCode is the native tool for OpenRouter.
+const NATIVE_CLIENTS = ['claude', 'codex', 'opencode'];
 // Where each provider's traffic goes and which wire format it speaks. Adding a
 // provider is an entry here plus a PROVIDERS entry in accounts.cjs; nothing in
 // the request path branches on the provider name.
@@ -428,4 +431,4 @@ function openaiCacheKey(headers) {
   return 'dex-' + require('node:crypto').createHash('sha256').update(agent ? `${session}\n${agent}` : session).digest('hex').slice(0, 40);
 }
 
-module.exports = { openaiCacheKey, PHASES, TERMINAL_PHASE, NATIVE_PROTOCOL, budgetExceeded, spendResetAt, MAX_BUDGET_WAIT, clientModels, explicitChain, PROVIDER_NAMES, PROVIDER_LABELS, PROVIDER_ENDPOINTS, PROFILE, CHAT_EFFORT, chatReasoning, resolveProfiles, rotateForWave, MODEL, model, modelCapacity, phase, route, contextLimit, affinityKey, cooldownKey, candidates, byRank, rankOrder, blockers, retryIn, unavailable, failure, validateRequest };
+module.exports = { openaiCacheKey, PHASES, TERMINAL_PHASE, NATIVE_PROTOCOL, NATIVE_CLIENTS, budgetExceeded, spendResetAt, MAX_BUDGET_WAIT, clientModels, explicitChain, PROVIDER_NAMES, PROVIDER_LABELS, PROVIDER_ENDPOINTS, PROFILE, CHAT_EFFORT, chatReasoning, resolveProfiles, rotateForWave, MODEL, model, modelCapacity, phase, route, contextLimit, affinityKey, cooldownKey, candidates, byRank, rankOrder, blockers, retryIn, unavailable, failure, validateRequest };

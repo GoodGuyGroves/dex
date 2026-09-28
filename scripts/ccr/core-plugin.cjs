@@ -36,21 +36,26 @@ function createGatewayPlugin() {
       follow(result.source_revision);
       const { restoreAnthropic } = helpers.history, { chatReasoning } = helpers.policy;
       const headers = { ...input.upstreamRequest.headers };
-      for (const name of Object.keys(headers)) if (['authorization', 'x-api-key', 'x-ccr-dex-account-ticket'].includes(name.toLowerCase())) delete headers[name];
+      for (const name of Object.keys(headers)) if (['authorization', 'x-api-key', 'x-ccr-dex-account-ticket', 'x-dex-client'].includes(name.toLowerCase())) delete headers[name];
       Object.assign(headers, result.headers);
+      // Claude Code identifies itself to the subscription endpoint. A request
+      // converted from Responses does not, and neither does another Messages
+      // client such as OpenCode, so Dex supplies what Claude Code would have.
+      const client = input.request?.headers?.['x-dex-client'];
+      const foreign = input.sourceAdapterKey === 'openai_responses' || (typeof client === 'string' && client !== 'claude');
       if (provider === 'anthropic') {
         const betas = `${input.request?.headers?.['anthropic-beta'] || ''},oauth-2025-04-20`.split(',').map(beta => beta.trim()).filter(Boolean);
-        if (input.sourceAdapterKey === 'openai_responses') betas.push('claude-code-20250219');
+        if (foreign) betas.push('claude-code-20250219');
         headers['anthropic-beta'] = [...new Set(betas)].join(',');
       }
       let body = input.upstreamRequest.body;
       if (provider === 'anthropic' && body && typeof body === 'object') {
         restoreAnthropic(body);
-        if (input.sourceAdapterKey === 'openai_responses') {
+        if (foreign) {
           // The subscription endpoint requires this prelude even after protocol
           // conversion. Keep the original client instructions after it.
           const system = typeof body.system === 'string' ? [{ type: 'text', text: body.system }] : body.system ?? [];
-          if (!Array.isArray(system)) return { ok: false, error: 'Invalid Anthropic system content after Responses conversion.' };
+          if (!Array.isArray(system)) return { ok: false, error: 'Invalid Anthropic system content for the subscription endpoint.' };
           if (!system[0]?.text?.startsWith(CLAUDE_SUBSCRIPTION_PRELUDE)) {
             body = { ...body, system: [{ type: 'text', text: CLAUDE_SUBSCRIPTION_PRELUDE }, ...system] };
           }

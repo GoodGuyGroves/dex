@@ -209,6 +209,37 @@ def sync_managed_field(document, entries, field, value):
     return current != {"present": True, "value": value}
 
 
+def opencode_plugin(action, saved, request, file, source, preserved):
+    """Return the managed OpenCode plugin's next content, or None to remove it.
+
+    Dex owns the whole file, so its exact installed content is the ownership
+    record: anything else at that path belongs to the user and stays as it is.
+    """
+    installed = saved.get("opencode_content", "")
+    exists = file.exists()
+    if action == "disable":
+        if not installed or not exists:
+            return source
+        if source == installed:
+            return None
+        preserved.append(f"opencode {file.name}")
+        return source
+    wanted = request.get("opencode_content")
+    if not wanted:
+        return source
+    if action == "sync-context":
+        # Only an unchanged install is refreshed. A missing file was removed on
+        # purpose; enable is what puts it back.
+        if not installed or not exists or source != installed:
+            return source
+    elif installed and exists and source != installed:
+        raise ValueError("The Dex OpenCode plugin was edited. Disable native routing before enabling it again.")
+    elif not installed and exists:
+        raise ValueError(f"{file} already exists and is not owned by Dex.")
+    saved["opencode_file"], saved["opencode_content"] = str(file), wanted
+    return wanted
+
+
 def apply(request):
     action = request["action"]
     backup_file = Path(request["backup"])
@@ -236,6 +267,14 @@ def apply(request):
         }
     if saved["claude_file"] != str(claude_file) or saved["codex_file"] != str(codex_file):
         raise ValueError("Disable native routing before changing the client configuration paths.")
+    # OpenCode joined later, so an ownership record can predate it; disable
+    # still finds the file through the record when the request names none.
+    opencode_file = request.get("opencode_file") or saved.get("opencode_file")
+    opencode_file = Path(opencode_file).resolve() if opencode_file else None
+    if opencode_file and saved.get("opencode_file") and saved["opencode_file"] != str(opencode_file):
+        raise ValueError("Disable native routing before changing the client configuration paths.")
+    if opencode_file:
+        sources[opencode_file] = read(opencode_file)
     preserved = []
     claude_source = None
     if action == "sync-context":
@@ -332,6 +371,8 @@ def apply(request):
         codex_source = codex_source.rstrip() + "\n\n" + saved["provider_content"]
     tomllib.loads(codex_source)
     updates = {claude_file: claude_source if claude_source is not None else json.dumps(claude, indent=2) + "\n", codex_file: codex_source}
+    if opencode_file:
+        updates[opencode_file] = opencode_plugin(action, saved, request, opencode_file, sources[opencode_file], preserved)
     for file, source in sources.items():
         if read(file) != source:
             raise ValueError("Client settings changed during setup. Retry the command.")

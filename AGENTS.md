@@ -288,10 +288,11 @@ Claude-engine run can hand individual tasks to Codex.
 
 `scripts/ccr/` is not ordinary repo code: it drives the user's live client
 configuration. `~/.claude/settings.json` (apiKeyHelper, `ANTHROPIC_BASE_URL`,
-model picker), `~/.codex/config.toml` (the `dex-ccr` provider), and
-`~/.dex/router/` (`config.json`, `backend.json`, and the ownership record
-`credentials/native-client-settings.json`) are what let the user run claude
-and codex at all. An agent that corrupts them takes away the user's ability
+model picker), `~/.codex/config.toml` (the `dex-ccr` provider),
+`~/.config/opencode/plugins/dex-router.js` (the OpenCode plugin, when OpenCode
+is installed), and `~/.dex/router/` (`config.json`, `backend.json`, and the
+ownership record `credentials/native-client-settings.json`) are what let the
+user run claude, codex and opencode through Dex at all. An agent that corrupts them takes away the user's ability
 to run any local agent, including one that could repair the damage. The
 `warn-ccr-live-state` guard flags ad-hoc interpreter access to these modules
 and state paths; these rules are what its message points at.
@@ -299,7 +300,8 @@ and state paths; these rules are what its message points at.
 - Never exercise router internals (`clientSettings`, `syncContext`,
   `saveBackend`, `state.write`) ad hoc against the real home directory. Tests
   sandbox with `DEX_ROUTER_HOME=$(mktemp -d)` plus fixture
-  `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; copy `tests/ccr-native.test.cjs`.
+  `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`OPENCODE_CONFIG_DIR`; copy
+  `tests/ccr-native.test.cjs`.
 - Real changes go through the CLI (`dx router …` =
   `node scripts/ccr/cli.cjs router …`). It holds the config lock, reads the
   live gateway from `state.backend()`, and keeps `config.native.enabled` in

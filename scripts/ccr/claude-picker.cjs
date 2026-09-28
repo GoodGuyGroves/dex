@@ -35,15 +35,21 @@ function clientDefault(config, client) {
   return (client && config.client_routes?.[client]?.model) || 'dex/active';
 }
 
-function claudePicker(config, client) {
+// The models a native client's picker lists beside dex/active: its own route,
+// or every model the lifecycle routes name when it has none.
+function offeredModels(config, client) {
   const clientRoute = client && config.client_routes?.[client];
   const routes = clientRoute ? [clientRoute] : Object.values(config.phases || {});
   const ids = new Set([...(clientRoute ? [] : [config.default_model]), ...routes.flatMap(route => [route.model, ...(route.fallbacks || [])])]);
+  return [...ids].map(id => config.models.find(model => model.id === id)).filter(Boolean);
+}
+
+function claudePicker(config, client) {
   return {
     replaceBuiltInOptions: true,
     options: [
       { model: longContext('dex/active'), label: 'CCR subscription', description: 'Automatic Dex route, account pool, and fallbacks.' },
-      ...[...ids].map(id => config.models.find(model => model.id === id)).filter(Boolean).map(model => ({
+      ...offeredModels(config, client).map(model => ({
         model: longContext(model.id),
         label: `${model.display_name || model.id} (via CCR)`,
         description: 'Use this model through the Dex account pool. This does not bypass the router.'
@@ -52,4 +58,4 @@ function claudePicker(config, client) {
   };
 }
 
-module.exports = { claudePicker, clientDefault, betaHeader, plainModel, longContext, LONG_CONTEXT_BETA, LONG_CONTEXT_MARKER };
+module.exports = { claudePicker, offeredModels, clientDefault, betaHeader, plainModel, longContext, LONG_CONTEXT_BETA, LONG_CONTEXT_MARKER };

@@ -80,6 +80,24 @@ test('native credentials are stable per client process and use the configured fa
   assert.deepEqual(await service.control('native-auth', params), first, 'running clients can finish after disabling native defaults');
 });
 
+test('OpenCode gets its own capability and names itself to the core plugin on every attempt', async () => {
+  const config = state.config(); config.native = { enabled: true }; config.phases[0] = { model: 'anthropic/test', fallbacks: [] }; state.write(state.stateFile('config'), config);
+  const { token } = await service.control('native-auth', { client: 'opencode', owner_pid: process.pid });
+  assert.equal(state.read(state.sessionFile(`native-opencode-${process.pid}`)).client, 'opencode');
+  const headers = [];
+  service.fetch = async (_url, options) => { headers.push(options.headers); calls.push(JSON.parse(options.body)); return reply(options); };
+  // OpenCode's Anthropic SDK sends the capability as x-api-key, not a bearer token.
+  const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': token },
+    body: JSON.stringify({ model: 'dex/active', messages: [{ role: 'user', content: 'hello' }] }) });
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].model, 'dex-anthropic/test');
+  assert.equal(headers[0]['x-dex-client'], 'opencode');
+  // A lifecycle launch is Claude Code with no native client recorded.
+  assert.equal((await send(await register('lifecycle'))).status, 200);
+  assert.equal(headers[1]['x-dex-client'], undefined);
+  await assert.rejects(service.control('native-auth', { client: 'other', owner_pid: process.pid }), /Expected claude, codex or opencode/);
+});
+
 test('a model a native client names explicitly never moves the work to another provider', async () => {
   const config = state.config(); config.native = { enabled: true };
   config.models.find(model => model.id === 'openai/test').upstream_id = 'codex-test';

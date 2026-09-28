@@ -20,6 +20,7 @@ if [[ -z "${DEX_ROUTER_HOME:-}" ]]; then
   export DEX_ROUTER_HOME="$DEX_CCR_SANDBOX/router"
   export CLAUDE_CONFIG_DIR="$DEX_CCR_SANDBOX/claude"
   export CODEX_HOME="$DEX_CCR_SANDBOX/codex"
+  export OPENCODE_CONFIG_DIR="$DEX_CCR_SANDBOX/opencode"
   mkdir -p "$DEX_ROUTER_HOME" "$CLAUDE_CONFIG_DIR" "$CODEX_HOME"
 fi
 

@@ -90,6 +90,35 @@ test('Responses conversion includes the subscription prelude without replacing c
   assert.equal((await authenticate(t, { system: {} }, 'openai_responses', 'anthropic')).ok, false);
 });
 
+test('OpenCode Messages traffic to a subscription carries the prelude Claude Code would send', async t => {
+  const prelude = "You are Claude Code, Anthropic's official CLI for Claude.";
+  const body = { system: [{ type: 'text', text: 'You are opencode.' }], messages: [{ role: 'user', content: 'hello' }] };
+  const original = structuredClone(body);
+  const result = await authenticate(t, body, 'anthropic_messages', 'anthropic', { 'x-dex-client': 'opencode' });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.body.system[0].text, prelude);
+  assert.deepEqual(result.value.body.system.slice(1), original.system);
+  assert.deepEqual(body, original);
+  assert.deepEqual(new Set(result.value.headers['anthropic-beta'].split(',')), new Set(['oauth-2025-04-20', 'claude-code-20250219']));
+  const again = await authenticate(t, result.value.body, 'anthropic_messages', 'anthropic', { 'x-dex-client': 'opencode' });
+  assert.deepEqual(again.value.body, result.value.body, 'a repeated attempt must not duplicate the prelude');
+  // Claude Code sends its own identity, so its requests pass through untouched.
+  const claude = await authenticate(t, structuredClone(original), 'anthropic_messages', 'anthropic', { 'x-dex-client': 'claude' });
+  assert.deepEqual(claude.value.body, original);
+  assert.equal(claude.value.headers['anthropic-beta'], 'oauth-2025-04-20');
+  // Other providers need no prelude.
+  assert.deepEqual((await authenticate(t, structuredClone(original), 'anthropic_messages', 'openrouter', { 'x-dex-client': 'opencode' })).value.body.system, original.system);
+});
+
+test('the native client name stays on the host', async t => {
+  t.mock.method(ipc, 'call', async () => ({ headers: { authorization: 'Bearer synthetic' } }));
+  const plugin = createGatewayPlugin().providerHooks.find(hook => hook.providerName === 'dex-openrouter');
+  const result = await plugin.authenticate({ sourceAdapterKey: 'anthropic_messages',
+    request: { headers: { 'x-ccr-dex-account-ticket': 'synthetic-ticket', 'x-dex-client': 'opencode' } },
+    upstreamRequest: { headers: { 'x-dex-client': 'opencode', 'X-Dex-Client': 'opencode' }, body: { messages: [] } } });
+  assert.deepEqual(Object.keys(result.value.headers).filter(name => name.toLowerCase() === 'x-dex-client'), []);
+});
+
 test('Responses conversion preserves signature-only Claude thinking before CCR drops it', () => {
   const payload = { content: [{ type: 'thinking', thinking: '', signature: 'synthetic-signature' },
     { type: 'tool_use', id: 'tool_one', name: 'Read', input: {} }] };

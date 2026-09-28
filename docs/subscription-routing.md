@@ -186,6 +186,45 @@ Disabling restores the previous values for settings Dex still owns and keeps
 subsequent user edits. Start a new CLI session to use the restored defaults.
 Native routing keeps the local gateway address stable across router restarts.
 
+### OpenCode
+
+OpenCode is the native tool for the metered models. Native routing connects it
+when OpenCode is installed, meaning its config directory exists or `opencode`
+is on `PATH`. Dex then installs `~/.config/opencode/plugins/dex-router.js`, or
+the same file under `$OPENCODE_CONFIG_DIR` or `$XDG_CONFIG_HOME/opencode` when
+either is set. An install that predates OpenCode support picks it up with
+`dx router native sync`.
+
+The plugin changes nothing in OpenCode's own config files. Each time OpenCode
+starts, the plugin asks Dex for the gateway address, the models to offer and a
+capability tied to the OpenCode process, then adds a `dex` provider. Route
+changes reach the next OpenCode launch without a sync.
+
+The picker lists **Dex automatic route** (`dex/active`) and the models on
+OpenCode's client route, each labeled **via CCR**. OpenCode starts on that
+route's first model unless your own OpenCode config names a `model`.
+
+```sh
+dx route configure openrouter/glm-5.3 --client opencode \
+  --fallback openrouter/kimi-k3 --fallback openrouter/qwen3.8-max-0902
+```
+
+Choosing a model keeps the fallbacks that follow it on the automatic route and
+belong to the same provider. If the automatic route ends GLM 5.3 → Kimi K3 →
+Qwen 3.8 Max, picking GLM falls back to Kimi K3 and then Qwen, and picking
+Qwen has no fallback. `dex/active` is the whole automatic route, as it is in
+Claude Code and Codex, so it starts with the subscription models.
+
+OpenCode reaches the gateway over Messages, the path Claude Code's OpenRouter
+traffic already takes. When the automatic route reaches an Anthropic
+subscription, Dex adds the identity prelude that Claude Code would have sent.
+
+A running OpenCode holds a routed session, like a native `claude` or `codex`,
+so close it before catalogue changes. A router restart invalidates its
+capability; the plugin fetches a new one within a minute, without a relaunch.
+Disabling native routing removes the plugin. If you edited it, Dex keeps it
+and names it in the output.
+
 ## Account errors and recovery
 
 If Anthropic asks you to accept updated Consumer Terms and Privacy Policy,
@@ -343,8 +382,8 @@ A configuration without `--phase` resets all seven phases. Repeat `--fallback`
 to extend the ordered model chain. Cross-provider fallback requires an explicit
 chain; it is not enabled by merely registering an OpenAI account.
 
-Use `--client claude` or `--client codex` to give a native client its own route
-without changing lifecycle phases or the other client. `--client` and `--phase`
+Use `--client claude`, `--client codex` or `--client opencode` to give a native
+client its own route without changing lifecycle phases or the other clients. `--client` and `--phase`
 are mutually exclusive. When the model in the native client's settings matches
 the primary model in its client route, Dex retains the configured fallbacks. A
 different model selected with `/model` remains a strict one-model override.

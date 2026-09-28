@@ -8,14 +8,14 @@ source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
 usage() {
   cat <<'EOF'
 Usage: dx router <setup|install|start|stop|restart|reload|status|doctor|ui|enable|disable|update>
-       dx router native <enable|disable|status>
+       dx router native <enable|disable|sync|status>
        dx account add [anthropic|openai|openrouter] [--name <name>] [--device] [--yes]
        dx account <show|rename|rank|enable|disable|reauth|remove|doctor> <name>
        dx account rank <name> <rank>
        dx accounts [--live|--watch|--json]
        dx model <list|current|discover <account>>
        dx model add <provider/model> --context <tokens> --tools [--images]
-       dx route configure <provider/model> [--phase <0-6|name>|--client <claude|codex>] [--fallback <model>] [--effort <effort>]
+       dx route configure <provider/model> [--phase <0-6|name>|--client <claude|codex|opencode>] [--fallback <model>] [--effort <effort>]
        dx route <status|use <model|auto>|pin-account <name>|unpin-account> [--session <id>]
        dx route use <provider/model> [--scope <phase|session>]
         dx route policy

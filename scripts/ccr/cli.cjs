@@ -96,7 +96,7 @@ function render(group, action, value, options) {
         route.fallbacks?.length ? route.fallbacks.map(show).join(' -> ') : '-', route.effort || 'default'];
     }));
     out('Client routes through CCR (used when the client is connected to the router):');
-    showTable(['Client', 'Source', 'Model', 'Fallbacks (in order)', 'Effort'], ['claude', 'codex'].map(client => {
+    showTable(['Client', 'Source', 'Model', 'Fallbacks (in order)', 'Effort'], policy.NATIVE_CLIENTS.map(client => {
       // What this client offers in its own picker. Its automatic option is the
       // phase route, shown above, so a client route no longer narrows it.
       const own = policy.clientModels(value, client);
@@ -519,7 +519,7 @@ async function routeCommand(action, args, options) {
       resolved.forEach(id => policy.model(config, id));
       if (options.effort && !['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(options.effort)) throw new Error('Unknown reasoning effort.');
       if (options.client && options.phase !== undefined) throw new Error('Choose either --client or --phase, not both.');
-      if (options.client && !['claude', 'codex'].includes(options.client)) throw new Error('Client must be claude or codex.');
+      if (options.client && !policy.NATIVE_CLIENTS.includes(options.client)) throw new Error('Client must be claude, codex or opencode.');
       const choice = { model, fallbacks, ...(options.effort ? { effort: options.effort } : {}) };
       // A save must prove each profile resolves; the stored choice keeps the
       // profile names so re-pointing one later re-targets the route.
@@ -603,7 +603,7 @@ async function routerCommand(action, options, args = []) {
   if (action === 'enable') { await configure(config => { policy.contextLimit(config); config.enabled = true; }); await adapter.start(); return 'CCR routing enabled.'; }
   if (action === 'disable') {
     const restored = await require('./native.cjs').disable({ router: true });
-    return `CCR routing disabled for new sessions. ${restored} Start a new terminal session and run claude or codex for native access. Running routed sessions can finish. Run dx router enable to resume CCR-backed Dex sessions.`;
+    return `CCR routing disabled for new sessions. ${restored} Start a new terminal session and run claude, codex or opencode for native access. Running routed sessions can finish. Run dx router enable to resume CCR-backed Dex sessions.`;
   }
   if (action === 'stop') return adapter.stop();
   if (action === 'ui') { await adapter.openUI(); return 'Opened the private CCR dashboard. Dex account and routing settings are managed by dx commands.'; }
