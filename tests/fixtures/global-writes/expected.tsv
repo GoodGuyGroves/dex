@@ -1,0 +1,152 @@
+# Known global writes, each keyed to the unit that removes it (issue #1).
+#
+# Columns (tab-separated): unit, steps, change, path, flags, note.
+# - steps: comma-separated step labels (see tests/no-global-writes-test.sh).
+#   The row must match a write in every step it names.
+# - change: added, removed, modified, or * for any.
+# - path: relative to the sandbox HOME. `*` matches within one path segment,
+#   and `{dex-skill}` is one skill directory in $DEX_DIR/skills. `file#key` is
+#   a key of a JSON file (`#key.sub` one level down, `[hash]` one list
+#   element), and `file#table` a TOML [table].
+# - flags: `-`, or a comma list of `fold` (the row also covers everything
+#   beneath the path, used only for inert caches and for files or keys Dex
+#   creates whole), and `darwin` / `linux` (the row applies on that platform
+#   only).
+#
+# tests/no-global-writes-test.sh fails on a write no row matches, and on a row
+# that matches nothing in one of its steps: when a unit removes a write, it
+# deletes that write's rows here in the same change. After unit 05 this file
+# holds only comments.
+#
+# Units: 01 launch-scoped settings (#3), 02 skills as a plugin (#4),
+# 03 per-launch MCP and plugins (#5), 04 no shell rc install (#6),
+# 05 DEX_HOME state root (#7).
+#
+# Steps that write nothing today: tools, reload, status, session (after init
+# has written it all) and status-fresh.
+
+# ── 01: Dex hooks and settings merged into ~/.claude/settings.json ──────────
+# bin/install-settings.sh, reached from dx install, dx init and dx tools
+# (dx_bootstrap_agent_tooling) and dx reload (dx.sh:147).
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.SessionStart	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.UserPromptSubmit	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PreToolUse	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PostToolUse	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.Stop	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.SessionEnd	fold
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PreCompact[*]	-	Dex's group beside the user's
+01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#worktree	fold	worktree.symlinkDirectories
+# .dex-install-state.json has two writers: install-settings.sh records the
+# worktree directories it manages (01), bin/config.sh records the
+# session-messaging answer (05, below).
+01	init,tools-fresh,install,reload-fresh	added	.claude/.dex-install-state.json	-
+01	init,tools-fresh,install,reload-fresh	added	.claude/.dex-install-state.json#worktree	fold
+# Global hooks firing in a session Dex did not launch.
+01	plain,plain-fresh	added	.claude/.dex-phases/guard-heavy-commands.json	fold	guard-handler.py heavy-command cache
+01	plain,plain-fresh	added	.gw-on-session-end	-	session-end.sh ran the repo's on_session_end hook
+01	plain-fresh	added	.claude/.dex-phases	-	guard-handler.py state directory
+01	plain-fresh	added	.claude/.dex-loops	-	hooks/phase-loop.sh:32 mkdir in every Stop hook
+# dx uninstall takes back what install-settings.sh added.
+01	uninstall	removed	.claude/settings.json#hooks.SessionStart	fold
+01	uninstall	removed	.claude/settings.json#hooks.UserPromptSubmit	fold
+01	uninstall	removed	.claude/settings.json#hooks.PreToolUse	fold
+01	uninstall	removed	.claude/settings.json#hooks.PostToolUse	fold
+01	uninstall	removed	.claude/settings.json#hooks.Stop	fold
+01	uninstall	removed	.claude/settings.json#hooks.SessionEnd	fold
+01	uninstall	removed	.claude/settings.json#hooks.PreCompact[*]	-	the user's own group must survive (checked separately)
+01	uninstall	removed	.claude/settings.json#worktree	fold
+01	uninstall	removed	.claude/.dex-install-state.json	fold
+
+# ── 02: Dex skills linked into ~/.claude/skills ──────────────────────────────
+02	init,install	added	.claude/skills/{dex-skill}	-	per-skill links beside the user's own skill
+02	tools-fresh	added	.claude/skills	-	no skills directory yet: one link to $DEX_DIR/skills
+02	uninstall	removed	.claude/skills/{dex-skill}	-
+
+# ── 03: user-scope MCP servers, plugins, marketplaces, Codex config ─────────
+03	init,tools-fresh,install	added	.claude.json#mcpServers.openaiDeveloperDocs	-	lib/agent-tools.sh
+03	init,tools-fresh,install	added	.claude.json#mcpServers.playwright	-	lib/ui-capture.sh, default scope user
+03	init,tools-fresh,install	added	.claude.json#mcpServers.chrome-devtools	-	lib/ui-capture.sh, default scope user
+03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.openaiDeveloperDocs	-	codex mcp add
+03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.playwright	-	codex mcp add
+03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.chrome-devtools	-	codex mcp add
+03	init	added	.claude/settings.json#mcpServers	-	bin/config.sh promotes the repo's .mcp.json servers
+03	init	added	.claude/settings.json#mcpServers.repoServer	-
+03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins	-	claude plugin install/enable --scope user
+03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins.codex@openai-codex	-
+03	init,tools-fresh	added	.claude/settings.json#enabledPlugins.pyright-lsp@claude-plugins-official	-
+03	init,tools-fresh,install	added	.claude/plugins	-
+03	init,tools-fresh,install	added	.claude/plugins/cache	-
+03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex	-
+03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex/codex	fold
+# Language plugins need a repository to detect; dx install runs outside one.
+03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official	-
+03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official/pyright-lsp	fold
+03	init,tools-fresh,install	added	.claude/plugins/installed_plugins.json	fold
+03	init,tools-fresh,install	added	.claude/plugins/known_marketplaces.json	fold
+03	init,tools-fresh,install	added	.claude/plugins/marketplaces	-
+03	init,tools-fresh,install	added	.claude/plugins/marketplaces/claude-plugins-official	fold	marketplace clone
+03	init,tools-fresh,install	added	.claude/plugins/marketplaces/codex-plugin-cc	fold	marketplace clone
+03	init,tools-fresh,install	added	.codex/skills	-	lib/codex.sh skill links
+03	init,tools-fresh,install	added	.codex/skills/{dex-skill}	-
+03	init,tools-fresh,install	added	.codex/RTK.md	-	lib/rtk.sh Codex instructions
+03	init,tools-fresh,install	added	.codex/AGENTS.md	-	lib/rtk.sh RTK.md import
+03	uninstall	removed	.codex/skills/{dex-skill}	-
+03	uninstall	removed	.codex/RTK.md	-
+03	uninstall	removed	.codex/AGENTS.md	-
+
+# ── 04: shell rc and worktree project-data links ────────────────────────────
+04	install	modified	.zshrc	-	bin/install.sh appends the DEX_DIR export and source line
+04	uninstall	modified	.zshrc	-	bin/uninstall.sh removes them again
+04	wt-create	added	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_link_claude_to_worktree
+04	wt-remove	removed	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_unlink_claude_from_worktree
+
+# ── 05: state and tool caches outside DEX_HOME ──────────────────────────────
+05	config	added	.claude/.dex-install-state.json#sessionMessaging	-	bin/config.sh, asked on a terminal only
+05	init,session-fresh,phase-fresh	added	.claude/.dex-phases	-	DX_STATE_DIR default
+05	init,session-fresh,phase-fresh	added	.claude/.dex-loops	-	DX_LOOP_DIR default
+05	init,sync	added	.claude/.dex-phases/init-*.run-id	-	run-id pointer
+05	sync	added	.claude/.dex-phases/sync-*.run-id	-	run-id pointer
+05	init	added	.dex	-	DX_RUN_ROOT default (~/.dex/runs)
+05	init	added	.dex/runs	-
+05	init,sync	added	.dex/runs/run_*	-	one run journal
+05	init,sync	added	.dex/runs/run_*/.run-started-emitted	-
+05	init,sync	added	.dex/runs/run_*/.sequence	-
+05	init,sync	added	.dex/runs/run_*/events.jsonl	-
+05	init,sync	added	.dex/runs/run_*/logs.txt	-
+05	init,sync	added	.dex/runs/run_*/spec.json	fold
+05	init,sync	added	.dex/runs/run_*/summary.json	fold
+05	init,sync	added	.dex/runs/run_*/artifacts	-
+05	init,sync	added	.dex/runs/run_*/artifacts/manifest.json	fold
+05	init,sync	added	.dex/runs/run_*/artifacts/run-summary.md	-
+05	phase,phase-fresh	added	.claude/.dex-loops/empty-mcp.json	fold	minimal-phase MCP config
+05	phase,phase-fresh	added	.claude/.dex-loops/*.completion-lock	-
+05	phase,phase-fresh	added	.claude/.dex-phases/.runtime-owners	-
+05	phase,phase-fresh	added	.claude/.dex-phases/*.runtime	-
+05	phase,phase-fresh	added	.claude/.dex-phases/*.runtime-lock	-
+05	wt-create	added	.claude/.dex-loops/.session-claims	-	startup claim
+05	wt-create	added	.claude/.dex-phases/*.branch	-
+05	wt-create	added	.claude/.dex-phases/*.meta	-
+05	wt-remove	added	.claude/.dex-loops/*.completion-lock	-
+05	wt-remove	removed	.claude/.dex-phases/*.branch	-
+05	wt-remove	removed	.claude/.dex-phases/*.meta	-
+05	maintain	added	.claude/.dex-maintenance	-	DX_MAINTENANCE_DIR default
+05	maintain	added	.claude/.dex-maintenance/*.last-success	-
+05	maintain	added	.claude/.dex-artifacts	-	DX_ARTIFACT_DIR default
+05	maintain	added	.claude/.dex-artifacts/maintenance	-
+05	maintain	added	.claude/.dex-artifacts/maintenance/maintain-*	-
+05	maintain	added	.claude/.dex-artifacts/maintenance/maintain-*/report.md	-
+05	provider	added	.dex/providers.json	fold	lib/provider.sh:9
+05	setup	added	.dex/setup.json	fold	bin/setup.sh
+05	init,tools-fresh,install	added	.claude/.dex-tools	-	DX_TOOL_DIR default
+05	init,tools-fresh,install	added	.claude/.dex-tools/rtk	-
+05	init,tools-fresh,install	added	.claude/.dex-tools/rtk/bin	-
+05	init,tools-fresh,install	added	.claude/.dex-tools/rtk/bin/rtk	-
+05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture	-
+05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/package.json	fold
+05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/node_modules	fold	npm package tree
+05	init,tools-fresh,install	added	.local/bin/rtk	-	~/.local/bin/rtk link
+05	uninstall	removed	.local/bin/rtk	-
+05	init,tools-fresh,install	added	.npm/_cacache	fold	npm cache
+05	init,tools-fresh,install	added	.npm/_npx	fold	npx cache
+05	init,tools-fresh,install	added	Library/Caches/ms-playwright	fold,darwin	Playwright browser cache
+05	init,tools-fresh,install	added	.cache/ms-playwright	fold,linux	Playwright browser cache

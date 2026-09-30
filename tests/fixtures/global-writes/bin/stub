@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""Multi-call stand-in for claude, codex, gh, npm, npx, node, curl and afplay.
+
+tests/no-global-writes-test.sh links each name to this file. Every call is
+appended to $GW_STUB_DIR/calls.jsonl. Nothing touches the network.
+
+The stubs reproduce the side effects of the real commands Dex runs, not just
+their output: `claude mcp add --scope user` edits ~/.claude.json, `claude
+plugin install` edits ~/.claude/plugins and enabledPlugins, `codex mcp add`
+edits $CODEX_HOME/config.toml, npm and npx leave cache and browser markers.
+A stub that only logged would hide those registrations from the snapshot.
+`node` answers the version probe itself and execs $GW_REAL_NODE for the rest.
+The real CLI's own bookkeeping (startup counters, backups, session files) is
+not reproduced: that is Claude Code's state, not a write Dex makes.
+
+An interactive `claude` launch records the configuration it would have loaded
+(tests/global_writes.py effective_config) in $GW_STUB_DIR/launches.jsonl.
+With GW_FIRE_HOOKS=1 it also runs the hooks it finds, the way a plain session
+the user started would.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", ".."))
+import global_writes  # noqa: E402  (tests/global_writes.py)
+
+NAME = os.path.basename(sys.argv[0])
+ARGS = sys.argv[1:]
+HOME = os.environ.get("HOME", "")
+STUB_DIR = os.environ.get("GW_STUB_DIR", "")
+
+
+def log(filename, record):
+    if not STUB_DIR:
+        return
+    with open(os.path.join(STUB_DIR, filename), "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def load(path):
+    return global_writes._load_json(path)
+
+
+def save(path, value):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def touch(path, text="stub\n"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+# ── claude ────────────────────────────────────────────────────────────────
+
+CLAUDE_HELP = """Usage: claude [options] [command] [prompt]
+  -p, --print  --settings <file-or-json>  --plugin-dir <path>  --mcp-config <configs...>
+  --strict-mcp-config  --dangerously-skip-permissions  --permission-mode <mode>
+  --model <model>  --effort <level>  --session-id <uuid>  --resume  -n, --name <name>
+  --output-format <format>  --verbose  --include-partial-messages  --append-system-prompt <prompt>
+"""
+
+
+def claude_dir():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+
+
+def claude_state_file():
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        return os.path.join(os.environ["CLAUDE_CONFIG_DIR"], ".claude.json")
+    return os.path.join(HOME, ".claude.json")
+
+
+def take_scope(args, default):
+    scope = default
+    rest = []
+    index = 0
+    while index < len(args):
+        if args[index] in ("--scope", "-s") and index + 1 < len(args):
+            scope = args[index + 1]
+            index += 2
+            continue
+        if args[index] in ("--transport", "-t") and index + 1 < len(args):
+            index += 2
+            continue
+        rest.append(args[index])
+        index += 1
+    return scope, rest
+
+
+def mcp_tables(scope):
+    """(file, key path) holding one scope's servers."""
+    root = global_writes._git_root(os.getcwd())
+    if scope == "project":
+        return os.path.join(os.getcwd(), ".mcp.json"), ["mcpServers"]
+    if scope == "local":
+        return claude_state_file(), ["projects", root, "mcpServers"]
+    return claude_state_file(), ["mcpServers"]
+
+
+def mcp_servers(scope, create=False):
+    path, keys = mcp_tables(scope)
+    data = load(path)
+    node = data
+    for key in keys:
+        if key not in node or not isinstance(node[key], dict):
+            if not create:
+                return path, data, {}
+            node[key] = {}
+        node = node[key]
+    return path, data, node
+
+
+def claude_mcp(args):
+    sub, rest = (args[0], args[1:]) if args else ("", [])
+    if sub == "get" and rest:
+        for scope in ("local", "project", "user"):
+            if rest[0] in mcp_servers(scope)[2]:
+                print("%s:\n  Scope: %s" % (rest[0], scope))
+                return 0
+        print("No MCP server found with name: %s" % rest[0], file=sys.stderr)
+        return 1
+    if sub == "list":
+        for scope in ("local", "project", "user"):
+            for name in mcp_servers(scope)[2]:
+                print("%s: (%s)" % (name, scope))
+        return 0
+    if sub == "add":
+        scope, rest = take_scope(rest, "local")
+        command = rest[rest.index("--") + 1:] if "--" in rest else []
+        positional = rest[:rest.index("--")] if "--" in rest else rest
+        name = positional[0]
+        entry = {"command": command[0], "args": command[1:]} if command else {"type": "http", "url": positional[1]}
+        path, data, servers = mcp_servers(scope, create=True)
+        servers[name] = entry
+        save(path, data)
+        return 0
+    if sub == "remove" and rest:
+        scope, rest = take_scope(rest, "")
+        for candidate in ([scope] if scope else ["local", "project", "user"]):
+            path, data, servers = mcp_servers(candidate)
+            if rest[0] in servers:
+                del servers[rest[0]]
+                save(path, data)
+                return 0
+        return 1
+    return 0
+
+
+def scope_settings(scope):
+    """The settings file a plugin or marketplace registration of this scope edits."""
+    root = global_writes._git_root(os.getcwd())
+    return {"project": os.path.join(root, ".claude", "settings.json"),
+            "local": os.path.join(root, ".claude", "settings.local.json")}.get(
+                scope, os.path.join(claude_dir(), "settings.json"))
+
+
+def claude_plugin(args):
+    # The clone and cache live under ~/.claude/plugins whatever the scope; the
+    # registration goes to the settings file of the scope asked for.
+    plugins = os.path.join(claude_dir(), "plugins")
+    known = os.path.join(plugins, "known_marketplaces.json")
+    installed = os.path.join(plugins, "installed_plugins.json")
+    scope, rest = take_scope(args, "user")
+    settings = scope_settings(scope)
+    if rest[:2] == ["marketplace", "list"]:
+        names = set(load(known))
+        for candidate in ("project", "local"):
+            names.update(load(scope_settings(candidate)).get("extraKnownMarketplaces") or {})
+        for name in sorted(names):
+            print("  ❯ %s" % name)
+        return 0
+    if rest[:2] == ["marketplace", "add"] and len(rest) > 2:
+        name = os.path.basename(rest[2])
+        source = {"source": {"source": "github", "repo": rest[2]}}
+        if scope == "user":
+            data = load(known)
+            data[name] = source
+            save(known, data)
+        else:
+            data = load(settings)
+            data.setdefault("extraKnownMarketplaces", {})[name] = source
+            save(settings, data)
+        touch(os.path.join(plugins, "marketplaces", name, ".claude-plugin", "marketplace.json"), "{}\n")
+        return 0
+    if rest[:2] == ["marketplace", "update"]:
+        return 0
+    if rest[:1] == ["list"]:
+        enabled = {}
+        for layer in global_writes.settings_layers([], dict(os.environ), os.getcwd()):
+            enabled.update(layer.get("enabledPlugins") or {})
+        print(json.dumps([{"id": ref, "enabled": bool(enabled.get(ref))}
+                          for ref in (load(installed).get("plugins") or {})]))
+        return 0
+    if rest[:1] in (["install"], ["enable"]) and len(rest) > 1:
+        ref = rest[1]
+        if rest[0] == "install":
+            data = load(installed)
+            data.setdefault("version", 2)
+            data.setdefault("plugins", {})[ref] = [{"scope": scope}]
+            save(installed, data)
+            plugin, _, marketplace = ref.partition("@")
+            touch(os.path.join(plugins, "cache", marketplace, plugin, "plugin.json"), "{}\n")
+        data = load(settings)
+        data.setdefault("enabledPlugins", {})[ref] = True
+        save(settings, data)
+        return 0
+    return 0
+
+
+def fire_hooks(config_argv):
+    """Run the hooks a plain session would, with Claude Code's stdin JSON."""
+    session = "plain-stub-session"
+    cwd = os.getcwd()
+    base = {"session_id": session, "transcript_path": os.path.join(cwd, ".stub-transcript.jsonl"),
+            "cwd": cwd}
+    events = [
+        ("SessionStart", "startup", {"source": "startup"}),
+        ("UserPromptSubmit", "", {"prompt": "list the files"}),
+        ("PreToolUse", "Bash", {"tool_name": "Bash", "tool_input": {"command": "make test"}}),
+        ("PreToolUse", "Write", {"tool_name": "Write",
+                                 "tool_input": {"file_path": os.path.join(cwd, "notes.txt"), "content": "x"}}),
+        ("PostToolUse", "Bash", {"tool_name": "Bash",
+                                 "tool_input": {"command": "git commit -m 'wip stuff'"},
+                                 "tool_response": {"stdout": "", "stderr": "", "interrupted": False}}),
+        ("Stop", "", {"stop_hook_active": False}),
+        ("SessionEnd", "", {"reason": "other"}),
+    ]
+    layers = global_writes.settings_layers(config_argv, dict(os.environ), cwd)
+    for event, target, extra in events:
+        for layer in layers:
+            for group in (layer.get("hooks") or {}).get(event) or []:
+                # Claude Code: an empty matcher or `*` matches everything,
+                # anything else is a regex over the whole tool name (or the
+                # SessionStart source). Events without a target ignore it.
+                matcher = group.get("matcher", "") or ""
+                if target and matcher not in ("", "*"):
+                    try:
+                        if not re.fullmatch(matcher, target):
+                            continue
+                    except re.error:
+                        continue
+                for hook in group.get("hooks") or []:
+                    command = hook.get("command", "")
+                    payload = dict(base, hook_event_name=event, **extra)
+                    try:
+                        result = subprocess.run(["/bin/sh", "-c", command], input=json.dumps(payload),
+                                                capture_output=True, text=True, cwd=cwd,
+                                                timeout=min(int(hook.get("timeout", 60)), 60))
+                        code, out = result.returncode, (result.stdout + result.stderr)[-400:]
+                    except subprocess.TimeoutExpired:
+                        code, out = "timeout", ""
+                    log("hooks.jsonl", {"step": os.environ.get("GW_STEP", ""), "event": event,
+                                        "command": command, "exit": code, "output": out})
+
+
+def claude_main():
+    if ARGS[:1] in (["--help"], ["-h"]):
+        print(CLAUDE_HELP)
+        return 0
+    if ARGS[:1] in (["--version"], ["-v"]):
+        print("2.1.0 (Claude Code)")
+        return 0
+    if ARGS[:1] == ["mcp"]:
+        return claude_mcp(ARGS[1:])
+    if ARGS[:1] == ["plugin"]:
+        return claude_plugin(ARGS[1:])
+    config = global_writes.effective_config(ARGS, dict(os.environ), os.getcwd())
+    log("launches.jsonl", {"step": os.environ.get("GW_STEP", ""), "print": "-p" in ARGS,
+                           "home": HOME, "dex_dir": os.environ.get("GW_DEX_DIR", ""), "config": config})
+    if "-p" in ARGS or "--print" in ARGS:
+        # One-shot analysis (dx init, dx sync): write what init's check needs.
+        dex_md = os.path.join(global_writes._git_root(os.getcwd()), ".dex", "dex.md")
+        if os.path.isdir(os.path.dirname(dex_md)) and "## Tech Stack" not in open(dex_md).read():
+            with open(dex_md, "a", encoding="utf-8") as handle:
+                handle.write("\n## Tech Stack\nPython\n\n## Quality Gates\nmake test\n\n"
+                             "## Project Structure\nmain.py\n")
+        print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "done"}]}}))
+        return 0
+    if os.environ.get("GW_FIRE_HOOKS") == "1":
+        fire_hooks(ARGS)
+    return 0
+
+
+# ── codex ─────────────────────────────────────────────────────────────────
+
+def codex_config():
+    return os.path.join(os.environ.get("CODEX_HOME") or os.path.join(HOME, ".codex"), "config.toml")
+
+
+def codex_tables():
+    try:
+        with open(codex_config(), encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
+def codex_main():
+    flags = "--dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust " \
+            "--ignore-user-config --sandbox --ephemeral --last -c"
+    if ARGS[:1] == ["--help"]:
+        print("Usage: codex [OPTIONS] [PROMPT]\n  " + flags)
+        return 0
+    if "--help" in ARGS:
+        print("Usage: codex %s [OPTIONS]\n  %s" % (" ".join(a for a in ARGS if a != "--help"), flags))
+        return 0
+    if ARGS[:1] == ["--version"]:
+        print("codex-cli 0.200.0")
+        return 0
+    if ARGS[:2] == ["features", "list"]:
+        print("hooks                  stable             true")
+        return 0
+    if ARGS[:2] == ["login", "status"]:
+        print("Logged in using ChatGPT")
+        return 0
+    if ARGS[:2] == ["mcp", "get"] and len(ARGS) > 2:
+        return 0 if ("[mcp_servers.%s]" % ARGS[2]) in codex_tables() else 1
+    if ARGS[:2] == ["mcp", "add"] and len(ARGS) > 2:
+        name, rest = ARGS[2], ARGS[3:]
+        if "--url" in rest:
+            body = 'url = "%s"\n' % rest[rest.index("--url") + 1]
+        else:
+            command = rest[rest.index("--") + 1:] if "--" in rest else rest
+            body = "command = %s\nargs = %s\n" % (json.dumps(command[0]), json.dumps(command[1:]))
+        os.makedirs(os.path.dirname(codex_config()), exist_ok=True)
+        with open(codex_config(), "a", encoding="utf-8") as handle:
+            handle.write("\n[mcp_servers.%s]\n%s" % (name, body))
+        return 0
+    if ARGS[:2] == ["mcp", "remove"] and len(ARGS) > 2:
+        kept, skipping = [], False
+        for line in codex_tables().splitlines(True):
+            if line.startswith("["):
+                skipping = line.strip() == "[mcp_servers.%s]" % ARGS[2]
+            if not skipping:
+                kept.append(line)
+        with open(codex_config(), "w", encoding="utf-8") as handle:
+            handle.write("".join(kept))
+        return 0
+    log("launches-codex.jsonl", {"step": os.environ.get("GW_STEP", ""), "argv": ARGS})
+    return 0
+
+
+# ── the rest ──────────────────────────────────────────────────────────────
+
+def gh_main():
+    joined = " ".join(ARGS)
+    if joined == "--version":
+        print("gh version 2.99.0 (stub)")
+    elif joined == "pr edit --help":
+        print("      --attach file   Attach an image or video file")
+    elif ARGS[:2] == ["pr", "view"]:
+        print("17")
+    elif ARGS[:2] == ["api", "user"]:
+        print("dex-test")
+    return 0
+
+
+def npm_cache():
+    return os.environ.get("npm_config_cache") or os.path.join(HOME, ".npm")
+
+
+def npm_main():
+    if ARGS[:1] in (["--version"], ["-v"]):
+        print("10.0.0")
+        return 0
+    if ARGS[:1] in (["install"], ["i"]):
+        for spec in ARGS[1:]:
+            if spec.startswith("-"):
+                continue
+            scoped = int(spec.startswith("@"))
+            name, _, version = spec[scoped:].partition("@")
+            name = "@" * scoped + name
+            package = os.path.join(os.getcwd(), "node_modules", name)
+            save(os.path.join(package, "package.json"), {"name": name, "version": version})
+            touch(os.path.join(package, "index.js"), "module.exports = {};\n")
+            if name == "playwright":
+                binary = os.path.join(os.getcwd(), "node_modules", ".bin", "playwright")
+                touch(binary, "#!/bin/sh\nexit 0\n")
+                os.chmod(binary, 0o755)
+        touch(os.path.join(npm_cache(), "_cacache", "index-v5", "stub"))
+    return 0
+
+
+def npx_main():
+    if ARGS[:3] == ["playwright", "install", "chromium"]:
+        browsers = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        if not browsers:
+            cache = (os.path.join(HOME, "Library", "Caches") if sys.platform == "darwin"
+                     else os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"))
+            browsers = os.path.join(cache, "ms-playwright")
+        touch(os.path.join(browsers, "chromium-stub", "INSTALLATION_COMPLETE"))
+    touch(os.path.join(npm_cache(), "_npx", "stub"))
+    return 0
+
+
+def curl_main():
+    """Serve the RTK release fixture; every other URL fails like no network."""
+    fixtures = os.environ.get("GW_FIXTURES", "")
+    url = next((arg for arg in ARGS if arg.startswith(("http://", "https://"))), "")
+    if "-sI" in ARGS and url.endswith("/releases/latest"):
+        print("HTTP/2 302\r\nlocation: %s\r\n" % url.replace("/latest", "/tag/v-stub.1"))
+        return 0
+    if "-o" in ARGS and url:
+        source = os.path.join(fixtures, os.path.basename(url))
+        if os.path.isfile(source):
+            shutil.copyfile(source, ARGS[ARGS.index("-o") + 1])
+            return 0
+    return 22
+
+
+def main():
+    log("calls.jsonl", {"tool": NAME, "argv": ARGS, "cwd": os.getcwd(),
+                        "step": os.environ.get("GW_STEP", "")})
+    handlers = {"claude": claude_main, "codex": codex_main, "gh": gh_main, "npm": npm_main,
+                "npx": npx_main, "curl": curl_main, "node": node_main}
+    return handlers.get(NAME, lambda: 0)()
+
+
+def node_main():
+    """Answer the version probe; hand everything else, Dex's own scripts
+    included, to the real node so its writes land in the snapshot."""
+    if ARGS[:1] in (["--version"], ["-v"]):
+        print("v22.0.0")
+        return 0
+    real = os.environ.get("GW_REAL_NODE", "")
+    if not real:
+        return 0
+    os.execv(real, [real] + ARGS)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -237,6 +237,20 @@ else:
         assert "fixture ready" in result.stdout, result
         assert_child_stopped(report)
 
+        # --grace waits for the group, and says so when it had to stop it.
+        report = directory / "grace"
+        report.mkdir()
+        result = subprocess.run([sys.executable, str(supervisor), "--grace", "0.3", "10",
+                                 sys.executable, str(fixture), str(report), "exit"],
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == timeout_runner.GRACE_EXPIRED, result
+        assert "still running 0.3s after the command" in result.stdout, result
+        assert_child_stopped(report)
+        result = subprocess.run([sys.executable, str(supervisor), "--grace", "5", "10",
+                                 "sh", "-c", "sleep 0.2 & exit 37"],
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == 37, result
+
         for stop_signal in (signal.SIGTERM, signal.SIGINT):
             report = directory / f"signal-{stop_signal}"
             report.mkdir()

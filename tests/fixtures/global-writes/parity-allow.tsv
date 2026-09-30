@@ -1,0 +1,40 @@
+# Intended differences between an installed launch and an isolated one.
+#
+# tests/global_writes.py parity compares the configuration each stub `claude`
+# launch received in the installed run (after `dx install`) and the isolated
+# run, step by step. A difference passes only when a row here matches it.
+#
+# Columns (tab-separated): step, field, side, item, reason.
+# step and item are globs where `*` matches anything; field is one of hooks,
+# skills, plugins, mcp, settings, env; side is installed-only, isolated-only
+# or *. Items are normalised: the Dex checkout reads $DEX_DIR and the sandbox
+# home ~. env and settings items are NAME=value.
+#
+# A row nothing matches is not an error: the plain-session rows describe the
+# end state of the epic (#1) before the units that produce it land.
+
+# The isolated run is the one launched with DEX_HOME.
+*	env	isolated-only	DEX_HOME=*	isolated launches carry DEX_HOME
+
+# Values minted per invocation or measured from the host. The runs share one
+# path, so everything derived from the repository path already agrees.
+*	env	*	DEX_RUN_ID=run_*	run id: timestamp, pid, random
+*	env	*	DEX_SESSION_ID=*-branch-main-*-*-*-*	one-shot session id: pid, epoch, random
+*	env	*	DX_TIMEOUT_PROCESS_TOKEN=*	per-command process token
+*	env	*	DX_HOST_LOAD1=*	host load average
+
+# Isolated mode must not reach sessions Dex did not launch: a plain `claude`
+# keeps the user's own configuration and loses only Dex's.
+plain	hooks	installed-only	*$DEX_DIR/hooks/*	unit 01: Dex hooks only in Dex launches
+plain	settings	installed-only	worktree=*	unit 01
+plain	skills	installed-only	dx*	unit 02: Dex skills only in Dex launches
+plain	skills	installed-only	dex	unit 02
+plain	skills	installed-only	humanizer	unit 02
+plain	plugins	installed-only	*@openai-codex	unit 03: Dex plugins only in Dex launches
+plain	plugins	installed-only	*@claude-plugins-official	unit 03
+plain	settings	installed-only	enabledPlugins=*	unit 03
+plain	settings	installed-only	mcpServers=*	unit 03: promoted .mcp.json servers
+plain	mcp	installed-only	user:openaiDeveloperDocs	unit 03
+plain	mcp	installed-only	user:playwright	unit 03
+plain	mcp	installed-only	user:chrome-devtools	unit 03
+plain	mcp	installed-only	settings:*	unit 03: promoted .mcp.json servers
