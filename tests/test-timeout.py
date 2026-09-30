@@ -38,8 +38,16 @@ def stop_group(child):
     signal_group(child, signal.SIGKILL)
 
 
+# --grace ran out with processes left in the group: distinct from the command's
+# own status and from the timeout's 124.
+GRACE_EXPIRED = 125
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--grace", type=float, default=0,
+                        help="after the command exits, wait this long for the rest of its "
+                             "process group to finish before stopping it")
     parser.add_argument("seconds", type=int)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -73,6 +81,15 @@ def main():
                 child.wait(timeout=min(remaining, 0.1))
             except subprocess.TimeoutExpired:
                 pass
+        if interrupted:
+            return 128 + interrupted
+        grace_end = time.monotonic() + args.grace if args.grace else 0
+        while args.grace and signal_group(child, 0) and not interrupted:
+            if time.monotonic() >= grace_end:
+                print(f"process group still running {args.grace:g}s after the command; stopping it",
+                      flush=True)
+                return GRACE_EXPIRED
+            time.sleep(0.05)
         if interrupted:
             return 128 + interrupted
         return child.returncode if child.returncode >= 0 else 128 - child.returncode
