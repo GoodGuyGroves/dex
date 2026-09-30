@@ -253,6 +253,64 @@ if command -v zsh >/dev/null 2>&1; then
   [[ ! -d "$ZSH_REPO/.dex/worktrees/task-stale" ]] || assert_at $LINENO
   # Creation runs the create hook once, not once per link pass.
   assert_eq 1 "$(marker_count "create name=ticket-501")" "after_create runs once"
+
+  # The same removal typed at the user's prompt. An interactive zsh has job
+  # control, so every `&` job it starts gets a process group of its own, and
+  # the terminal treats that group as background: the first thing the timeout
+  # supervisor or the hook did to the terminal stopped it with SIGTTOU, and
+  # dxrm waited on the stopped job until the user gave up. This hook changes
+  # the terminal's modes the way a progress display does.
+  TTY_REPO="$TMP_DIR/tty-repo"
+  make_repo "$TTY_REPO" \
+    'before_remove: stty -echo < /dev/tty && stty echo < /dev/tty && printf "%s\n" "tty remove $DX_WORKTREE_NAME" >> "$MARKER_FILE"'
+  git -C "$TTY_REPO" worktree add -q --no-track \
+    "$TTY_REPO/.dex/worktrees/ticket-502" -b worktree-ticket-502 main
+  export TTY_REPO
+  : > "$MARKER_FILE"
+  python3 - > "$TMP_DIR/tty.out" 2>&1 <<'PY' || {
+import errno, os, pty, select, signal, time
+
+command = '''
+source "$DEX_DIR/dx.sh"
+cd "$TTY_REPO"
+print -r -- "monitor:$options[monitor]"
+dxrm 502
+print -r -- "dxrm-status:$?"
+'''
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("zsh", ["zsh", "-fic", command])
+output, deadline = b"", time.monotonic() + 60
+while time.monotonic() < deadline:
+    if not select.select([fd], [], [], 0.2)[0]:
+        continue
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError as error:
+        if error.errno != errno.EIO:
+            raise
+        break
+    if not chunk:
+        break
+    output += chunk
+else:
+    os.killpg(pid, signal.SIGKILL)
+print(output.decode(errors="replace"))
+os.waitpid(pid, 0)
+PY
+    cat "$TMP_DIR/tty.out" >&2
+    fail "dxrm from an interactive zsh did not run"
+  }
+  assert_contains "monitor:on" "$TMP_DIR/tty.out"
+  assert_contains "dxrm-status:0" "$TMP_DIR/tty.out"
+  assert_not_contains "suspended" "$TMP_DIR/tty.out"
+  # A job notice means the supervisor was a job of the user's shell again.
+  if grep -qE '^\[[0-9]+\]' "$TMP_DIR/tty.out"; then
+    cat "$TMP_DIR/tty.out" >&2
+    assert_at $LINENO
+  fi
+  assert_contains "tty remove ticket-502" "$MARKER_FILE"
+  [[ ! -d "$TTY_REPO/.dex/worktrees/ticket-502" ]] || assert_at $LINENO
 else
   printf 'skip: zsh is not installed, so the dx.sh create and removal paths are not exercised\n'
 fi
