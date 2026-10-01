@@ -219,7 +219,11 @@ reviewer_row() {
   if [[ -z "$row_wait" && -n "$prior" ]]; then
     row_wait="${prior%%$'\t'*}"
   fi
-  if [[ -z "$explicit_adapter" && -n "$prior" && "${prior#*$'\t'}" != "generic" ]]; then
+  # A prior adapter stays. The exception is `generic` on a row that did not
+  # wait, which is also what a row without the columns parses to; a waited row
+  # that says `generic` chose it.
+  if [[ -z "$explicit_adapter" && -n "$prior" ]] \
+    && [[ "${prior#*$'\t'}" != "generic" || "${prior%%$'\t'*}" == "yes" ]]; then
     explicit_adapter="${prior#*$'\t'}"
   fi
   # A waited Greptile or Copilot row with no adapter gets the bot's adapter, as

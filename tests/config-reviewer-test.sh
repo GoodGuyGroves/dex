@@ -67,4 +67,22 @@ if grep -q 'valid-user' "$TMP_DIR/repo/.dex/dex.md"; then
   exit 1
 fi
 
+# An explicit `generic` on a waited row survives a rerun too, even for a bot
+# handle whose blank cell would infer the bot's adapter.
+sed -i.bak \
+  -e 's/^| @greptileai | mention | yes | greptile |/| @greptileai | mention | yes | generic |/' \
+  -e 's/^| Copilot | request | no | copilot |/| Copilot | request | yes | generic |/' \
+  "$TMP_DIR/repo/.dex/dex.md"
+rm -f "$TMP_DIR/repo/.dex/dex.md.bak"
+(
+  cd "$TMP_DIR/repo"
+  printf '%s\n' \
+    3 n n n n n n y \
+    '@greptileai mention' \
+    '' \
+    | PATH=/usr/bin:/bin bash "$ROOT/bin/config.sh"
+) > "$TMP_DIR/config3.out" 2>&1
+grep -q '^| Copilot | request | yes | generic | GitHub Copilot review |$' "$TMP_DIR/repo/.dex/dex.md"
+grep -q '^| @greptileai | mention | yes | generic | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
+
 printf 'config reviewer tests passed\n'
