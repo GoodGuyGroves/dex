@@ -465,7 +465,7 @@ assert_eq "3" "$(dx_review_findings_ledger_count "$LEDGER_SESSION" checked)" \
 dx_review_findings_ledger_seed "$LEDGER_SESSION" "correctness" || assert_at $LINENO
 assert_eq "3" "$(dx_review_findings_ledger_count "$LEDGER_SESSION")" "seeding twice adds nothing"
 assert_contains '"lens": "coherence"' "$LEDGER_FILE"
-assert_eq "600" "$(printf '%o\n' "$(( 0$(stat -f '%Lp' "$LEDGER_FILE" 2>/dev/null || stat -c '%a' "$LEDGER_FILE") ))")" \
+assert_eq "600" "$(printf '%o\n' "$(( 0$(stat -c '%a' "$LEDGER_FILE" 2>/dev/null || stat -f '%Lp' "$LEDGER_FILE") ))")" \
   "the ledger is private to its owner"
 
 # A wave appends its own rows; the loop must read them back.
