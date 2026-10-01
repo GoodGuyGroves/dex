@@ -136,6 +136,7 @@ the gate map.
 | `CODEX_HOME` | Codex config root used for Dex skill links | `~/.codex` |
 | `DX_AGENT` / `DX_AGENT_OVERRIDE` | Agent override (`claude` or `codex`) | profile/default |
 | `DX_MODEL` / `DX_MODEL_OVERRIDE` | Model override for the selected agent | profile/default |
+| `DEX_SESSION_TITLE` | Title for a new lifecycle's Claude session, named `<ticket> <title>`; `dx --title` and a run spec's `source.title` set it | unset (session named after the workspace) |
 | `DX_PROVIDER_PROFILE` | Provider profile override (`claude-subscription`, `codex-subscription`, or custom) | config/default |
 | `DX_CLAUDE_MODEL` | Override Claude Code model passed to `--model` | profile model, else session default |
 | `DX_PLAN_MODEL` | Override Phase 1/plan model | `DX_CLAUDE_MODEL`, profile plan model, else session default |
