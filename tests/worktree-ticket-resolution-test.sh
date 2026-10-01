@@ -217,7 +217,10 @@ zsh -fc '
 # ticket's workspace.
 
 export PREFIX_REPO="$TMP_DIR/prefix-repo"
-mkdir -p "$PREFIX_REPO/.dex"
+export PREFIX_OUT="$TMP_DIR/prefix-out"
+mkdir -p "$PREFIX_REPO/.dex" "$PREFIX_OUT"
+# Real projects ignore .dex/worktrees; in-place setup refuses a dirty checkout.
+printf '.dex/worktrees/\n' > "$PREFIX_REPO/.gitignore"
 git -C "$PREFIX_REPO" init -q
 git -C "$PREFIX_REPO" config user.email dex@example.test
 git -C "$PREFIX_REPO" config user.name "Dex Test"
@@ -231,7 +234,7 @@ ticket_prefixes: [ENG, OPS]
 ```
 DEXMD
 printf 'base\n' > "$PREFIX_REPO/file.txt"
-git -C "$PREFIX_REPO" add file.txt .dex/dex.md
+git -C "$PREFIX_REPO" add file.txt .dex/dex.md .gitignore
 git -C "$PREFIX_REPO" commit -q -m "test: initialize prefixed repo"
 git -C "$PREFIX_REPO" branch -m main
 
@@ -280,10 +283,10 @@ zsh -fc '
   # A bare number is its own ticket. Its records and workspaces are separate
   # from ENG-1234, and Dex names the prefixed ones instead of picking one.
   [[ "$(dx_meta_find_workspace_by_ticket 1234 2>/dev/null)" == "" ]] || assert_at $LINENO
-  __dx_setup_worktree 1234 > "$PREFIX_REPO/bare-setup.out" 2>&1
+  __dx_setup_worktree 1234 > "$PREFIX_OUT/bare-setup.out" 2>&1
   [[ "$_dx_wt_name" == ticket-1234 ]] || assert_at $LINENO
   [[ "$(dx_meta_read "$_dx_session_id" ticket_id)" == 1234 ]] || assert_at $LINENO
-  grep -Fq "different ticket from ENG-1234" "$PREFIX_REPO/bare-setup.out"
+  grep -Fq "different ticket from ENG-1234" "$PREFIX_OUT/bare-setup.out"
   __dx_startup_claim_release
   dxrm 1234 > /dev/null
   [[ -d "$wt/ticket-eng-1234" ]] || assert_at $LINENO
@@ -294,9 +297,9 @@ zsh -fc '
   legacy_session=$(dx_session_id ticket-77)
   dx_meta_write "$legacy_session" "ticket_number=77" "wt_name=ticket-77" \
     "wt_dir=$wt/ticket-77" "workspace_mode=worktree"
-  __dx_setup_worktree ENG-77 > "$PREFIX_REPO/legacy.out" 2>&1
+  __dx_setup_worktree ENG-77 > "$PREFIX_OUT/legacy.out" 2>&1
   [[ "$_dx_wt_name" == ticket-77 && "$_dx_session_id" == "$legacy_session" ]] || assert_at $LINENO
-  grep -Fq "Using ticket-77 for ENG-77" "$PREFIX_REPO/legacy.out"
+  grep -Fq "Using ticket-77 for ENG-77" "$PREFIX_OUT/legacy.out"
   [[ ! -e "$wt/ticket-eng-77" ]] || assert_at $LINENO
   [[ "$(dx_meta_read "$legacy_session" ticket_id)" == ENG-77 ]] || assert_at $LINENO
   __dx_startup_claim_release
@@ -321,13 +324,18 @@ zsh -fc '
 
   # In-place mode and dx run resolve through the same names: a prefixed
   # in-place session, and a legacy in-place session that a prefixed ID resumes.
-  __dx_resolve_workspace_name ENG-55 in-place "$PREFIX_REPO"
+  __dx_setup_in_place ENG-55 > /dev/null
   [[ "$_dx_wt_name" == ticket-eng-55 ]] || assert_at $LINENO
+  [[ "$(git symbolic-ref --quiet --short HEAD)" == worktree-ticket-eng-55 ]] || assert_at $LINENO
+  [[ "$(dx_meta_read "$_dx_session_id" ticket_id)" == ENG-55 ]] || assert_at $LINENO
+  [[ "$(dx_meta_read "$_dx_session_id" ticket_number)" == 55 ]] || assert_at $LINENO
+  __dx_startup_claim_release
+  git switch -q main
   legacy_inplace=$(__dx_session_id_for_workspace in-place ticket-56)
   dx_lifecycle_atomic_write "$(dx_state_file "$legacy_inplace")" 2
-  __dx_resolve_workspace_name OPS-56 in-place "$PREFIX_REPO" > "$PREFIX_REPO/inplace.out"
+  __dx_resolve_workspace_name OPS-56 in-place "$PREFIX_REPO" > "$PREFIX_OUT/inplace.out"
   [[ "$_dx_wt_name" == ticket-56 ]] || assert_at $LINENO
-  grep -Fq "Using ticket-56 for OPS-56" "$PREFIX_REPO/inplace.out"
+  grep -Fq "Using ticket-56 for OPS-56" "$PREFIX_OUT/inplace.out"
   dx_meta_write "$legacy_inplace" "ticket_id=ENG-56"
   __dx_resolve_workspace_name OPS-56 in-place "$PREFIX_REPO" > /dev/null
   [[ "$_dx_wt_name" == ticket-ops-56 ]] || assert_at $LINENO
