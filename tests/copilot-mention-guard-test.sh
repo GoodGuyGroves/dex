@@ -84,6 +84,11 @@ expect_blocked 'gh pr review 7 --comment -b --add-reviewer=@copilot'
 expect_blocked 'gh pr edit 7 --body --add-reviewer=@copilot'
 expect_blocked 'gh pr edit 7 --title --add-reviewer @copilot'
 expect_blocked 'gh pr create --title t --body -r @copilot'
+# Shell quoting and escapes that still post @copilot.
+expect_blocked 'gh pr comment 7 --body "@cop""ilot fix"'
+expect_blocked 'gh pr comment 7 --body @\copilot'
+expect_blocked "gh pr comment 7 --body '@'copilot"
+expect_blocked 'gh pr edit 7 --add-reviewer @cop""ilot && gh pr comment 7 --body "@copilot fix"'
 prose_file="$TMP_DIR/prose.md"
 printf 'Requested with gh pr edit 7 --add-reviewer @copilot\n' > "$prose_file"
 expect_blocked "gh pr comment 7 --body-file $prose_file"
@@ -101,6 +106,7 @@ expect_allowed 'gh pr edit 7 --add-label bug --add-reviewer @copilot'
 expect_allowed "bash -c 'gh pr edit 7 --add-reviewer @copilot'"
 expect_allowed 'R=$(gh pr edit 7 --add-reviewer @copilot)'
 expect_allowed 'gh pr edit 7 --add-reviewer "@copilot"'
+expect_allowed 'gh pr edit 7 --add-reviewer @cop""ilot'
 expect_allowed 'gh pr comment 7 --body "@greptileai review"'
 expect_allowed "gh pr comment 7 --body \"Copilot's review flagged the retry loop\""
 expect_allowed 'gh pr comment 7 --body "mail someone@copilot.example"'

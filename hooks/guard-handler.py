@@ -2310,6 +2310,9 @@ def has_detached_process(text, depth=0):
 # An @copilot (or @github-copilot) mention. A word character, dot or dash before
 # the `@` makes it an address or a longer word instead of a mention.
 COPILOT_MENTION = re.compile(r'(?i)(?:^|[^A-Za-z0-9_.\-])@(?:github-)?copilot')
+# The shell joins quoted pieces and drops escaping backslashes, so `@cop""ilot`
+# and `@\copilot` still post @copilot.
+COPILOT_SHELL_QUOTING = re.compile(r'["\'\\]')
 # Naming Copilot as a requested reviewer is the supported way to ask it for a
 # review, so the value of a reviewer flag is never read as a mention. Only the
 # commands that have the flag count: elsewhere gh rejects it, so it can only
@@ -2491,7 +2494,11 @@ def has_copilot_mention_comment(text):
     # elsewhere through.
     reviewer_values = sum(_copilot_reviewer_mentions(list(args))
                           for args in dict.fromkeys(tuple(a) for a in segments))
-    if len(COPILOT_MENTION.findall(text)) > reviewer_values:
+    # Count mentions as written (a heredoc body keeps its quotes) and as the
+    # shell reads them (quotes and escapes removed), and take the larger count.
+    mentions = max(len(COPILOT_MENTION.findall(text)),
+                   len(COPILOT_MENTION.findall(COPILOT_SHELL_QUOTING.sub('', text))))
+    if mentions > reviewer_values:
         return True
     return any(_copilot_body_file_mentions(path)
                for args in segments for path in _gh_body_file_paths(args))
