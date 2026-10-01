@@ -234,8 +234,9 @@ assert_contains "dx review stats" "$LOOP_SKILL"
 
 # The project contract names every key the code reads, so a repository can
 # actually declare them.
-for key in full_gate review_sensitive_paths review_trivial_max_files \
-  review_trivial_max_lines review_broad_impact_files review_scout_min_files; do
+for key in full_gate rebase_before_ready review_sensitive_paths \
+  review_trivial_max_files review_trivial_max_lines review_broad_impact_files \
+  review_scout_min_files; do
   assert_contains "$key" "$ROOT/prompts/init-analysis.md"
   assert_contains "$key" "$ROOT/docs/host-budget.md"
 done

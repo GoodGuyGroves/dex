@@ -91,6 +91,7 @@ heavy_commands:
   - [exact command]
 targeted_tests: "[exact command] {files}"
 full_gate: local  # or ci: the PR stays a draft and CI is the gate Phase 6 fixes through
+# rebase_before_ready: false  # only to stop Dex rebasing its own branch onto the base before Phase 4 and before ready
 # Review-tier derivation: extra sensitive globs, the size bounds for `trivial`
 # and for a broad change, and the diff size above which thorough may use scouts.
 review_sensitive_paths: ["**/migrations/**", "**/auth*"]

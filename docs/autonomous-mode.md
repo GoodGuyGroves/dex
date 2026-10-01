@@ -629,7 +629,10 @@ Phase 0 leaves the new branch local. Phase 2 commits small coherent checkpoints
 early and often and pushes each one immediately, using the first real
 implementation commit to establish upstream tracking. Phase 3 does the same for
 accepted review fixes. Phase 4 is the final PR gate and records any repair
-checkpoints produced while making the required pipeline pass. If Phase 2
+checkpoints produced while making the required pipeline pass. Before Phase 4's
+gates and again before the PR is marked ready, a worktree lifecycle rebases its
+own branch onto the base (`prompts/base-sync.md`); an in-place checkout is
+never rewritten, and Dex reports how far behind the base it is instead. If Phase 2
 produces no branch-specific commit, the new branch stays local and the lifecycle
 pauses for user direction instead of entering the PR flow. The user may stop
 the lifecycle as no-change or choose an explicit lifecycle control action. If
