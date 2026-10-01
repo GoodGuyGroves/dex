@@ -7,7 +7,7 @@ set -euo pipefail
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-INSTALL_STATE_FILE="$CLAUDE_DIR/.dex-install-state.json"
+INSTALL_STATE_FILE="$DX_INSTALL_STATE_FILE"
 SETTINGS_JSON_HELPER="$DEX_DIR/scripts/settings-json.py"
 ZSHRC="$HOME/.zshrc"
 
@@ -211,4 +211,4 @@ fi
 echo "Uninstall complete. Run: source ~/.zshrc"
 echo ""
 echo "Note: $DEX_DIR was NOT deleted. Remove it manually if you want."
-dx_info "Tool and artifact caches were retained under ${DX_TOOL_DIR:-$HOME/.claude/.dex-tools} and ${DX_ARTIFACT_DIR:-$HOME/.claude/.dex-artifacts}."
+dx_info "Tool and artifact caches were retained under $DX_TOOL_DIR and $DX_ARTIFACT_DIR."

@@ -23,6 +23,22 @@ __DX_TEST_FILE="${BASH_SOURCE[1]:-$0}"
 # must not inherit the machine it runs on; tests that exercise the gate set
 # this themselves.
 export DX_HOST_MEMORY_FREE_PERCENT="${DX_HOST_MEMORY_FREE_PERCENT:-50}"
+# Dex's state paths. tests/run-all.sh points every one of them into the test's
+# own sandbox and marks that with DX_TEST_HERMETIC=1; keep those. A test run
+# directly would otherwise inherit the caller's DEX_HOME and DX_* paths, or
+# fall back to the real ~/.claude/.dex-*, so drop them and root Dex's state in
+# a fresh temporary DEX_HOME instead. A test that sets its own HOME and wants
+# the legacy layout under it unsets DEX_HOME itself, as it must under run-all.
+if [[ "${DX_TEST_HERMETIC:-}" != 1 ]]; then
+  unset DX_PATHS_FROM DX_STATE_DIR DX_LOOP_DIR DX_ARTIFACT_DIR \
+    DX_TOOL_DIR DX_RUN_ROOT DX_MAINTENANCE_DIR DX_LOG_DIR DX_RTK_INSTALL_DIR \
+    DX_REVIEW_CAPACITY_DIR DEX_ROUTER_HOME DEXCODE_CONFIG_DIR \
+    DX_PROVIDER_GLOBAL_CONFIG DX_SETUP_FILE DX_INSTALL_STATE_FILE
+  # ponytail: left behind under TMPDIR on a direct run; the test owns the EXIT
+  # trap. Add a helpers-level cleanup hook if that ever matters.
+  DEX_HOME="$(mktemp -d "${TMPDIR:-/tmp}/dex-test-home.XXXXXX")"
+  export DEX_HOME
+fi
 __dx_test_died() {
   local exit_code=$?
   # An ERR trap fires whether or not errexit is on, so a test that deliberately

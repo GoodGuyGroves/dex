@@ -9,6 +9,7 @@ const state = require('./state.cjs');
 const policy = require('./policy.cjs');
 const ipc = require('./ipc.cjs');
 const { nativeEnv } = require('./accounts.cjs');
+const { dexHome, dexPath } = require('../dex-paths.cjs');
 const { active, processIdentity } = require('./service.cjs');
 const { sourceChangedAt } = require('./source.cjs');
 
@@ -63,7 +64,12 @@ async function install() {
     state.privateDir(directory);
     for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(__dirname, 'runtime-package', name), path.join(directory, name));
     await new Promise((resolve, reject) => {
-      const child = spawn('npm', ['ci', '--no-audit', '--no-fund'], { cwd: directory, stdio: ['inherit', process.stderr, 'inherit'], env: nativeEnv('anthropic', path.join(state.root(), 'unused-auth')) });
+      // The scrubbed env drops npm_config_cache; keep the user's, or with
+      // DEX_HOME set put the cache under the tool directory, as ui-capture does.
+      const env = nativeEnv('anthropic', path.join(state.root(), 'unused-auth'));
+      const cache = process.env.npm_config_cache || (dexHome() ? path.join(dexPath('DX_TOOL_DIR'), 'npm-cache') : '');
+      if (cache) env.npm_config_cache = cache;
+      const child = spawn('npm', ['ci', '--no-audit', '--no-fund'], { cwd: directory, stdio: ['inherit', process.stderr, 'inherit'], env });
       child.once('error', reject); child.once('exit', code => code === 0 ? resolve() : reject(new Error('CCR installation failed. Run dx router install to retry.')));
     });
     verifyRuntime(directory);

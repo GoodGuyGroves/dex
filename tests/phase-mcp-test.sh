@@ -298,6 +298,8 @@ install_claude_mcp() {
     export PATH="$TMP_DIR/mcp-bin:$PATH"
     export DX_TEST_MCP_LOG="$log"
     unset DEX_UI_MCP_SCOPE
+    # The argv below is the plain one; DEX_HOME's --env is checked on its own.
+    if [[ -n "${MCP_DEX_HOME:-}" ]]; then export DEX_HOME="$MCP_DEX_HOME"; else unset DEX_HOME; fi
     cd "$workdir" || exit 1
     dx_install_claude_ui_mcp_servers "$requested"
   ) >/dev/null 2>"$log.err"
@@ -333,6 +335,11 @@ install_claude_mcp "$TMP_DIR/mcp-plain.log" "$TMP_DIR/plain" project
 assert_contains "mcp add --scope user playwright -- node" "$TMP_DIR/mcp-plain.log"
 assert_contains "user scope instead of project scope" "$TMP_DIR/mcp-plain.log.err"
 assert_no_file "$TMP_DIR/plain/.mcp.json"
+
+# With DEX_HOME set, the entry carries it so a session Dex did not launch
+# still finds the tool directory.
+MCP_DEX_HOME="$TMP_DIR/dex-home" install_claude_mcp "$TMP_DIR/mcp-dex-home.log" "$TMP_DIR/repo"
+assert_contains "mcp add --scope user playwright --env DEX_HOME=$TMP_DIR/dex-home -- node" "$TMP_DIR/mcp-dex-home.log"
 
 # The scope resolver on its own: the default, the environment, the argument
 # that beats it, and a value it refuses.

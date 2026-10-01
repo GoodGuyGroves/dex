@@ -23,7 +23,8 @@ done
 run_without_jq() {
   local test_home="$1"
   shift
-  env \
+  # The legacy layout under test_home, so no DEX_HOME.
+  env -u DEX_HOME \
     PATH="$NO_JQ_BIN" \
     HOME="$test_home" \
     CODEX_HOME="$test_home/.codex" \

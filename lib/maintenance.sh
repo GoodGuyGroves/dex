@@ -1,7 +1,6 @@
 # shellcheck shell=bash
 # Dex shared library — background maintenance helpers.
 
-DX_MAINTENANCE_DIR="${DX_MAINTENANCE_DIR:-$HOME/.claude/.dex-maintenance}"
 dx_maintenance_session_id() {
   dx_scoped_session_id "maintenance"
 }

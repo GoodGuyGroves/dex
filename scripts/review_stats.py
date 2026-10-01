@@ -1,7 +1,7 @@
 """Read the review telemetry Dex already writes and report it per risk tier.
 
 The point is to set the tier defaults from data instead of opinion. Every
-number here comes from `~/.dex/runs/*/events.jsonl`: `review.tier.selected`
+number here comes from `$DX_RUN_ROOT/*/events.jsonl`: `review.tier.selected`
 opens a loop, `review.pass.finished` records each wave's result kind, findings
 count and duration, and `review.completed` with `reason=clean_gate_reached`
 says the loop reached its gate.
@@ -16,10 +16,12 @@ numbers in the PR that changes one.
 """
 
 import json
-import os
 import statistics
 import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "hooks"))
+from dex_paths import dex_path  # noqa: E402  DX_RUN_ROOT, as lib/common.sh resolves it
 
 TIER_ORDER = ["trivial", "small", "normal", "complex"]
 FOUND_KINDS = {"findings", "findings_fixed"}
@@ -201,7 +203,7 @@ def render(rows):
 
 
 def main(arguments):
-    root = os.environ.get("DX_RUN_ROOT") or str(Path.home() / ".dex/runs")
+    root = dex_path("DX_RUN_ROOT")
     as_json = False
     index = 0
     while index < len(arguments):

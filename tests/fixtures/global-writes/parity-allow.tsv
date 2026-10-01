@@ -13,9 +13,6 @@
 # A row nothing matches is not an error: the plain-session rows describe the
 # end state of the epic (#1) before the units that produce it land.
 
-# The isolated run is the one launched with DEX_HOME.
-*	env	isolated-only	DEX_HOME=*	isolated launches carry DEX_HOME
-
 # Values minted per invocation or measured from the host. The runs share one
 # path, so everything derived from the repository path already agrees.
 *	env	*	DEX_RUN_ID=run_*	run id: timestamp, pid, random

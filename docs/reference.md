@@ -60,12 +60,19 @@ the gate map.
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `DEX_DIR` | Installation directory | `$HOME/work/dex` |
-| `DX_STATE_DIR` | Phase state directory | `~/.claude/.dex-phases` |
-| `DX_LOOP_DIR` | Loop state directory | `~/.claude/.dex-loops` |
-| `DX_ARTIFACT_DIR` | Dex-generated screenshots, videos, traces, and logs | `~/.claude/.dex-artifacts` |
-| `DX_TOOL_DIR` | Dex-managed external tooling cache | `~/.claude/.dex-tools` |
+| `DEX_HOME` | One root for all Dex state; see [State root](#state-root). Empty counts as unset | unset |
+| `DX_STATE_DIR` | Phase state directory | `$DEX_HOME/state`, else `~/.claude/.dex-phases` |
+| `DX_LOOP_DIR` | Loop state directory | `$DEX_HOME/loops`, else `~/.claude/.dex-loops` |
+| `DX_ARTIFACT_DIR` | Dex-generated screenshots, videos, traces, and logs | `$DEX_HOME/artifacts`, else `~/.claude/.dex-artifacts` |
+| `DX_TOOL_DIR` | Dex-managed external tooling cache | `$DEX_HOME/tools`, else `~/.claude/.dex-tools` |
 | `DEX_ROUTER_HOT_RELOAD` | `0` turns off the router gateway's automatic reload of changed `scripts/ccr/` sources; read by `dx router start` | on |
-| `DX_RUN_ROOT` | Dex run directories, event journals, summaries, and run artifacts | `~/.dex/runs` |
+| `DX_RUN_ROOT` | Dex run directories, event journals, summaries, and run artifacts | `$DEX_HOME/runs`, else `~/.dex/runs` |
+| `DX_MAINTENANCE_DIR` | `dx maintain` locks and last-success stamps | `$DEX_HOME/maintenance`, else `~/.claude/.dex-maintenance` |
+| `DX_LOG_DIR` | `dx worker` service logs | `$DEX_HOME/logs`, else `~/.dex/logs` |
+| `DX_PROVIDER_GLOBAL_CONFIG` | Global provider profiles and default (`dx provider use`) | `$DEX_HOME/providers.json`, else `~/.dex/providers.json` |
+| `DX_SETUP_FILE` | The `dx setup` routing choice | `$DEX_HOME/setup.json`, else `~/.dex/setup.json` |
+| `DX_INSTALL_STATE_FILE` | Install state: managed worktree directories, the session-messaging answer | `$DEX_HOME/install-state.json`, else `~/.claude/.dex-install-state.json` |
+| `DEXCODE_CONFIG_DIR` | DexCode login and sync configuration | `$DEX_HOME/dexcode`, else `${XDG_CONFIG_HOME:-~/.config}/dex` |
 | `DEX_RUN_ID` | Current run ID passed into hooks/provider subprocesses | unset |
 | `DEX_HEADLESS_RUN` | Internal marker for lifecycle sessions started by `dx run` | unset |
 | `DEX_HEADLESS_RUN_SPEC_FILE` | Normalized run spec path passed into the launched lifecycle | unset |
@@ -147,7 +154,7 @@ the gate map.
 | `DX_CODEX_JSON` | Add `--json` to a `bin/dxcodex.sh exec` delegation (`0` or `1`); no shipped caller sets it | `0` |
 | `DX_CODEX_OUTPUT_LAST_MESSAGE` | Internal: file that receives Codex's last message (`-o`) from a `bin/dxcodex.sh exec` run, used by the read-only risk assessor | unset |
 | `DX_ROUTER_SESSION_ID` | Internal: the routed session ID the CCR launch hands to the provider child | set by `dx router launch` |
-| `DEX_ROUTER_HOME` | Router state directory (`config.json`, `backend.json`, credentials); tests point it at a temporary directory | `~/.dex/router` |
+| `DEX_ROUTER_HOME` | Router state directory (`config.json`, `backend.json`, credentials); tests point it at a temporary directory | `$DEX_HOME/router`, else `~/.dex/router` |
 | `DEX_OPENROUTER_API_KEY` | API key for the router's metered `openrouter` provider | unset |
 | `DEX_POLICY_SESSION_ID` | Internal: the lifecycle session whose phase route a review assessor or wave follows | the parent session |
 | `DEX_REVIEW_WAVE_NUMBER` | Internal: the wave index a review pass runs as; the router rotates the phase's model chain by it for reviewer diversity | set per wave |
@@ -162,4 +169,61 @@ the gate map.
 | `DEX_REVIEW_CHECK_HARD_TIMEOUT` | The only deadline that stops a check. Reaching it is exit 124 with no reusable result, the way the execution budget used to behave | 4 × `DEX_REVIEW_CHECK_TIMEOUT` (3600) |
 | `DEX_REVIEW_CHECK_QUEUE_TIMEOUT` | Seconds a check may wait for the host check pool before it gives up with the `queued` status — exit 75, nothing ran, ask again later. `0` waits with a heartbeat, because waiting is not a failure | `0` |
 | `DEX_REVIEW_CHECK_HEARTBEAT_SECONDS` | How often a queued check prints its queue position and the age of the oldest running check (1 to 9999) | 30 × `DEX_REVIEW_CAPACITY_RECHECK_SECONDS` |
-| `$DX_STATE_DIR/guard-heavy-commands.json` | Not a variable, but the one file `hooks/guard-handler.py` writes: each repository's parsed `heavy_commands`, keyed by its `.dex/dex.md` path, mtime and size, so the advisory does not re-import the contract parser on every Bash call. Advisory cache only — deleting it costs one re-parse. 0600, capped at 32 repositories | `~/.claude/.dex-phases/guard-heavy-commands.json` |
+| `$DX_STATE_DIR/guard-heavy-commands.json` | Not a variable, but the one file `hooks/guard-handler.py` writes: each repository's parsed `heavy_commands`, keyed by its `.dex/dex.md` path, mtime and size, so the advisory does not re-import the contract parser on every Bash call. Advisory cache only — deleting it costs one re-parse. 0600, capped at 32 repositories | `$DX_STATE_DIR/guard-heavy-commands.json` |
+
+## State root
+
+Set `DEX_HOME` to an absolute directory and every Dex state path defaults
+beneath it, so one `rm -rf "$DEX_HOME"` removes all of it:
+
+```
+$DEX_HOME/
+  state/               DX_STATE_DIR
+  loops/               DX_LOOP_DIR
+  artifacts/           DX_ARTIFACT_DIR
+  tools/               DX_TOOL_DIR (RTK, Playwright tooling, caches below)
+  runs/                DX_RUN_ROOT
+  maintenance/         DX_MAINTENANCE_DIR
+  router/              DEX_ROUTER_HOME
+  dexcode/             DEXCODE_CONFIG_DIR
+  logs/                DX_LOG_DIR
+  providers.json       DX_PROVIDER_GLOBAL_CONFIG
+  setup.json           DX_SETUP_FILE
+  install-state.json   DX_INSTALL_STATE_FILE
+  launch-settings/     per-launch Claude settings (under DX_LOOP_DIR without DEX_HOME)
+```
+
+- An individual variable still wins over `DEX_HOME`. An empty value counts as
+  unset. A trailing `/` is dropped. A relative or `~` value is ignored with a
+  warning, which `dx doctor` shows too, and the legacy locations apply.
+- With `DEX_HOME` unset, every path keeps its legacy location (the table above).
+  Nothing is migrated when you set it; `dx doctor` mentions a legacy install
+  state file it no longer reads.
+- `lib/common.sh` resolves the table. With `DEX_HOME` set it exports every
+  path; unset, it exports only `DX_STATE_DIR`, `DX_LOOP_DIR`, `DX_ARTIFACT_DIR`,
+  `DX_TOOL_DIR` and `DX_RUN_ROOT`, as before. `DX_PATHS_FROM` records the
+  `DEX_HOME` and `HOME` those values came from, so a child that changes either
+  recomputes every value still equal to the old default; a real override
+  stays. Known limits: an override set to exactly the old default is
+  recomputed too (use a different path to keep it), and the Python and Node
+  resolvers do not read `DX_PATHS_FROM`, so one started directly with another
+  `HOME` uses the values it inherited. `dx` and the other public `dx.sh`
+  commands re-resolve on every call, so `export DEX_HOME=...` in a shell that
+  already sourced `dx.sh` takes effect without `dx reload`. Hooks and Node
+  scripts that run without it resolve the same table through
+  `hooks/dex_paths.py` and `scripts/dex-paths.cjs`, so a session Dex did not
+  launch only needs `DEX_HOME` in its environment.
+- **One root per host.** Host-wide admission (`lib/host-budget.sh`) counts the
+  live sessions under `DX_LOOP_DIR`, and the capacity pools live there too. Two
+  roots on one host means two separate budgets, so start every session on a
+  host with the same `DEX_HOME`. `dx doctor` warns when it finds live sessions
+  under the legacy loop directory, and when `DX_LOOP_DIR` resolves outside
+  `DEX_HOME`. Both checks run only in a session that has `DEX_HOME` set: one
+  without it has no second root to look in, so run `dx doctor` from the
+  `DEX_HOME` side.
+- **Caches.** With `DEX_HOME` set, Dex's own `npm install`, `npx playwright
+  install`, the router's `npm ci` and browser MCP launches use `PLAYWRIGHT_BROWSERS_PATH=$DX_TOOL_DIR/ms-playwright`
+  and `npm_config_cache=$DX_TOOL_DIR/npm-cache`. They are set only for those
+  commands, never exported into your shell, and a value you already set (a
+  Nix-provided browser bundle, say) wins. Browser MCP servers registered by
+  `dx ui-capture install` carry `DEX_HOME` in their entry.

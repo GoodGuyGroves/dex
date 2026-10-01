@@ -1,14 +1,23 @@
 #!/usr/bin/env node
 'use strict';
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { dexHome, dexPath } = require('./dex-paths.cjs');
 const packages = { playwright: '@playwright/mcp@latest', 'chrome-devtools': 'chrome-devtools-mcp@latest' };
 // A caller that named its own profile, or an already-running browser, keeps it.
 const profileArgument = /^--(?:isolated|user-data-dir|userDataDir|cdp-endpoint|browserUrl)(?:=|$)/;
+// With DEX_HOME set, the browser download and the npx cache live under the
+// tool directory, as lib/ui-capture.sh's __dx_ui_capture_export_caches
+// arranges for the install. A value the user set wins.
+function caches(env = process.env) {
+  if (!dexHome(env)) return;
+  const tools = dexPath('DX_TOOL_DIR', env);
+  env.PLAYWRIGHT_BROWSERS_PATH ||= path.join(tools, 'ms-playwright');
+  env.npm_config_cache ||= path.join(tools, 'npm-cache');
+}
 function playwright(env = process.env) {
-  const directory = path.join(env.DX_TOOL_DIR || path.join(os.homedir(), '.claude/.dex-tools'), 'ui-capture/node_modules/playwright');
+  const directory = path.join(dexPath('DX_TOOL_DIR', env), 'ui-capture/node_modules/playwright');
   try { return require(directory); }
   catch { throw new Error('Browser tooling is missing. Run dx ui-capture install.'); }
 }
@@ -63,8 +72,9 @@ function run(argv) {
 if (require.main === module) {
   try {
     const [name, ...args] = process.argv.slice(2);
+    caches();
     run(command(name, args, process.env, profile(name, args)));
   }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { playwright, profile, command, run, packages };
+module.exports = { caches, playwright, profile, command, run, packages };

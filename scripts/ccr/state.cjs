@@ -2,13 +2,13 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
 const VERSION = 1;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,179}$/;
-const root = () => path.resolve(process.env.DEX_ROUTER_HOME || path.join(os.homedir(), '.dex', 'router'));
+const { dexPath } = require('../dex-paths.cjs');
+const root = () => path.resolve(dexPath('DEX_ROUTER_HOME'));
 const token = () => crypto.randomBytes(32).toString('base64url');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 

@@ -18,9 +18,9 @@ done
 
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-INSTALL_STATE_FILE="$CLAUDE_DIR/.dex-install-state.json"
+INSTALL_STATE_FILE="$DX_INSTALL_STATE_FILE"
 SETTINGS_JSON_HELPER="$DEX_DIR/scripts/settings-json.py"
-mkdir -p "$CLAUDE_DIR"
+mkdir -p "$CLAUDE_DIR" "${INSTALL_STATE_FILE%/*}"
 
 say_done() {
   [[ $QUIET -eq 1 ]] || dx_done "$1"

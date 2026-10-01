@@ -892,7 +892,7 @@ USAGE
 
   local dex_dir log_dir worker_name
   dex_dir="${DEX_DIR:-$HOME/work/dex}"
-  log_dir="${HOME}/.dex/logs"
+  log_dir="$DX_LOG_DIR"
   # First line by trimming rather than `| head -1`, for the reason above the
   # matching change in lib/rtk.sh.
   worker_name="$(dx_worker_organisations)"

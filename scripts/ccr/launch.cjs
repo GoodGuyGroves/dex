@@ -143,7 +143,7 @@ async function launch(args) {
   // Review waves and assessments run under their own session ID but follow the
   // lifecycle that spawned them; only that policy session has a phase file.
   const policySession = process.env.DEX_POLICY_SESSION_ID || lifecycle;
-  const phaseFile = policySession && process.env.DEX_SESSION_ONLY !== '1' ? path.join(process.env.DX_STATE_DIR || path.join(require('node:os').homedir(), '.claude', '.dex-phases'), `${state.checkedId(policySession)}.phase`) : null;
+  const phaseFile = policySession && process.env.DEX_SESSION_ONLY !== '1' ? path.join(require('../dex-paths.cjs').dexPath('DX_STATE_DIR'), `${state.checkedId(policySession)}.phase`) : null;
   // A review wave's index drives model diversity across waves; the wave itself
   // never chooses a model, so its reviewer stays independent of the route.
   const reviewWave = /^\d+$/.test(process.env.DEX_REVIEW_WAVE_NUMBER || '') ? Number(process.env.DEX_REVIEW_WAVE_NUMBER) : undefined;

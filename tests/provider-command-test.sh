@@ -12,6 +12,8 @@ cleanup() {
 trap cleanup EXIT
 
 export HOME="$TMP_DIR/home"
+# The legacy ~/.dex/providers.json layout under this HOME.
+unset DEX_HOME
 export DEX_DIR="$ROOT"
 export DX_STATE_DIR="$TMP_DIR/state"
 export DX_LOOP_DIR="$TMP_DIR/loops"

@@ -15,7 +15,8 @@ trap cleanup EXIT
 
 export HOME="$TMP_DIR/home"
 export DEX_DIR="$ROOT"
-unset CLAUDE_CONFIG_DIR DX_PROVIDER_ENGINE DX_PROVIDER_APPLIED
+# This test reads the legacy install state under its own HOME.
+unset CLAUDE_CONFIG_DIR DX_PROVIDER_ENGINE DX_PROVIDER_APPLIED DEX_HOME
 mkdir -p "$HOME/.claude"
 
 HELPER="$ROOT/scripts/settings-json.py"

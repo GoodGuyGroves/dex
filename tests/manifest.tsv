@@ -13,6 +13,7 @@ commit-detection-corpus-test.sh	fast	all	600	hermetic
 completion-receipt-test.sh	fast	all	600	hermetic
 config-reviewer-test.sh	fast	all	600	hermetic
 cross-session-inbound-test.sh	fast	all	600	hermetic
+dex-home-paths-test.sh	fast	all	600	hermetic
 dexcode-artifact-test.sh	service	all	900	hermetic
 dexcode-cli-test.sh	service	all	900	hermetic
 dexcode-connections-test.sh	service	all	900	hermetic

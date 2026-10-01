@@ -19,7 +19,7 @@ if [[ -z "$setup_choice" ]]; then
     dx_info "Direct agents are available. Run dx setup --router to add optional subscription routing."
     exit 0
   fi
-  setup_saved=$(python3 - "$HOME/.dex/setup.json" <<'PY'
+  setup_saved=$(python3 - "$DX_SETUP_FILE" <<'PY'
 import json
 import os
 import stat
@@ -53,7 +53,7 @@ case "$setup_choice" in
     ;;
   *) usage >&2; exit 2 ;;
 esac
-python3 - "$HOME/.dex/setup.json" "$setup_choice" <<'PY'
+python3 - "$DX_SETUP_FILE" "$setup_choice" <<'PY'
 import json
 import os
 import sys

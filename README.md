@@ -282,6 +282,11 @@ Dex installs Playwright UI-capture tooling and RTK token-reduction tooling into
 Run IDs, lifecycle events, logs, summaries, and artifact manifests are stored
 locally under `~/.dex/runs/`; see [docs/events.md](docs/events.md).
 
+To keep all of that in one place instead, set `DEX_HOME` to a directory: state,
+tools, artifacts, runs, router and config files then default beneath it. Use the
+same `DEX_HOME` for every session on a machine. See
+[docs/reference.md](docs/reference.md#state-root).
+
 RTK support is installed by `dx install`, `dx init`, `dx sync`, and
 `dx tools bootstrap`. Claude Code sessions get a fail-open Bash rewrite hook;
 Codex gets global instructions to prefix shell commands with RTK when compact

@@ -112,6 +112,18 @@ if [[ "$DOCTOR_ORPHAN_COUNT" -gt 0 ]]; then
   done
 fi
 
+# ── Sessions under another state root ──────────────────────────────────────
+# Admission counts only the holders under DX_LOOP_DIR, so sessions started
+# with another DEX_HOME, or none, share this host without sharing its limits.
+# With DEX_HOME set the other root is the legacy one; unset, the shell names
+# no second root to look in.
+DOCTOR_LEGACY_LOOPS="$HOME/.claude/.dex-loops"
+DOCTOR_OTHER_LIVE=0
+if [[ -n "${DEX_HOME:-}" && "$DX_LOOP_DIR" != "$DOCTOR_LEGACY_LOOPS" ]]; then
+  DOCTOR_OTHER_LIVE=$(DX_LOOP_DIR="$DOCTOR_LEGACY_LOOPS" dx_host_active_sessions 2>/dev/null) \
+    || DOCTOR_OTHER_LIVE=0
+fi
+
 # ── The process table, read once ────────────────────────────────────────────
 # Machine-readable lines the shell formats below, so the layout lives in one
 # language: `sessions <TAB> records <TAB> running`, and one `tree` row per
@@ -274,6 +286,15 @@ if [[ "$DOCTOR_LIVE_COUNT" -gt 0 ]]; then
     "$(__dx_doctor_join 4 "${DOCTOR_LIVE_SESSIONS[@]}")"
 else
   printf '  %s\n' "No Dex session on this host currently owns a process."
+fi
+if [[ "$DOCTOR_OTHER_LIVE" =~ ^[1-9][0-9]*$ ]]; then
+  dx_warn "$DOCTOR_OTHER_LIVE live session(s) under $DOCTOR_LEGACY_LOOPS, outside DEX_HOME=$DEX_HOME. Host limits count each root separately; run every session on a host with the same DEX_HOME."
+fi
+if [[ -n "${DEX_HOME:-}" && "$DX_LOOP_DIR/" != "$DEX_HOME"/* ]]; then
+  dx_warn "DX_LOOP_DIR=$DX_LOOP_DIR is outside DEX_HOME=$DEX_HOME (an inherited or explicit override); sessions here are counted apart from the ones under DEX_HOME."
+fi
+if [[ -n "${DEX_HOME:-}" && -f "$HOME/.claude/.dex-install-state.json" && "$DX_INSTALL_STATE_FILE" != "$HOME/.claude/.dex-install-state.json" ]]; then
+  dx_info "Legacy install state at ~/.claude/.dex-install-state.json is not read while DEX_HOME is set."
 fi
 if [[ "$DOCTOR_TABLE_STATUS" -ne 0 ]]; then
   printf '  %s\n' "Claude Code session records could not be read."

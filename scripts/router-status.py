@@ -5,7 +5,11 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 import time
+
+sys.path.append(str(Path(__file__).resolve().parent.parent / "hooks"))
+from dex_paths import dex_path  # noqa: E402  DEX_ROUTER_HOME, as lib/common.sh resolves it
 
 
 def read_private(file):
@@ -21,7 +25,7 @@ def main():
     session_id = os.environ.get("DX_ROUTER_SESSION_ID", "")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,179}", session_id):
         return
-    root = Path(os.environ.get("DEX_ROUTER_HOME", str(Path.home() / ".dex/router")))
+    root = Path(dex_path("DEX_ROUTER_HOME"))
     session = read_private(root / "sessions" / f"{session_id}.json")
     accounts = read_private(root / "accounts.json")["accounts"]
     account = next((item for item in accounts if item["id"] == session.get("current_account")), {})

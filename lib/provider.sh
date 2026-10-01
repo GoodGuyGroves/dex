@@ -6,8 +6,6 @@
 # not need to know internal engine names. Subscription-safe profiles
 # intentionally avoid API-key credentials that would bypass subscription billing.
 
-DX_PROVIDER_GLOBAL_CONFIG="$HOME/.dex/providers.json"
-
 dx_provider_repo_config() {
   local root
   root=$(dx_repo_root 2>/dev/null) || return 1
@@ -613,7 +611,7 @@ dx_provider_apply() {
       if [[ -n "$explicit_engine" ]]; then
         if [[ "$explicit_engine" == "anthropic-gateway" ]] && ! dx_provider_repo_gateway_allowed; then
           dx_error "Repo provider profile ${DX_PROVIDER_PROFILE_RESOLVED} uses gateway/API routing and requires DX_ALLOW_REPO_GATEWAY_PROVIDER=1."
-          dx_info "Define gateway profiles in ~/.dex/providers.json, or set DX_ALLOW_REPO_GATEWAY_PROVIDER=1 for an explicit one-off repo profile opt-in." >&2
+          dx_info "Define gateway profiles in $DX_PROVIDER_GLOBAL_CONFIG, or set DX_ALLOW_REPO_GATEWAY_PROVIDER=1 for an explicit one-off repo profile opt-in." >&2
           return 1
         fi
         preferred_source="repo"
@@ -1598,7 +1596,7 @@ dx_provider_codex_ready_check() {
 # router's own config rather than the client settings, because that flag is
 # what the gateway itself honours when it mints a native session.
 dx_provider_native_routing_enabled() {
-  local router_config="${DEX_ROUTER_HOME:-$HOME/.dex/router}/config.json"
+  local router_config="$DEX_ROUTER_HOME/config.json"
   [[ -f "$router_config" ]] || return 1
   python3 - "$router_config" <<'PY'
 import json
@@ -2156,7 +2154,7 @@ dx_provider_command() {
       if [[ "$scope" == "global" ]]; then
         if ! __dx_provider_builtin_get "$profile" "engine" >/dev/null 2>&1 && ! __dx_provider_json_get "$DX_PROVIDER_GLOBAL_CONFIG" "$profile" "engine" >/dev/null 2>&1; then
           dx_error "Global provider profile is not defined globally: $profile"
-          dx_info "Use 'dx provider use --repo $profile' for repo-local profiles, or define the profile in ~/.dex/providers.json."
+          dx_info "Use 'dx provider use --repo $profile' for repo-local profiles, or define the profile in $DX_PROVIDER_GLOBAL_CONFIG."
           return 1
         fi
       else
@@ -2174,7 +2172,7 @@ dx_provider_command() {
         repo_engine=$(__dx_provider_json_get "$repo_config" "$profile" "engine" 2>/dev/null || true)
         if [[ "$repo_engine" == "anthropic-gateway" ]] && ! dx_provider_repo_gateway_allowed; then
           dx_error "Repo gateway/API profiles cannot be saved as an auto-selected default without DX_ALLOW_REPO_GATEWAY_PROVIDER=1."
-          dx_info "Define gateway profiles in ~/.dex/providers.json, or use DX_PROVIDER_PROFILE=$profile DX_ALLOW_REPO_GATEWAY_PROVIDER=1 for an explicit one-off repo opt-in."
+          dx_info "Define gateway profiles in $DX_PROVIDER_GLOBAL_CONFIG, or use DX_PROVIDER_PROFILE=$profile DX_ALLOW_REPO_GATEWAY_PROVIDER=1 for an explicit one-off repo opt-in."
           return 1
         fi
       fi
