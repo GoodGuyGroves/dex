@@ -257,6 +257,7 @@ Stored in `prompts/`. Skills reference them by plain repo-relative path, e.g.
   keeps its own inline copy because `bin/maintain.sh` pastes that file into the
   prompt of issue-triggered runs
 - `init-analysis.md` — Codebase analysis prompt (used by `dx init`)
+- `reviewers/*.md` — Reviewer adapters (`greptile.md`, `copilot.md`): how Phases 5-6 and `/dxwatchpr` trigger an AI reviewer, tell when it has reviewed the head, and read its feedback
 - `phase-audits/*.md` — Numbered 0-6 matching lifecycle phases (Phase 0 is Setup), plus `prompt-loop.md`; `3-review-loop.md` is the lifecycle Phase 3 audit and `3-review.md` the per-wave audit the review loop injects
 
 ## Key Architecture Concepts

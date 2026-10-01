@@ -92,6 +92,7 @@ review-report-test.sh	fast	all	600	hermetic
 review-stats-test.sh	fast	all	300	hermetic
 review-tier-derivation-test.sh	fast	all	300	hermetic
 review-timeout-test.sh	serial	all	1200	hermetic
+reviewer-adapter-contract-test.sh	fast	all	600	hermetic
 reviewers-test.sh	fast	all	600	hermetic
 rtk-install-test.sh	fast	all	600	hermetic
 rtk-uninstall-test.sh	fast	all	600	hermetic

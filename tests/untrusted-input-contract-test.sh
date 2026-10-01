@@ -19,6 +19,8 @@ for reader in \
     prompts/workflows/dxplan.md \
     prompts/workflows/dxprreview.md \
     prompts/workflows/dxwatchpr.md \
+    prompts/reviewers/greptile.md \
+    prompts/reviewers/copilot.md \
     skills/dxtriage/SKILL.md; do
   assert_contains "prompts/untrusted-input.md" "$ROOT/$reader"
 done

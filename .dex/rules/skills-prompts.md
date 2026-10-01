@@ -61,6 +61,7 @@ Stored in `prompts/`. Referenced by skills by plain repo-relative path
 - `sync-memory.md` — Project context and repo memory refresh (`dx sync`)
 - `maintain.md` — Repo-resident background maintenance workflow
 - `default-loop.md` — What `dxloop` runs when called with no prompt
+- `reviewers/*.md` — Reviewer adapters (`greptile.md`, `copilot.md`): how Phases 5-6 and `/dxwatchpr` trigger an AI reviewer, tell when it has reviewed the head, and read its feedback
 - `phase-audits/*.md` — Numbered 0-6 matching lifecycle phases, plus
   `prompt-loop.md`; `3-review-loop.md` audits the lifecycle phase and
   `3-review.md` the individual wave the review loop injects

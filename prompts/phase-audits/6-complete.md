@@ -63,11 +63,24 @@ fi
 
 ### Read the reviewer config
 
-Read the `## Reviewers` section from `.dex/dex.md`. Parse rows where the second column is `request` or `mention`. Ignore the placeholder `_none_` row. If the table is empty, skip directly to Monitoring (the user has chosen not to assign anyone).
+Read the `## Reviewers` rows through the shared parser:
+
+```bash
+REVIEWER_ROWS=$(dx_reviewers_rows "$(git rev-parse --show-toplevel)") || REVIEWER_ROWS=""
+# One line per reviewer: handle<TAB>type<TAB>wait<TAB>adapter
+```
+
+Rows whose adapter is `generic` are today's `request` and `mention` rows. Rows
+with adapter `greptile` or `copilot` are adapter rows: read
+`prompts/reviewers/<adapter>.md` before acting on them. `wait` is `yes` only
+when the project opted that reviewer into the Phase 6 wait gate. The parser
+already drops the `_none_` placeholder and makes every Copilot row a `request`
+row. If there are no rows, skip directly to Monitoring (the user has chosen
+not to assign anyone).
 
 ### Request reviewers (`request` type)
 
-For each `request`-type reviewer, normalize the handle with
+For each generic `request` reviewer, normalize the handle with
 `dx_maintenance_request_reviewer "$PR_NUM" "<handle>"`. This strips the leading
 `@` for normal usernames, but preserves GitHub CLI's special `@copilot` value
 for Copilot review requests. This is idempotent when GitHub accepts the reviewer.
@@ -77,15 +90,31 @@ Reviewer rows route notifications; they do not create Dex-specific approval
 requirements. GitHub's aggregate `reviewDecision` is useful merge-readiness
 information, but Phase 6 does not merge and must not wait for an approval.
 
-### Post mention comment (`mention` type)
+### Trigger adapter reviewers
 
-If there are any `mention`-type reviewers, post a single comment on the PR mentioning all of them:
+For each adapter row (`greptile` or `copilot`), ask for a review of the head
+through the adapter helper instead of the plain request or mention:
 
 ```bash
-gh pr comment "$PR_NUM" --body "Requesting review from @bot1 @bot2."
+dx_reviewer_trigger "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$PR_NUM" "<handle>" "<adapter>"
 ```
 
-Run the body through `humanizer` before posting if you customize it. The point is the `@mention` so the bots see it.
+It requests Copilot with `--add-reviewer @copilot`, posts Greptile's review
+comment, and records the trigger time that the wait gate measures from.
+
+### Post mention comment (`mention` type)
+
+If there are any generic `mention` reviewers, post a single comment on the PR
+mentioning all of them, through the comment helper:
+
+```bash
+dx_reviewer_comment "$SESSION_ID" "$PR_NUM" "Requesting review from @bot1 @bot2."
+```
+
+Run the body through `humanizer` before posting if you customize it. The point
+is the `@mention` so the bots see it. Never mention `@copilot` in a comment:
+it summons the Copilot coding agent. The helper refuses such a body, and the
+`block-copilot-mention` guard denies the command.
 
 ---
 
@@ -118,9 +147,11 @@ WAIT_SECONDS=$((WAIT_MINUTES * 60))
 
 If `LAST_EPOCH -eq 0` (very first cycle — setup just ran):
 - Proceed directly to Outcome. Do not write the state file or wait merely to
-  give requested reviewers time to respond. If CI is already green and there is
-  no actionable review feedback, Phase 6 can complete without a review or
-  approval.
+  give requested reviewers time to respond. If CI is already green, there is
+  no actionable review feedback, and no reviewer row has `wait: yes`, Phase 6
+  can complete without a review or approval. A `wait: yes` reviewer is the
+  exception: the Outcome's reviewer gate holds completion until it has
+  reviewed the head or timed out.
 
 If `ELAPSED -lt WAIT_SECONDS`, the wait window hasn't elapsed:
 - Confirm the watcher loop is still running (one `gh pr view --json` is fine; do NOT run `/dxprreview` directly here — that's the watcher's job).
@@ -136,7 +167,17 @@ If `ELAPSED -ge WAIT_SECONDS`, the cycle has matured — proceed to Outcome.
 Check overall PR state:
 
 ```bash
-gh pr checks "$PR_NUM"  # CI status
+source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
+REPO_DIR=$(git rev-parse --show-toplevel)
+CI_RC=0
+CI_STATE=$(dx_complete_ci_state "$SESSION_ID" "$REPO_DIR" "$PR_NUM") || CI_RC=$?
+# Line 1: green | pending | stalled | failed | error, then each check that has
+# not passed. Honours `readiness_check` from the `## Resources` block.
+GATE_RC=0
+REVIEWER_WAITS=$(dx_reviewer_gate "$SESSION_ID" "$REPO_DIR" "$PR_NUM") || GATE_RC=$?
+# One line per `wait: yes` reviewer: handle, adapter, state, elapsed seconds,
+# detail. GATE_RC 0: every waited reviewer is done, timed out or unavailable.
+# GATE_RC 1: at least one is still reviewing the head.
 REVIEW_DECISION=$(gh pr view "$PR_NUM" --json reviewDecision --jq '.reviewDecision // ""')
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
 REVIEW_STATE=$(dx_maintenance_pr_review_state "$REVIEW_DECISION") || REVIEW_STATE=unknown
@@ -178,12 +219,22 @@ Copilot submits `COMMENTED` reviews by default. If Copilot auto-approval is
 enabled, it may instead submit `APPROVED`; no Copilot-specific completion rule
 is needed. Its overview approval assessment is not a native approval.
 
-### Case A — All CI green and actionable review feedback is resolved
+CI is green only when `CI_STATE` starts with `green`. With `readiness_check`
+declared, a missing readiness check is pending, not green. `error` means the
+check query failed: report it and treat the cycle as idle, never as green.
 
-Case A applies regardless of whether there is a review, an approval, or a
-`REVIEW_REQUIRED` merge decision. Request and mention rows only route
-notifications. Substantive comments should already have been addressed via
-`/dxprreview`, with clear review threads resolved after Dex replies.
+### Case A — CI green, waited reviewers finished, and actionable review feedback is resolved
+
+Case A requires `CI_STATE` green, `GATE_RC` 0, and no unresolved actionable
+feedback. It applies regardless of whether there is a review, an approval, or
+a `REVIEW_REQUIRED` merge decision. Request and mention rows only route
+notifications; only `wait: yes` adapter rows hold completion, through the gate.
+Substantive comments should already have been addressed via `/dxprreview`,
+with clear review threads resolved after Dex replies.
+
+List every waited reviewer from `REVIEWER_WAITS` in the completion summary
+with its state on the head commit. A `timeout` or `unavailable` reviewer is
+reported as "not reviewed" with its detail, never as a clean review.
 
 Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
 
@@ -191,14 +242,43 @@ Update the ticket (if a tracker is configured — see `dex.md § Integrations`).
 
 If new commits were pushed during the cycle (`/dxwatchpr` fixed CI or `/dxprreview` addressed comments), re-trigger reviewers:
 
-- For each `request` reviewer: run `dx_maintenance_request_reviewer "$PR_NUM" "<handle>"` again — they get a fresh notification when GitHub accepts the reviewer.
-- For each `mention` reviewer: post a new comment such as `Updated: @<handle>, please re-review.` after applying `humanizer`.
+- For each generic `request` reviewer: run `dx_maintenance_request_reviewer "$PR_NUM" "<handle>"` again — they get a fresh notification when GitHub accepts the reviewer.
+- For each generic `mention` reviewer: post a new comment such as `Updated: @<handle>, please re-review.` through `dx_reviewer_comment` after applying `humanizer`.
+- For each adapter row: run `dx_reviewer_trigger` again. The new head restarts that reviewer's wait.
 
-Increment the cycle counter (use arithmetic, not parameter expansion — `NEW_CYCLE=$((CYCLE + 1))`), reset `LAST_EPOCH` to now, write `"${NEW_CYCLE}:${NOW}"` to the state file. Stop. Next iteration starts a new wait window.
+Record the cycle with `dx_complete_record_cycle "$SESSION_ID" progress`. It
+increments the counter and resets the epoch in the state file. Stop. Next
+iteration starts a new wait window.
+
+### Case W — Waiting on CI or a waited reviewer
+
+No commits were pushed, but CI is still `pending` or `GATE_RC` is 1. Something
+is still running, so this cycle is not idle:
+
+```bash
+dx_complete_record_cycle "$SESSION_ID" waiting
+```
+
+It keeps the cycle counter and resets the epoch, so waiting never spends the
+idle budget. Reviewer waits are bounded by `dx_complete_reviewer_wait_minutes`
+(the gate then reports `timeout`). Pending CI is bounded by
+`dx_complete_pending_minutes`, after which `dx_complete_ci_state` reports
+`stalled` and the cycle is handled as Case C. Stop. Next iteration starts a new
+wait window.
 
 ### Case C — No CI/review progress
 
-The cycle was idle. Re-read `MAX_CYCLES=$(dx_complete_max_cycles "${DEX_SESSION_ID:-$(dx_session_id)}")`, then increment the cycle counter (`NEW_CYCLE=$((CYCLE + 1))`). If `NEW_CYCLE >= MAX_CYCLES` → proceed to Case D bounded-timeout pause. Otherwise, write `"${NEW_CYCLE}:${NOW}"` to the state file and stop. Next iteration starts a new wait window.
+The cycle was idle: nothing was pushed, nothing is pending, and Case A does
+not hold. Stalled CI and a failed CI query land here too; report them. Record
+the cycle:
+
+```bash
+dx_complete_record_cycle "$SESSION_ID" idle || IDLE_RC=$?
+```
+
+`IDLE_RC` 5 means the idle budget (`dx_complete_max_cycles`) is spent: proceed
+to Case D bounded-timeout pause. Otherwise stop. Next iteration starts a new
+wait window.
 
 ### Case D — Bounded-timeout pause or material escalation
 
@@ -233,8 +313,9 @@ same exact escalation command, and stop without writing a completion receipt.
 
 ## Termination
 
-Cycle ends successfully only when **Case A** is reached: CI is green and
-actionable review feedback is resolved. Completion means the ticket is closed
+Cycle ends successfully only when **Case A** is reached: CI is green, every
+`wait: yes` reviewer has finished on the head or timed out, and actionable
+review feedback is resolved. Completion means the ticket is closed
 and the local Dex worktree/branch can be removed; it never means merging the PR.
 
 Cycle pauses with escalation when:
@@ -253,8 +334,14 @@ or `/dxcomplete` to resume completion.
 - The PR is no longer a draft (`gh pr view --json isDraft -q .isDraft` returns `false`)
 - Each configured `request` reviewer was attempted at least once; a
   non-requestable reviewer has a recorded warning instead
-- One mention comment has been posted for `mention` reviewers (if any)
-- All CI checks are green, no actionable review feedback remains unresolved,
+- One mention comment has been posted for generic `mention` reviewers (if any),
+  and each adapter row was triggered with `dx_reviewer_trigger`
+- No PR or issue comment from this phase mentions `@copilot`
+- `dx_reviewer_gate` returns 0: every `wait: yes` reviewer is done on the head
+  commit, timed out, or unavailable, and the summary reports each one; a
+  timeout is reported as not reviewed
+- `dx_complete_ci_state` reports green (with `readiness_check`, that check
+  passed), no actionable review feedback remains unresolved,
   and the ticket is marked Done if a tracker is configured. A missing review,
   pending request, absent approval, or `REVIEW_REQUIRED` merge decision does not
   block Phase 6. Report merge-review state in the maintainer handoff.

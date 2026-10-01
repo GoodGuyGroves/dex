@@ -325,6 +325,32 @@ absent approval, or GitHub `REVIEW_REQUIRED` merge decision does not block
 Phase 6; Dex reports that state for the maintainer because it never merges the
 PR. Reviewers GitHub says are not requestable are warnings.
 
+AI reviewers can opt into a wait. A `## Reviewers` row may add `Wait` and
+`Adapter` columns:
+
+| Handle | Type | Wait | Adapter | Notes |
+|--------|------|------|---------|-------|
+| @greptileai | mention | yes | greptile | Greptile AI review |
+| Copilot | request | yes | copilot | GitHub Copilot review |
+
+With `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
+the PR's current head commit, or until `DEX_REVIEWER_WAIT_MINUTES` (default 20)
+runs out for that head. A timeout is reported as "not reviewed", never as a
+clean review. The adapter says how to ask and how to tell the review is done:
+`greptile` posts a review comment and watches Greptile's check run, `copilot`
+requests `@copilot` as a reviewer and watches for its review of the head
+commit. See `prompts/reviewers/`. Rows without the columns behave as before.
+Dex never writes `@copilot` in a comment, because that summons the Copilot
+coding agent; the `block-copilot-mention` guard denies such commands.
+
+A cycle where CI is still pending or a waited reviewer is still reviewing is a
+waiting cycle and does not count toward `dx_complete_max_cycles`. CI that stays
+pending on one head for longer than `DEX_COMPLETE_PENDING_MINUTES` (default
+120) counts as idle again. In repositories without required status checks, a
+partly registered check list can look green; declare the roll-up check in the
+`## Resources` block of `.dex/dex.md` (`readiness_check: <check name>`) and
+Phase 6 treats CI as green only when that check has passed.
+
 GitHub Copilot submits `COMMENTED` reviews by default. Its public-preview
 auto-approval can submit `APPROVED` reviews, and a separate policy decides
 whether those approvals satisfy merge requirements. Dex reports either state
