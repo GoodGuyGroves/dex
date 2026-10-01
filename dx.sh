@@ -1344,7 +1344,9 @@ Ask the human by default for:
 - Phase 1 plan approval or plan rejection
 - Clarifying questions during planning when requirements cannot be resolved
 - Scope or acceptance-criteria changes after plan approval
-- Destructive git operations, force-push/rebase decisions, or secret handling
+- Destructive git operations, force-push/rebase decisions, or secret handling.
+  The bounded base sync in prompts/base-sync.md (bin/branch-sync.sh on a
+  branch this lifecycle created) is pre-approved and needs no question
 - Missing credentials/tooling the agent cannot configure safely
 - Repeated CI failures, architectural review disputes, or unclear reviewer
   feedback that cannot be resolved within the approved plan
