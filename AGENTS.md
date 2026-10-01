@@ -217,11 +217,13 @@ env_value: optional-exact-value
   `warn-claude-attribution`, `warn-destructive-commands`, `warn-raw-codex-delegation`,
   `warn-review-assessment-bash`, `warn-review-assessment-file-edits`,
   `warn-await-in-loop`, `warn-hardcoded-secrets`, `warn-sensitive-files`,
-  `warn-ccr-live-state`, `warn-detached-processes`
-- Every built-in guard advises rather than denies. The message reaches the agent as context
+  `warn-ccr-live-state`, `warn-detached-processes`, `block-copilot-mention`
+- Built-in guards advise rather than deny. The message reaches the agent as context
   and the tool call proceeds — the agent is expected to read it and decide, which is why the
-  wording is guidance rather than a verdict. `action: block` still works for anyone who wants
-  a hard stop; only then does the fail-closed behaviour below apply.
+  wording is guidance rather than a verdict. The one exception is `block-copilot-mention`:
+  an `@copilot` mention in a PR or issue comment summons the Copilot coding agent, which can
+  push commits, so that guard denies the command. `action: block` still works for anyone who
+  wants a hard stop; only then does the fail-closed behaviour below apply.
 - A `block` guard fails closed: one that times out, crashes, or cannot be loaded denies the
   tool call. With every guard on `warn`, those same failures skip the guard and are reported
   on stderr. See docs/guards.md § Failure Behavior.
@@ -639,8 +641,9 @@ measured.
   handler and the commit-target parser. Teach it a capability once and both get it; a
   local copy in one hook is how they drifted before. `tests/parser-drift-test.sh` fails
   on any hook that redefines a name the shared module owns
-- Exit code 2 means "block" in guards — other non-zero exits are errors, not blocks. No
-  built-in guard uses it: they all advise, and the agent decides. A guard's job here is to
+- Exit code 2 means "block" in guards — other non-zero exits are errors, not blocks. Only
+  `block-copilot-mention` uses it, because the command it stops hands the branch to another
+  agent; every other built-in guard advises, and the agent decides. A guard's job here is to
   put the right thing in front of whoever is about to act, not to be the thing that stops them
 - Never store secrets in state files or `settings.json`
 - Session IDs are not cryptographically random — don't use them for authentication
