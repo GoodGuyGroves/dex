@@ -419,7 +419,7 @@ def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
             groups[:] = [group for group in groups if group["hooks"]]
     # No dimmed next-prompt guess in a Dex session: one Enter or Tab would
     # send it, and in a driven terminal that can be a merge or a new lifecycle.
-    result = {"promptSuggestionEnabled": False}
+    result: dict = {"promptSuggestionEnabled": False}
     if statusline:
         result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline)}
     if inbound:
