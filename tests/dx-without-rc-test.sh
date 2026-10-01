@@ -176,7 +176,7 @@ home_listing() {
 run_install() { # <home> [install args...]
   local home="$1"
   shift
-  env -u DEX_DIR HOME="$home" CODEX_HOME="$home/.codex" PATH="$TOOLS:$BASE_PATH" \
+  env -u DEX_DIR -u CLAUDE_CONFIG_DIR HOME="$home" CODEX_HOME="$home/.codex" PATH="$TOOLS:$BASE_PATH" \
     DX_TOOL_DIR="$home/tools" DX_RTK_ENABLED=0 SHELL=/bin/zsh \
     bash "$ROOT/bin/install.sh" "$@"
 }
