@@ -69,7 +69,7 @@ SESSION_END_REPO=$(dx_repo_root 2>/dev/null || true)
 if [[ -n "$SESSION_END_REPO" ]] && grep -qiE \
   '^#{1,6}[[:space:]]+Worktree Hooks[[:space:]]*$' \
   "$SESSION_END_REPO/.dex/dex.md" 2>/dev/null; then
-  for SESSION_END_MODULE in output.sh project-state.sh worktree.sh; do
+  for SESSION_END_MODULE in output.sh project-state.sh ticket.sh worktree.sh; do
     [[ -f "${DEX_DIR}/lib/${SESSION_END_MODULE}" ]] || continue
     __dx_require_lib "$SESSION_END_MODULE" || true
   done
