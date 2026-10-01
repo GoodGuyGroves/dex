@@ -14,6 +14,7 @@
 #   dx "description"       Choose session only (default) or the full workflow
 #   dx --agent codex <task> Use a different agent for this invocation
 #   dx --model <model>      Pass a model override to the selected agent
+#   dx --title "<title>" <N> Name the Claude session "<ticket> <title>"
 #   dx --resume             Resume the most recent session
 #   dx --from-pr <N>        Resume session linked to a PR
 #   dxcomplete              Standalone completion workflow (recovery / non-dx PRs)
@@ -158,6 +159,7 @@ __dx_cli() {
       echo "Global options:"
       echo "  --agent <claude|codex>  Use this agent for the current invocation"
       echo "  --model <model>         Pass this model to the selected agent"
+      echo "  --title <title>         Name a new lifecycle's Claude session \"<ticket> <title>\""
       echo "  --session               Open a prompt-only session in this checkout"
       echo "  --workflow              Run a prompt through the full ticket-to-PR workflow"
       echo "  Free-form prompts ask which mode to use; Enter selects session only."
@@ -210,6 +212,7 @@ __dx_cli() {
       echo "  dx \"<description>\"     Choose session only (default) or the full workflow"
       echo "                         (a single word that looks like a mistyped command asks first)"
       echo "  dx --agent codex --model gpt-5.3-codex \"<task>\""
+      echo "  dx --title \"<title>\" <number>  Name the Claude session after the ticket title"
       echo "  dx --no-worktree <task> Run lifecycle in the current checkout instead"
       echo "  dx --resume            Resume the most recent session"
       echo "  dx --from-pr <N>      Resume session linked to a PR"
@@ -769,16 +772,6 @@ __dx_cleanup_lifecycle_state_for_branch() {
   dx_cleanup_session "$worktree_session_id"
   dx_cleanup_session "$in_place_session_id"
   dx_cleanup_last_session "$wt_name"
-}
-
-# __dx_claude_session_name <workspace_mode> <workspace_name>
-__dx_claude_session_name() {
-  local workspace_mode="$1" wt_name="$2"
-  if [[ "$workspace_mode" == "in-place" ]]; then
-    printf 'inplace-%s\n' "$wt_name"
-  else
-    printf '%s\n' "$wt_name"
-  fi
 }
 
 # __dx_write_last_session <workspace_name> <workspace_dir> <workspace_mode>
@@ -3089,7 +3082,6 @@ __dx_run_phases_inline() {
   local session_id="${9:-}" raw_input="${10:-}"
   local claude_session_name agent_kind provider_session_handle=""
   local provider_session_result=0 workspace_cleanup_result=0
-  claude_session_name=$(__dx_claude_session_name "$workspace_mode" "$wt_name")
 
   [[ "${DX_PROVIDER_APPLIED:-}" == "1" ]] || dx_provider_apply || return 1
   if [[ "${DX_PROVIDER_ENGINE:-}" != "codex-plugin" ]] && ! command -v claude &>/dev/null; then
@@ -3112,6 +3104,9 @@ __dx_run_phases_inline() {
 
   local had_times_file=0
   [[ -f "$times_file" ]] && had_times_file=1
+  claude_session_name=$(dx_claude_session_name_resolve "$session_id" \
+    "$workspace_mode" "$wt_name" "$had_times_file" "${DEX_SESSION_TITLE:-}")
+  dx_meta_write "$session_id" "claude_session_name=${claude_session_name}"
 
   if [[ "${DX_PROVIDER_ENGINE:-}" == "codex-plugin" ]]; then
     agent_kind="codex"
@@ -3597,6 +3592,7 @@ __dx_run_spec_record_failure() {
 __dx_run_spec_apply_env() {
   local spec_file="$1" run_token="${2:-}"
   local token factory_url events_endpoint harness_name harness_model harness_effort plan_approval default_branch
+  local source_title
 
   token=$(dx_run_spec_token "$run_token" 2>/dev/null || true)
   if [[ -n "$token" ]]; then
@@ -3645,6 +3641,12 @@ __dx_run_spec_apply_env() {
     export DX_EFFORT_OVERRIDE="$harness_effort"
   fi
 
+  # The run's own title names its Claude session over an inherited one.
+  source_title=$(dx_run_spec_field "$spec_file" "source.title")
+  if [[ -n "$source_title" ]]; then
+    export DEX_SESSION_TITLE="$source_title"
+  fi
+
   plan_approval=$(dx_run_spec_field "$spec_file" "workflow.requires_plan_approval")
   export DEX_HEADLESS_REQUIRES_PLAN_APPROVAL="$plan_approval"
   default_branch=$(dx_run_spec_field "$spec_file" "repository.default_branch")
@@ -3664,6 +3666,7 @@ __dx_run_spec_cli() {
   local -x DEX_FACTORY_SYNC="${DEX_FACTORY_SYNC:-}"
   local -x DX_AGENT_OVERRIDE="${DX_AGENT_OVERRIDE:-}"
   local -x DX_MODEL_OVERRIDE="${DX_MODEL_OVERRIDE:-}"
+  local -x DEX_SESSION_TITLE="${DEX_SESSION_TITLE:-}"
   local -x DEX_HEADLESS_REQUIRES_PLAN_APPROVAL="${DEX_HEADLESS_REQUIRES_PLAN_APPROVAL:-}"
   local -x DEX_HEADLESS_DEFAULT_BRANCH="${DEX_HEADLESS_DEFAULT_BRANCH:-}"
   while [[ $# -gt 0 ]]; do
@@ -4099,6 +4102,7 @@ dx() {
     echo "       dx --session \"<prompt>\"   Open a session in the current checkout"
     echo "       dx --workflow \"<task>\"    Run the full ticket-to-PR workflow"
     echo "       dx --agent codex --model gpt-5.3-codex \"<task>\""
+    echo "       dx --title \"<title>\" <NUMBER>  Name the Claude session after the ticket"
     echo "       dx --no-worktree <task>"
     echo "       dx --resume        Resume the most recent session"
     echo "       dx --from-pr <N>   Resume session linked to a PR"
@@ -4112,6 +4116,7 @@ dx() {
   local dx_prompt_mode="" dx_workspace_flag=0 dx_literal_prompt=0
   local dx_agent_flag=""
   local dx_model_flag=""
+  local dx_title_flag=""
   local -a dx_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -4164,6 +4169,22 @@ dx() {
         fi
         shift
         ;;
+      --title)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+          dx_error "Usage: dx --title <title> <ticket-or-task>"
+          return 1
+        fi
+        dx_title_flag="$2"
+        shift 2
+        ;;
+      --title=*)
+        dx_title_flag="${1#--title=}"
+        if [[ -z "$dx_title_flag" ]]; then
+          dx_error "Usage: dx --title <title> <ticket-or-task>"
+          return 1
+        fi
+        shift
+        ;;
       --)
         if [[ ${#dx_args[@]} -eq 0 ]]; then
           dx_literal_prompt=1
@@ -4197,6 +4218,9 @@ dx() {
   if [[ -n "$dx_model_flag" ]]; then
     dx_provider_validate_model_field "dx --model" "$dx_model_flag" || return 1
     local -x DX_MODEL_OVERRIDE="$dx_model_flag"
+  fi
+  if [[ -n "$dx_title_flag" ]]; then
+    local -x DEX_SESSION_TITLE="$dx_title_flag"
   fi
 
   if [[ $# -eq 0 ]]; then

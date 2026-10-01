@@ -165,9 +165,9 @@ assert_contains "title=[Flag title]" "$TMP_DIR/flag-env.out"
 DEX_SESSION_TITLE=Inherited dx_title_probe 17 > "$TMP_DIR/env.out"
 assert_contains "title=[Inherited]" "$TMP_DIR/env.out"
 # A missing or empty value is a usage error and starts nothing.
-for bad in "--title" "--title=" "--title --model"; do
+for bad in "--title" "--title= 17" "--title --model x 17"; do
   # shellcheck disable=SC2086  # split the flag forms on purpose
-  dx_title_probe $bad 17 > "$TMP_DIR/flag-bad.out"
+  dx_title_probe $bad > "$TMP_DIR/flag-bad.out"
   assert_contains "Usage: dx --title" "$TMP_DIR/flag-bad.out"
   assert_not_contains "title=[" "$TMP_DIR/flag-bad.out"
 done
