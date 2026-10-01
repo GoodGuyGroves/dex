@@ -233,7 +233,7 @@ dx review stats            # Review-loop history per risk tier, from telemetry
 dx worktree audit          # Compare Dex, git and this project's own worktree resources
 dx test                    # Test Dex here, or verify another initialized project
 dx log                     # Show recent run events and summaries
-dx tools bootstrap         # Install/refresh RTK, browser MCPs, docs MCP, and plugins
+dx tools bootstrap         # Install/refresh RTK, browser MCPs, docs MCP, and plugins for Dex launches
 dx config                  # Configure integrations (ticket tracker, reviewers, MCP, session messaging)
 dx config --session-messaging on  # Deliver messages between your Dex sessions without approval
 dx maintain                # Run background maintenance or install its GitHub workflow
@@ -303,8 +303,6 @@ continues through the usual approval and quality gates.
   required for automatic PR media; older releases keep a warned local handoff.
 - Optional: Node.js and npm, used for Playwright UI-capture tooling.
 - Optional: Codex CLI if you want the `codex-subscription` provider profile.
-- Optional: `jq`, used by `dx config` to merge MCP server settings; without it
-  that merge is skipped.
 - Optional: `shellcheck`, language toolchains, and test tools used by your repo.
 
 Dex installs Playwright UI-capture tooling and RTK token-reduction tooling into
@@ -319,10 +317,25 @@ tools, artifacts, runs, router and config files then default beneath it. Use the
 same `DEX_HOME` for every session on a machine. See
 [docs/reference.md](docs/reference.md#state-root).
 
-RTK support is installed by `dx install`, `dx init`, `dx sync`, and
-`dx tools bootstrap`. Dex-launched Claude Code sessions get a fail-open Bash rewrite hook;
-Codex gets global instructions to prefix shell commands with RTK when compact
-output is enough. Set `DX_RTK_ENABLED=0` to skip this bootstrap.
+RTK support is installed by `dx install`, `dx init`, `dx sync --bootstrap`,
+and `dx tools bootstrap`. Dex-launched Claude Code sessions get a fail-open
+Bash rewrite hook. With `dx tools bootstrap --codex-home`, Codex also gets
+global instructions to prefix shell commands with RTK when compact output is
+enough. Set `DX_RTK_ENABLED=0` to skip this bootstrap.
+
+The MCP servers and plugins the bootstrap adds are per launch too. The browser
+MCPs and the OpenAI docs MCP go into Dex's MCP registry, and the official
+plugin marketplaces are cloned at a pinned commit, both under
+`$DX_TOOL_DIR` (`$DEX_HOME/tools`, else `~/.claude/.dex-tools/`). Each Dex launch adds
+the registry's servers (Claude: `--mcp-config`; Codex: `-c mcp_servers…`) and
+one `--plugin-dir` per plugin your repository's languages select. Nothing is registered with `claude mcp`,
+`claude plugin` or `codex mcp`, so plain sessions are unchanged, and deleting
+`$DX_TOOL_DIR` undoes it. A server or plugin you configured yourself
+wins over Dex's copy. `dx sync` only checks this tooling; `dx sync --bootstrap`
+installs it. `DEX_SKIP_TOOL_BOOTSTRAP=1` turns every install off. `dx config`
+can add a repository's `.mcp.json` servers to the registry (it asks, default
+no); it no longer copies them into `~/.claude/settings.json`. See
+[docs/reference.md](docs/reference.md#per-launch-mcp-servers-and-plugins).
 
 Dex's hooks are launch-scoped. Every Claude session Dex starts gets them
 through its own `--settings` file, and `~/.claude/settings.json` is left
@@ -343,7 +356,10 @@ into `~/.claude/skills`. Run `dx install --global-skills` to get them in plain
 `claude` sessions too, and `dx install --no-global-skills` to remove the links.
 Links an earlier install made stay until you remove them. They are harmless,
 though a Dex session then lists each skill twice, bare and as `dex:<name>`.
-Codex skill links are unchanged.
+Codex has no per-launch skills path, so its skill links in
+`$CODEX_HOME/skills` are the one global write left, and they are opt-in:
+`dx tools bootstrap --codex-home` (or `DEX_CODEX_HOME_WRITES=1`). Codex still
+reads Dex's skills and prompts by absolute path without them.
 
 Known limits:
 - A launch removes its settings file when it returns. A killed launch leaves

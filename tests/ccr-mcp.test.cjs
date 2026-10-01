@@ -50,6 +50,30 @@ test('scoping is opt-in and explicit native MCP flags take precedence', () => {
   assert.equal(launchArguments(['--', '--mcp-config']).mcpExplicit, false);
 });
 
+test("Dex's registry --mcp-config is not the caller's own: it joins the scope as the lowest layer", t => {
+  const env = { DEX_MCP_LAUNCH_CONFIG: '/dex/launch.mcp.json' };
+  const parsed = launchArguments(['--mcp-config', '/dex/launch.mcp.json', '-p', 'task'], env);
+  assert.equal(parsed.mcpExplicit, false);
+  assert.equal(parsed.dexMcpConfig, '/dex/launch.mcp.json');
+  assert.ok(!parsed.args.includes('/dex/launch.mcp.json'), parsed.args);
+  assert.equal(launchArguments(['--mcp-config=/dex/launch.mcp.json'], env).dexMcpConfig, '/dex/launch.mcp.json');
+  // A caller's own config beside it still counts as explicit.
+  const both = launchArguments(['--mcp-config', '/dex/launch.mcp.json', '--mcp-config', '/caller.json'], env);
+  assert.equal(both.mcpExplicit, true);
+  assert.ok(both.args.includes('/caller.json'));
+  // Without the marker the same flag is the caller's.
+  assert.equal(launchArguments(['--mcp-config', '/dex/launch.mcp.json'], {}).mcpExplicit, true);
+
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-mcp-registry-')); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const registry = path.join(home, 'launch.mcp.json');
+  fs.writeFileSync(registry, JSON.stringify({ mcpServers: { playwright: { command: 'dex-browser' }, openaiDeveloperDocs: { url: 'https://docs' }, extra: { command: 'x' } } }));
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { playwright: { command: 'user-browser' } } }));
+  const result = scope({ enabled: true, include: ['playwright', 'openaiDeveloperDocs'] }, { home, cwd: home, root: home, env: {}, registry });
+  assert.deepEqual(Object.keys(result.config.mcpServers).sort(), ['openaiDeveloperDocs', 'playwright']);
+  assert.equal(result.config.mcpServers.playwright.command, 'user-browser');
+  assert.ok(result.summary.omitted.includes('extra'));
+});
+
 test('linked worktrees retain servers disabled in the main checkout', t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-mcp-worktree-')); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const repo = fs.realpathSync(home);

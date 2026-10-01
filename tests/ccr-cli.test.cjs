@@ -986,3 +986,30 @@ test('profile output is a table, not the raw value the command happens to return
   assert.doesNotMatch(set.stdout, /"default_model"|"models"/, 'set does not dump the config it returns');
   assert.match(run('profile', 'list').stdout, /@cheap\s+anthropic\/claude-opus-5/);
 });
+
+test("a routed launch passes Dex's registry --mcp-config through once, and never beside the caller's own", async t => {
+  const saved = Object.fromEntries(['PATH', 'DEX_SESSION_ID', 'DEX_SESSION_ONLY', 'DX_STATE_DIR', 'DEX_MCP_LAUNCH_CONFIG', 'DEX_TEST_ARGV'].map(key => [key, process.env[key]]));
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  const bin = path.join(directory, 'mcp-bin'); fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$DEX_TEST_ARGV"\n', { mode: 0o700 });
+  const dexFile = path.join(directory, 'launch.mcp.json');
+  const argvFile = path.join(directory, 'argv');
+  Object.assign(process.env, { PATH: `${bin}:${process.env.PATH}`, DEX_SESSION_ID: 'mcp-test', DEX_SESSION_ONLY: '1',
+    DX_STATE_DIR: directory, DEX_MCP_LAUNCH_CONFIG: dexFile, DEX_TEST_ARGV: argvFile });
+  state.saveAccounts([{ id: 'one', name: 'main', provider: 'anthropic', enabled: true }]);
+  t.mock.method(adapter, 'start', async () => ({ gateway: 'http://127.0.0.1:1234' }));
+  t.mock.method(ipc, 'call', async (method, fields) => method === 'register' ? { id: fields.id, context_limit: 64000 } : {});
+  const configs = () => fs.readFileSync(argvFile, 'utf8').split('\n').filter((arg, index, all) => all[index - 1] === '--mcp-config');
+
+  // Scope off: Dex's file reaches claude unchanged, once.
+  assert.equal(await launch(['--mcp-config', dexFile, '-p', '--', 'task']), 0);
+  assert.deepEqual(configs(), [dexFile]);
+  // The caller's own config wins; Dex's is not added beside it.
+  const caller = path.join(directory, 'caller.json');
+  assert.equal(await launch(['--mcp-config', dexFile, '--mcp-config', caller, '-p', '--', 'task']), 0);
+  assert.deepEqual(configs(), [caller]);
+});

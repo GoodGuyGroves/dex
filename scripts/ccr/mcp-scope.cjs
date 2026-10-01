@@ -17,7 +17,10 @@ function read(file) {
   }
 }
 
-function scope(policy, { home = os.homedir(), cwd = process.cwd(), root, env = process.env } = {}) {
+// registry: the --mcp-config file dx_provider_claude built from Dex's MCP
+// registry. It is the lowest layer, so the user's own servers of the same name
+// win, and the scope's include list applies to it like any other.
+function scope(policy, { home = os.homedir(), cwd = process.cwd(), root, env = process.env, registry } = {}) {
   if (!policy?.enabled) return null;
   if (!Array.isArray(policy.include)) throw new Error('MCP scope requires an include array of server names.');
   if (policy.include.some(name => typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,120}$/.test(name))) throw new Error('Invalid MCP server name in scope.');
@@ -33,7 +36,8 @@ function scope(policy, { home = os.homedir(), cwd = process.cwd(), root, env = p
   const sharedState = commonDir && path.basename(commonDir) === '.git' ? user.projects?.[path.dirname(commonDir)] || {} : {};
   const projectState = user.projects?.[cwd] || user.projects?.[root] || {};
   const local = projectState.mcpServers || {};
-  const available = { ...user.mcpServers, ...project.mcpServers, ...local };
+  const dex = registry ? read(registry) : {};
+  const available = { ...dex.mcpServers, ...user.mcpServers, ...project.mcpServers, ...local };
   const included = new Set(policy.include), selected = Object.create(null), omitted = [], missing = new Set();
   const disabled = new Set([...(Array.isArray(user.disabledMcpServers) ? user.disabledMcpServers : []),
     ...(Array.isArray(sharedState.disabledMcpServers) ? sharedState.disabledMcpServers : []),

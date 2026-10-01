@@ -7,8 +7,19 @@ const adapter = require('./adapter.cjs');
 const ipc = require('./ipc.cjs');
 const { claudePicker, betaHeader, plainModel, longContext } = require('./claude-picker.cjs');
 
-function launchArguments(args) {
-  const forwarded = []; let requested, settings;
+function launchArguments(input, env = process.env) {
+  const forwarded = []; let requested, settings, dexMcpConfig;
+  // dx_provider_claude names the --mcp-config it added from Dex's registry.
+  // That one is not the caller's own choice: it is taken out here, once, and
+  // either folded into the router's MCP scope or passed on unchanged.
+  const dexMcp = env.DEX_MCP_LAUNCH_CONFIG || '';
+  const args = [];
+  for (let index = 0; index < input.length; index++) {
+    if (input[index] === '--') { args.push(...input.slice(index)); break; }
+    if (dexMcp && input[index] === '--mcp-config' && input[index + 1] === dexMcp) { dexMcpConfig = dexMcp; index++; continue; }
+    if (dexMcp && input[index] === `--mcp-config=${dexMcp}`) { dexMcpConfig = dexMcp; continue; }
+    args.push(input[index]);
+  }
   const delimiter = args.indexOf('--');
   const options = delimiter < 0 ? args : args.slice(0, delimiter);
   for (let index = 0; index < args.length; index++) {
@@ -34,7 +45,7 @@ function launchArguments(args) {
   const resume = options.some(arg => ['--resume', '--continue', '-r', '-c'].includes(arg) || arg.startsWith('--resume=')) && !options.includes('--fork-session');
   const mcpExplicit = options.some(arg => arg === '--strict-mcp-config' || arg === '--mcp-config' || arg.startsWith('--mcp-config='));
   const toolsExplicit = options.some(arg => arg === '--tools' || arg.startsWith('--tools='));
-  return { requested, resume, settings, mcpExplicit, toolsExplicit, args: ['--dangerously-skip-permissions', '--permission-mode', 'bypassPermissions', '--model', longContext('dex/active'), ...forwarded] };
+  return { requested, resume, settings, mcpExplicit, toolsExplicit, dexMcpConfig, args: ['--dangerously-skip-permissions', '--permission-mode', 'bypassPermissions', '--model', longContext('dex/active'), ...forwarded] };
 }
 
 // Relies on dx_provider_claude having already merged every settings layer and Dex's hooks into this one file.
@@ -137,7 +148,7 @@ async function launch(args) {
     throw new Error('CCR routing is enabled, but no account is enabled. Add one with dx account add, or go back to direct Claude Code with dx setup --direct.');
   }
   const settingsOverride = launchSettings(parsed.settings, config);
-  const mcp = parsed.mcpExplicit ? null : require('./mcp-scope.cjs').scope(config.mcp_scope);
+  const mcp = parsed.mcpExplicit ? null : require('./mcp-scope.cjs').scope(config.mcp_scope, { registry: parsed.dexMcpConfig });
   if (mcp) settingsOverride.disableClaudeAiConnectors = true;
   const settings = await adapter.start();
   const token = state.token();
@@ -167,7 +178,7 @@ async function launch(args) {
       scopedArgs.push('--strict-mcp-config', '--mcp-config', mcpFile);
       if (mcp.builtin_tools && !parsed.toolsExplicit) scopedArgs.push('--tools', mcp.builtin_tools.join(','));
       if (mcp.summary.missing_env.length) process.stderr.write(`dex: selected MCPs reference unset variables: ${mcp.summary.missing_env.join(', ')}. Check their authentication before relying on these tools.\n`);
-    }
+    } else if (parsed.dexMcpConfig && !parsed.mcpExplicit) scopedArgs.push('--mcp-config', parsed.dexMcpConfig);
     // Only a print-mode launch has its stderr filtered: an interactive session
     // owns the terminal and keeps every stream inherited.
     const headless = args.includes('-p') || args.includes('--print');

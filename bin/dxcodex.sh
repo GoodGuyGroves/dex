@@ -213,6 +213,10 @@ case "$subcmd" in
         -c "$(build_codex_environment_config "$codex_hook_assignment")"
       )
     done
+    # Dex's MCP registry, per launch; servers the user configured win.
+    while IFS= read -r codex_mcp_override; do
+      [[ -n "$codex_mcp_override" ]] && codex_session_policy_args+=(-c "$codex_mcp_override")
+    done < <(dx_dex_codex_mcp_overrides 2>/dev/null || true)
     if [[ $resume_session -eq 1 ]]; then
       if [[ -n "$resume_handle" ]]; then
         codex_args=(resume "$resume_handle" "${codex_session_policy_args[@]}")

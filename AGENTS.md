@@ -147,7 +147,7 @@ Each skill lives in `skills/<name>/SKILL.md` with YAML frontmatter containing `n
 - Claude gets skills per launch: every Dex launch passes `--plugin-dir "$DEX_DIR/plugin"`, which loads them as the plugin `dex`, invokable as `dex:<name>` or by bare name. A user skill with the same name captures the bare name, so generated `skill: "<name>"` text goes through `dx_skill_ref` / `dx_skill_refs_render` (lib/provider.sh): `dex:<name>` for Claude engines, bare for Codex. Prose names `humanizer` as `dex:humanizer` (bare outside Claude Code); `dx*` names stay bare, since a collision is unlikely
 - Skills and prompts name Dex files by absolute path (`$DEX_DIR/prompts/<file>.md`, `$DEX_DIR/skills/<name>/SKILL.md`); a relative one resolves against the target repo. `tests/plugin-packaging-test.sh` rejects relative ones
 - Linking skills into `~/.claude/skills` is opt-in (`dx install --global-skills`): a single `~/.claude/skills -> $DEX_DIR/skills` symlink when possible, or per-skill links inside an existing directory. `--no-global-skills` removes them
-- Codex gets skills via individual symlinks in `$CODEX_HOME/skills/<name>` (`CODEX_HOME` defaults to `~/.codex`) so Dex does not replace Codex system/plugin skills
+- Codex gets skills via individual symlinks in `$CODEX_HOME/skills/<name>` (`CODEX_HOME` defaults to `~/.codex`) so Dex does not replace Codex system/plugin skills. They are opt-in (`dx tools bootstrap --codex-home`, `DEX_CODEX_HOME_WRITES=1`): Codex has no per-launch skills path, and this is the one global write left
 
 ### Writing copy and comments
 
@@ -183,12 +183,17 @@ To enable one:
 Those MCP servers authenticate through claude.ai or `claude mcp`, appear as
 `mcp__claude_ai_<Vendor>__*`, and reach Dex's skills automatically once enabled.
 
-`dx install`, `dx init` and `dx sync` may install a narrow official allowlist: Dex
-Claude/Codex skill links, browser MCPs, OpenAI docs MCP, the OpenAI Codex Claude plugin when
-Codex is installed, `frontend-design` for frontend repos, official LSP plugins for detected
-TypeScript/JavaScript, Python, Rust or Go, and the RTK binary with its Dex-managed
-hook/instruction files. Never add broad behaviour-changing plugins, community marketplaces or
-vendor integrations to that path.
+`dx install`, `dx init`, `dx tools bootstrap` and `dx sync --bootstrap` may install a narrow
+official allowlist: browser MCPs, OpenAI docs MCP, the OpenAI Codex Claude plugin when Codex
+is installed, `frontend-design` for frontend repos, official LSP plugins for detected
+TypeScript/JavaScript, Python, Rust or Go, and the RTK binary. The MCP servers go into Dex's
+registry (`$DX_TOOL_DIR/mcp-registry.json`) and the plugins are resolved from marketplace
+clones pinned under `$DX_TOOL_DIR/plugins`; each launch passes them (`--mcp-config`,
+`--plugin-dir`, Codex `-c mcp_servers…`). Never call `claude mcp add`, `claude plugin
+install`/`enable`/`marketplace add` or `codex mcp add` from the bootstrap. Codex skill links
+and RTK instructions are opt-in. `DEX_SKIP_TOOL_BOOTSTRAP=1` turns every install off. Never
+add broad behaviour-changing plugins, community marketplaces or vendor integrations to that
+path.
 
 ## Guard Conventions
 

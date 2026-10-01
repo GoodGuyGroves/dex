@@ -322,13 +322,10 @@ dx_install_repo_attribution "$repo_root"
 
 CODEX_SKILL_COUNT=0
 TOOL_BOOTSTRAP_RAN=0
-if [[ "${DEX_SKIP_TOOL_BOOTSTRAP:-0}" == "1" ]]; then
-  dx_skip "Skipping Claude/Codex tooling bootstrap (already handled by caller)"
-else
-  TOOL_BOOTSTRAP_RAN=1
-  if ! dx_bootstrap_agent_tooling "$repo_root" "install"; then
-    dx_warn "Continuing init without complete Claude/Codex tooling bootstrap"
-  fi
+# The bootstrap honours DEX_SKIP_TOOL_BOOTSTRAP itself.
+[[ "${DEX_SKIP_TOOL_BOOTSTRAP:-0}" == "1" ]] || TOOL_BOOTSTRAP_RAN=1
+if ! dx_bootstrap_agent_tooling "$repo_root" "install"; then
+  dx_warn "Continuing init without complete Claude/Codex tooling bootstrap"
 fi
 
 if command -v codex &>/dev/null; then
@@ -456,7 +453,7 @@ if [[ "$CODEX_SKILL_COUNT" -gt 0 ]]; then
   echo "  - ${CODEX_SKILL_COUNT} Dex skill link(s) available in $(dx_codex_skills_dir) for Codex CLI"
 fi
 if [[ "$TOOL_BOOTSTRAP_RAN" -eq 1 ]]; then
-  echo "  - Claude/Codex tooling installed with Dex links, official MCPs, and safe official plugins"
+  echo "  - Claude/Codex tooling installed: official MCPs and safe official plugins, loaded per Dex launch"
 fi
 if [[ $ANALYSIS_COMPLETED -eq 1 ]]; then
   echo "  - ${ANALYSIS_AGENT_LABEL} analyzed the codebase and generated project-specific config"

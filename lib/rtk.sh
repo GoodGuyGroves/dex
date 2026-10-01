@@ -525,7 +525,7 @@ dx_uninstall_rtk_codex_instructions() {
 dx_install_rtk_codex_instructions() {
   local codex_dir rtk_md agents_md rtk_ref rtk_cmd tmp existing
 
-  if ! dx_rtk_enabled; then
+  if ! dx_rtk_enabled || ! dx_codex_home_writes_enabled; then
     return 0
   fi
 
@@ -599,26 +599,10 @@ dx_check_rtk_binary() {
   return 1
 }
 
-dx_check_rtk_claude_hook() {
-  local settings_file="$HOME/.claude/settings.json"
-
-  if ! dx_rtk_enabled; then
-    return 0
-  fi
-
-  if [[ -f "$settings_file" ]] && grep -Fq "rtk-claude-hook.sh" "$settings_file" 2>/dev/null; then
-    dx_ok "Claude RTK hook configured"
-    return 0
-  fi
-
-  dx_warn "Claude RTK hook is not configured"
-  return 1
-}
-
 dx_check_rtk_codex_instructions() {
   local codex_dir rtk_md agents_md rtk_ref
 
-  if ! dx_rtk_enabled; then
+  if ! dx_rtk_enabled || ! dx_codex_home_writes_enabled; then
     return 0
   fi
 
@@ -653,8 +637,8 @@ dx_install_rtk_tooling() {
 dx_check_rtk_tooling() {
   local failed=0
 
+  # The Claude hook is in every launch's settings once the binary is here.
   dx_check_rtk_binary || failed=1
-  dx_check_rtk_claude_hook || failed=1
   dx_check_rtk_codex_instructions || failed=1
 
   return "$failed"

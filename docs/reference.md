@@ -14,7 +14,7 @@ it.
 |--------|---------|---------------|
 | `common.sh` | Bootstrap, constants, sources all others | `dx_repo_root()` |
 | `lock.sh` | Advisory directory locks with owner records and serialized stale recovery | `dx_lock_acquire()`, `dx_lock_release()`, `dx_lock_with()` |
-| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap, opt-in global hooks and skill links | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_install_openai_docs_mcp_servers()`, `dx_claude_global_skills_state()`, `dx_remove_claude_skill_links()` |
+| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap, Dex's MCP registry and per-launch plugins, opt-in global hooks and skill links | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_mcp_registry_set()`, `dx_dex_launch_mcp_config()`, `dx_dex_launch_plugin_dirs()`, `dx_claude_global_skills_state()`, `dx_remove_claude_skill_links()` |
 | `attribution.sh` | Commit/PR attribution installation, hook chaining, and restoration | `dx_install_repo_attribution()`, `dx_uninstall_repo_attribution()`, `dx_commit_attribution_message()` |
 | `codex.sh` | Codex CLI skill installation helpers | `dx_install_codex_skills()`, `dx_count_dex_skills()`, `dx_codex_dex_skills_complete()`, `dx_uninstall_codex_skills()` |
 | `completion.sh` | Generation-bound completion expectations, receipts, validation, and cleanup | `dx_completion_issue()`, `dx_completion_write_receipt()`, `dx_completion_consume()` |
@@ -55,6 +55,48 @@ Every Claude session Dex launches gets Dex's hooks through its `--settings`
 file and Dex's skills as the plugin `dex` through `--plugin-dir
 "$DEX_DIR/plugin"` (skills answer to their bare name and to `dex:<name>`).
 The hook and skill flags only change what plain `claude` sessions see.
+
+## Per-launch MCP servers and plugins
+
+`dx install`, `dx init` and `dx tools bootstrap` set these up under
+`$DX_TOOL_DIR`, never in your own Claude or Codex configuration. `dx sync`
+only checks them unless you pass `--bootstrap`. `DEX_SKIP_TOOL_BOOTSTRAP=1`
+turns every install off.
+
+| What | Where | How a launch gets it |
+|------|-------|----------------------|
+| MCP registry (`playwright`, `chrome-devtools`, `openaiDeveloperDocs`, and any `.mcp.json` server `dx config` adds) | `$DX_TOOL_DIR/mcp-registry.json` | Claude: one `--mcp-config` file, not strict, so your own servers still load. Codex (interactive sessions): `-c mcp_servers.<name>.<field>=…`. Claude skips a name you configured (user, local or project scope) or disabled, so yours wins. Codex skips a name your `config.toml` defines. Codex values, `env` included, appear in its argv. Phases that launch with no MCP servers, and review waves, keep their strict empty config |
+| Plugin marketplaces (`claude-plugins-official`, and `openai-codex` when Codex is installed) | `$DX_TOOL_DIR/plugins/marketplaces/<name>`, a clone at the commit Dex pins | not loaded directly |
+| Plugins (`codex`, `frontend-design`, and the TypeScript, Pyright, rust-analyzer and gopls LSP plugins) | `$DX_TOOL_DIR/plugins/resolved/<plugin>`: a link to a plugin with its own manifest, or a generated `plugin.json` for a `strict: false` marketplace entry | one `--plugin-dir` per plugin the repository's languages select, after Dex's own; a plugin named in `enabledPlugins` in your user, project or local settings, true or false, is left to you |
+
+`dx tools bootstrap` refuses a plugin when:
+
+- its marketplace `source` is not a directory inside the marketplace;
+- a symlink in its tree resolves outside the plugin's own directory (a link
+  inside it is allowed, and its target is scanned like any other file);
+- its marketplace entry or its own `plugin.json` gives `commands`, `agents`,
+  `skills`, `hooks`, `mcpServers`, `lspServers` or `outputStyles` as a path;
+- its entry, or any file in its tree up to 1 MB, mentions
+  `CLAUDE_PLUGIN_DATA` (which writes under `~/.claude/plugins/data`).
+
+These checks run when the plugin is resolved, not at launch. The text scan is
+a heuristic; the real control is the short allowlist of plugins, from
+marketplaces pinned to reviewed commits.
+
+Through the router, the registry joins its MCP scope as the lowest layer, so
+`mcp_scope.include` still decides.
+
+Codex has no per-launch skills path. Dex's skill links in `$CODEX_HOME/skills`
+and its RTK instructions (`RTK.md`, an import line in `AGENTS.md`) are the one
+global write left, and they are opt-in: `dx tools bootstrap --codex-home` or
+`DEX_CODEX_HOME_WRITES=1`. The bootstrap records that explicit choice as
+`$DX_TOOL_DIR/codex-home-writes`, so later checks and the doctor follow it.
+`DEX_CODEX_HOME_WRITES=0` overrides the record for one run, and
+`dx tools bootstrap --no-codex-home` deletes it and removes the links and
+instructions.
+
+Registrations an earlier Dex made at user scope stay where they are; Dex no
+longer adds new ones.
 
 | Flag | Effect |
 |------|--------|
@@ -136,7 +178,11 @@ the gate map.
 | `DEX_PHASE_<N>_TIMEOUT` | Same, for one phase only (e.g. `DEX_PHASE_2_TIMEOUT=3600`); wins over `DEX_PHASE_TIMEOUT` | unset |
 | `DEX_STOP_SOUND` | Play a sound when Claude stops (macOS only); `0` turns it off | `1` |
 | `DEX_STOP_SOUND_FILE` | Play this sound file instead of a random system one | unset |
-| `DEX_SKIP_TOOL_BOOTSTRAP` | `1` makes `dx init` skip the Claude/Codex tooling bootstrap, for callers that already ran it | `0` |
+| `DEX_SKIP_TOOL_BOOTSTRAP` | `1` turns off every Claude/Codex tooling install (`dx install`, `dx init`, `dx sync --bootstrap`, `dx tools bootstrap`); checks still run | `0` |
+| `DEX_CODEX_HOME_WRITES` | `1` lets the bootstrap link Dex's skills into `$CODEX_HOME/skills` and write its Codex RTK instructions, and records that choice; `0` turns them off. `dx tools bootstrap --codex-home` sets `1`, `--no-codex-home` deletes the record | unset: on when `$DX_TOOL_DIR/codex-home-writes` exists, else off |
+| `DX_CLAUDE_OFFICIAL_MARKETPLACE_URL` / `_REF` | Where the official Claude plugin marketplace is cloned from, and the commit it is pinned to | GitHub `anthropics/claude-plugins-official`, the pin in `lib/agent-tools.sh` |
+| `DX_OPENAI_CODEX_MARKETPLACE_URL` / `_REF` | The same for the OpenAI Codex plugin marketplace | GitHub `openai/codex-plugin-cc`, the pin in `lib/agent-tools.sh` |
+| `DEX_MCP_LAUNCH_CONFIG` | Internal: the `--mcp-config` file a router launch may fold into its MCP scope | set per launch |
 | `DEX_SYNC_BUDGET_MINUTES` | Runtime budget for one `dx sync` provider run | 60 |
 | `DEX_MAINTAIN_BUDGET_MINUTES` | Runtime budget for one scheduled maintenance run | 60 |
 | `DEX_MAINTAIN_RESPOND_BUDGET_MINUTES` | Runtime budget for one maintenance PR feedback run | 30 |
@@ -172,7 +218,7 @@ the gate map.
 | `DEX_SESSION_ID` | Unique session ID (set by dxloop for stop hook) | unset |
 | `DEX_REVIEW_ASSESSMENT_ACTIVE` | Internal marker for the read-only preflight risk assessor | unset |
 | `DEX_REVIEW_PASS_ACTIVE` | Marks a session as a single-shot review-wave pass so its Stop hook can never run the parent lifecycle's inline phase handoff | unset |
-| `CODEX_HOME` | Codex config root used for Dex skill links | `~/.codex` |
+| `CODEX_HOME` | Codex config root: where Dex looks for your own MCP servers, and where the opt-in skill links go | `~/.codex` |
 | `DX_AGENT` / `DX_AGENT_OVERRIDE` | Agent override (`claude` or `codex`) | profile/default |
 | `DX_MODEL` / `DX_MODEL_OVERRIDE` | Model override for the selected agent | profile/default |
 | `DX_PROVIDER_PROFILE` | Provider profile override (`claude-subscription`, `codex-subscription`, or custom) | config/default |
@@ -195,7 +241,7 @@ the gate map.
 | `DX_ALLOW_REPO_GATEWAY_PROVIDER` | Explicitly allow a trusted repo-local gateway/API provider profile for the current invocation | `0` |
 | `DX_ALLOW_FORK_PR_CHECKOUT` | Skill-level opt-in letting `/dxprreview` check out fork PRs | `0` |
 | `DEX_LIFECYCLE_MINIMAL_MCP` | Launch the lifecycle phases that never open a browser (4 Verify, 5 PR, 6 Complete, and 1 Plan when the launch ends with the phase) with no MCP servers, the way review waves already launch; `0` keeps whatever the session inherited. Phases 0, 2 and 3, standalone sessions, and interactive `claude` are untouched | `1` |
-| `DEX_UI_MCP_SCOPE` | Claude MCP scope `dx ui-capture install` registers the browser servers in (`user`, `project`, or `local`), same as its `--user`/`--project`/`--local` flags; `project` writes the repository's tracked `.mcp.json` at the checkout root and falls back to `user` outside a checkout. `dx install` always uses user scope | `user` |
+| `DEX_UI_MCP_SCOPE` | Where `dx ui-capture install` puts the browser servers: `dex` (Dex's MCP registry, loaded by Dex launches only, for Claude and Codex), or `user`, `project` or `local` to register them with the Claude and Codex CLIs as before, same as its `--user`/`--project`/`--local` flags; `project` writes the repository's tracked `.mcp.json` at the checkout root and falls back to `user` outside a checkout | `dex` |
 | `DEX_SESSION_RSS_SAMPLE_SECONDS` | How often the runtime supervisor samples the peak resident size of the session's token-carrying process tree, on the heartbeat it already runs. Clamped to 1..3600; a malformed value falls back to the default rather than refusing to supervise | 30 |
 | `DEX_WORKTREE_HOOK_TIMEOUT` | Seconds one `## Worktree Hooks` command (`after_create`, `before_remove`, `on_session_end`, `orphan_resources`) may run before its process tree is stopped; `0` removes the deadline, except for `on_session_end`, which is capped at 5 s whatever this says because the host gives the whole SessionEnd hook ten seconds. A hook that is stopped, or that fails, warns and never blocks the create or remove. See [docs/worktree-hooks.md](worktree-hooks.md) | 300 (5m 0s) |
 | `DEX_REVIEW_CHECK_TIMEOUT` | Seconds one deterministic check may run before `bin/review-check.sh` reports it `over-budget`. It no longer stops the command: a late result keeps its real exit code and duration and is cached like any other | 900 (15m 0s) |

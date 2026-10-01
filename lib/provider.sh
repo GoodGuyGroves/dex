@@ -939,11 +939,16 @@ dx_provider_claude() {
   # an opt-in global install (dx install --global-hooks) from running the
   # same hooks a second time. No trap removes the file: dx.sh is sourced into
   # the user's shell, so the next launch's sweep collects what a kill leaves.
-  local _dx_launch_file="" _dx_launch_args=() _dx_launch_rc=0
+  local _dx_launch_file="" _dx_launch_mcp_file="" _dx_launch_args=() _dx_launch_rc=0
   __dx_provider_launch_settings "$@" || return 1
   local -x DEX_LAUNCHED=1
+  # The router scopes MCP servers itself; this names the --mcp-config it may
+  # fold into that scope instead of treating it as the caller's own.
+  if [[ "$DX_PROVIDER_ENGINE" == ccr && -n "$_dx_launch_mcp_file" ]]; then
+    local -x DEX_MCP_LAUNCH_CONFIG="$_dx_launch_mcp_file"
+  fi
   __dx_provider_claude_exec "${_dx_launch_args[@]}" || _dx_launch_rc=$?
-  rm -f "$_dx_launch_file"
+  rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"}
   return "$_dx_launch_rc"
 }
 
@@ -959,8 +964,9 @@ __dx_provider_launch_settings_dir() {
 # __dx_provider_launch_settings <claude-args...> — write this launch's one
 # settings file and set, in the caller's scope, _dx_launch_file and
 # _dx_launch_args: the arguments with every --settings the caller passed
-# folded into that file, in order, and a single --settings and Dex's
-# --plugin-dir in front.
+# folded into that file, in order, and a single --settings, Dex's
+# --plugin-dirs and (when Dex's MCP registry has servers to add) one
+# --mcp-config in front. That --mcp-config file is _dx_launch_mcp_file.
 __dx_provider_launch_settings() {
   local arg statusline="" inbound="" rtk=0 dir caller_settings=() after_delimiter=0
   _dx_launch_args=()
@@ -1038,8 +1044,26 @@ __dx_provider_launch_settings() {
     return 1
   fi
   # Dex's skills load per launch as the plugin `dex` (plugin/skills links to
-  # skills/). --plugin-dir repeats, so a caller's own stays beside it.
-  _dx_launch_args=(--settings "$_dx_launch_file" --plugin-dir "$DEX_DIR/plugin" ${_dx_launch_args[@]+"${_dx_launch_args[@]}"})
+  # skills/), and so do the plugins Dex selects for this repository.
+  # --plugin-dir repeats, so a caller's own stays beside them.
+  local dex_args=(--settings "$_dx_launch_file" --plugin-dir "$DEX_DIR/plugin") plugin_dir
+  while IFS= read -r plugin_dir; do
+    [[ -n "$plugin_dir" ]] && dex_args+=(--plugin-dir "$plugin_dir")
+  done < <(dx_dex_launch_plugin_dirs 2>/dev/null || true)
+  # Dex's MCP registry, unless the caller (a minimal phase, a review wave)
+  # stated its own MCP configuration. Not strict: this adds to the user's
+  # servers rather than replacing them.
+  if ! __dx_provider_args_set_mcp ${_dx_launch_args[@]+"${_dx_launch_args[@]}"}; then
+    _dx_launch_mcp_file="${_dx_launch_file}.mcp.json"
+    if (umask 077 && dx_dex_launch_mcp_config > "$_dx_launch_mcp_file") 2>/dev/null \
+      && [[ -s "$_dx_launch_mcp_file" ]]; then
+      dex_args+=(--mcp-config "$_dx_launch_mcp_file")
+    else
+      rm -f "$_dx_launch_mcp_file"
+      _dx_launch_mcp_file=""
+    fi
+  fi
+  _dx_launch_args=("${dex_args[@]}" ${_dx_launch_args[@]+"${_dx_launch_args[@]}"})
 }
 
 # dx_skill_ref <name> — how a generated prompt names a Dex skill. Claude
@@ -2260,20 +2284,19 @@ dx_provider_doctor() {
     if command -v dx_codex_dex_skills_complete >/dev/null 2>&1 && dx_codex_dex_skills_complete; then
       dx_ok "Dex Codex skills linked (${codex_skill_count}/${codex_skill_expected})"
     elif [[ "$codex_skill_count" -gt 0 ]]; then
-      dx_warn "Dex Codex skills are partially linked (${codex_skill_count}/${codex_skill_expected}); run 'dx install' to reinstall skill links"
+      dx_warn "Dex Codex skills are partially linked (${codex_skill_count}/${codex_skill_expected}); run 'dx tools bootstrap --codex-home' to relink them"
+    elif command -v dx_codex_home_writes_enabled >/dev/null 2>&1 && ! dx_codex_home_writes_enabled; then
+      dx_info "Dex Codex skill links are opt-in: dx tools bootstrap --codex-home"
     else
-      dx_warn "Dex Codex skills are not linked; run 'dx install' to refresh skill links"
+      dx_warn "Dex Codex skills are not linked; run 'dx tools bootstrap --codex-home' to link them"
     fi
 
-    local plugin_status="unknown"
-    # The JSON-based check pins "enabled" to this plugin's own record; the old
-    # text grep matched any neighboring plugin's "enabled" within four lines.
-    # provider.sh is sourced standalone in tests, so guard the cross-module call.
-    if command -v dx_claude_plugin_status >/dev/null 2>&1; then
-      plugin_status=$(dx_claude_plugin_status "codex@openai-codex")
-    fi
-    if [[ "$plugin_status" == "enabled" ]]; then
-      dx_ok "OpenAI Codex Claude Code plugin installed"
+    # Loaded per launch from Dex's plugins directory, or enabled in the user's
+    # own Claude settings. provider.sh is sourced standalone in tests, so guard
+    # the cross-module call.
+    if command -v dx_claude_plugin_available >/dev/null 2>&1 \
+      && dx_claude_plugin_available "codex@openai-codex"; then
+      dx_ok "OpenAI Codex Claude Code plugin available"
     else
       if [[ $codex_cli_found -eq 1 ]]; then
         dx_warn "OpenAI Codex Claude Code plugin not installed; Codex CLI delegation is still available"

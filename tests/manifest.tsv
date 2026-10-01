@@ -55,6 +55,7 @@ log-command-test.sh	fast	all	600	hermetic
 maintenance-intake-test.sh	fast	all	600	hermetic
 maintenance-state-test.sh	fast	all	600	hermetic
 maintenance-test.sh	slow	all	1200	hermetic
+mcp-registry-test.sh	fast	all	600	hermetic
 no-global-writes-test.sh	slow	all	1200	hermetic
 output-format-test.sh	fast	all	600	hermetic
 override-policy-test.sh	fast	all	600	hermetic
@@ -62,7 +63,9 @@ parser-drift-test.sh	fast	all	600	hermetic
 pause-test.sh	fast	all	120	hermetic
 phase-loop-ownership-test.sh	slow	all	1200	hermetic
 phase-mcp-test.sh	fast	all	300	hermetic
+plugin-mcp-probe-test.sh	fast	all	1500	shared
 plugin-packaging-test.sh	fast	all	600	hermetic
+plugin-resolve-test.sh	fast	all	600	hermetic
 plugin-skills-probe-test.sh	fast	all	1500	shared
 portability-test.sh	fast	all	600	hermetic
 post-commit-guard-test.sh	fast	all	600	hermetic
@@ -121,6 +124,7 @@ session-telemetry-test.sh	fast	all	300	hermetic
 standalone-provider-test.sh	slow	all	1200	hermetic
 status-line-test.sh	fast	all	600	hermetic
 sub-issue-scope-contract-test.sh	fast	all	600	hermetic
+sync-bootstrap-test.sh	fast	all	600	hermetic
 test-command-cli-test.sh	fast	all	600	hermetic
 test-command-dex-test.sh	fast	all	600	hermetic
 test-command-project-test.sh	fast	all	600	hermetic

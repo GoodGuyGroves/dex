@@ -95,21 +95,30 @@ else
   echo "  RTK:        not installed or wrong binary — run 'dx install'"
 fi
 
+# Dex's MCP registry reaches Claude and Codex launches alike; otherwise the
+# user's own registration with each CLI counts.
+browser_mcp_ready() { # <cli>
+  local name
+  for name in playwright chrome-devtools; do
+    dx_mcp_registry_has "$name" || __dx_mcp_server_exists "$1" "$name" || return 1
+  done
+}
+
 if command -v claude &>/dev/null; then
-  if dx_claude_mcp_server_exists "playwright" && dx_claude_mcp_server_exists "chrome-devtools"; then
+  if browser_mcp_ready claude; then
     echo "  Claude MCP: Playwright + Chrome DevTools configured"
   else
-    echo "  Claude MCP: browser servers incomplete — run 'dx install'"
+    echo "  Claude MCP: browser servers incomplete — run 'dx tools bootstrap'"
   fi
 else
   echo "  Claude MCP: Claude Code CLI not found"
 fi
 
 if command -v codex &>/dev/null; then
-  if dx_codex_mcp_server_exists "playwright" && dx_codex_mcp_server_exists "chrome-devtools"; then
+  if browser_mcp_ready codex; then
     echo "  Codex MCP:  Playwright + Chrome DevTools configured"
   else
-    echo "  Codex MCP:  browser servers incomplete — run 'dx install'"
+    echo "  Codex MCP:  browser servers incomplete — run 'dx tools bootstrap'"
   fi
 fi
 
@@ -143,9 +152,6 @@ if command -v gh &>/dev/null; then
 else
   echo "  GitHub CLI: not found — PR creation, reviewers, and CI watching need it"
   echo "  PR Media:   unavailable — GitHub CLI is not installed"
-fi
-if ! command -v jq &>/dev/null; then
-  echo "  jq:         not found (optional — 'dx config' skips MCP merges without it)"
 fi
 
 # Current project

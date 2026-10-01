@@ -2,6 +2,24 @@
 # Dex helpers for Codex CLI integration, plus the per-skill symlink
 # management shared with the Claude install path in lib/agent-tools.sh.
 
+# Codex has no per-launch skills path, so Dex's skill links and RTK
+# instructions can only live in $CODEX_HOME. They are the one global write
+# left, and opt-in: DEX_CODEX_HOME_WRITES=1, or `dx tools bootstrap
+# --codex-home`. Codex still reads Dex's skills and prompts by absolute path.
+# The bootstrap records the opt-in in a marker under DX_TOOL_DIR, so later
+# checks and the doctor know about it; DEX_CODEX_HOME_WRITES, when set, wins.
+dx_codex_home_writes_marker() {
+  printf '%s/codex-home-writes\n' "${DX_TOOL_DIR:-$HOME/.claude/.dex-tools}"
+}
+
+dx_codex_home_writes_enabled() {
+  if [[ -n "${DEX_CODEX_HOME_WRITES:-}" ]]; then
+    [[ "$DEX_CODEX_HOME_WRITES" == 1 ]]
+    return
+  fi
+  [[ -f "$(dx_codex_home_writes_marker)" ]]
+}
+
 dx_codex_skills_dir() {
   printf '%s\n' "${CODEX_HOME:-$HOME/.codex}/skills"
 }

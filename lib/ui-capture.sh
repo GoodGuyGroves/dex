@@ -409,10 +409,6 @@ __dx_mcp_server_exists() {
   "$cli" mcp get "$name" >/dev/null 2>&1
 }
 
-dx_claude_mcp_server_exists() { __dx_mcp_server_exists claude "$1"; }
-
-dx_codex_mcp_server_exists() { __dx_mcp_server_exists codex "$1"; }
-
 # The browser MCP servers Dex installs, as "<name> <npm package>". Both agents
 # get the same list; adding a third server is a line here, not another pair of
 # near-identical blocks.
@@ -475,16 +471,17 @@ EOF
   return "$failed"
 }
 
-# The Claude MCP scope Dex installs the browser servers into. User scope is the
-# default: one registration per machine, in the user's own configuration.
-# Project scope was the default briefly and was reverted — it writes an
-# absolute Dex path into the repository's tracked `.mcp.json`, and a lifecycle
-# worktree never sees that file, because dx_link_claude_to_worktree links
-# `.claude/` only. Keeping a browser out of a phase that needs none is the
-# minimal `--strict-mcp-config` launch's job, not the scope's. `--project` and
-# `--local` (or DEX_UI_MCP_SCOPE) stay as explicit choices; `local` is per
-# project but held in the user's own configuration rather than `.mcp.json`.
-DX_UI_MCP_DEFAULT_SCOPE=user
+# The Claude MCP scope Dex installs the browser servers into. `dex`, the
+# default, adds them to Dex's own MCP registry: every session Dex launches,
+# Claude or Codex, gets them, and nothing else on the machine does
+# (dx_dex_launch_mcp_config). `user`, `project` and `local` (the flags of the
+# same names, or DEX_UI_MCP_SCOPE) still register with the CLIs themselves.
+# Project scope writes an absolute Dex path into the repository's tracked
+# `.mcp.json`, which a lifecycle worktree never sees, because
+# dx_link_claude_to_worktree links `.claude/` only; `local` is per project but
+# held in the user's own configuration. Keeping a browser out of a phase that
+# needs none is the minimal `--strict-mcp-config` launch's job, not the scope's.
+DX_UI_MCP_DEFAULT_SCOPE=dex
 
 # dx_ui_mcp_scope [requested] — print the Claude MCP scope an install should
 # use. Project scope writes `.mcp.json` into the current directory, so a
@@ -493,9 +490,9 @@ DX_UI_MCP_DEFAULT_SCOPE=user
 dx_ui_mcp_scope() {
   local requested="${1:-${DEX_UI_MCP_SCOPE:-$DX_UI_MCP_DEFAULT_SCOPE}}"
   case "$requested" in
-    user|project|local) ;;
+    dex|user|project|local) ;;
     *)
-      dx_error "Unknown MCP scope: ${requested}. Use user, project, or local."
+      dx_error "Unknown MCP scope: ${requested}. Use dex, user, project, or local."
       return 1
       ;;
   esac
@@ -507,6 +504,21 @@ dx_ui_mcp_scope() {
   printf '%s\n' "$requested"
 }
 
+# __dx_register_ui_mcp_servers — the browser servers into Dex's registry.
+__dx_register_ui_mcp_servers() {
+  local failed=0 name package env_args=()
+  # A Codex launch starts the server from the registry entry alone, so the
+  # state root browser-mcp.cjs resolves its tools from rides in the entry.
+  [[ -z "${DEX_HOME:-}" ]] || env_args=(--env "DEX_HOME=$DEX_HOME")
+  while read -r name package; do
+    [[ -n "$name" ]] || continue
+    dx_mcp_registry_set ${env_args[@]+"${env_args[@]}"} "$name" node "$DEX_DIR/scripts/browser-mcp.cjs" "$name" || failed=1
+  done <<EOS
+$DX_UI_MCP_SERVERS
+EOS
+  return "$failed"
+}
+
 # dx_install_claude_ui_mcp_servers [scope]
 # A project-scope add writes `.mcp.json` into the *working directory*, not the
 # checkout root, so run it from the root — otherwise the file lands in
@@ -515,6 +527,10 @@ dx_ui_mcp_scope() {
 dx_install_claude_ui_mcp_servers() {
   local resolved_scope repo_top
   resolved_scope=$(dx_ui_mcp_scope "${1:-}") || return 1
+  if [[ "$resolved_scope" == dex ]]; then
+    __dx_register_ui_mcp_servers
+    return $?
+  fi
   if [[ "$resolved_scope" != "project" ]]; then
     __dx_install_ui_mcp_servers "Claude" claude "$resolved_scope"
     return $?
@@ -529,7 +545,13 @@ dx_install_claude_ui_mcp_servers() {
   )
 }
 
+# Codex has no scopes. With the `dex` scope its servers come from the
+# registry per launch (bin/dxcodex.sh); an explicit scope registers with the
+# Codex CLI as well, as before.
 dx_install_codex_ui_mcp_servers() {
+  local resolved_scope
+  resolved_scope=$(dx_ui_mcp_scope "${1:-}") || return 1
+  [[ "$resolved_scope" == dex ]] && return 0
   __dx_install_ui_mcp_servers "Codex" codex
 }
 
@@ -552,7 +574,7 @@ dx_install_ui_capture_tooling() {
 
   dx_install_ui_capture_playwright || failed=1
   dx_install_claude_ui_mcp_servers "$requested" || failed=1
-  dx_install_codex_ui_mcp_servers || failed=1
+  dx_install_codex_ui_mcp_servers "$requested" || failed=1
 
   return "$failed"
 }

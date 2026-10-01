@@ -15,49 +15,18 @@
 #
 # tests/no-global-writes-test.sh fails on a write no row matches, and on a row
 # that matches nothing in one of its steps: when a unit removes a write, it
-# deletes that write's rows here in the same change. Once unit 03 lands this
-# file holds only comments.
+# deletes that write's rows here in the same change. All units 01-05 are done,
+# so this file holds only comments.
 #
-# Units: 03 per-launch MCP and plugins (#5).
-# Units 01 (launch-scoped settings, #3), 02 (skills as a plugin, #4), 04 (no
-# shell rc install, #6) and 05 (DEX_HOME state root, #7) removed all of their
-# rows: Dex's hooks reach only the sessions Dex launches, through each
-# launch's --settings file; Dex's skills reach them as the plugin `dex`,
-# through each launch's --plugin-dir; dx install runs with
-# --no-shell-integration, Dex no longer links ~/.local/bin/rtk or
+# Units 01 (launch-scoped settings, #3), 02 (skills as a plugin, #4), 03
+# (per-launch MCP and plugins, #5), 04 (no shell rc install, #6) and 05
+# (DEX_HOME state root, #7) removed all of their rows: Dex's hooks reach only
+# the sessions Dex launches, through each launch's --settings file; Dex's
+# skills reach them as the plugin `dex`, through each launch's --plugin-dir;
+# the MCP servers and plugins the bootstrap adds live in Dex's registry and
+# plugin directory under DX_TOOL_DIR, and reach Dex launches only; dx install
+# runs with --no-shell-integration, Dex no longer links ~/.local/bin/rtk or
 # ~/.claude/projects entries, and the shims reach sessions through PATH; and
 # every step here runs with DEX_HOME, where Dex now keeps its state.
 #
-# Steps no row names write nothing outside DEX_HOME and the repository.
-
-# ── 03: user-scope MCP servers, plugins, marketplaces, Codex config ─────────
-03	init,tools-fresh,install	added	.claude.json#mcpServers.openaiDeveloperDocs	-	lib/agent-tools.sh
-03	init,tools-fresh,install	added	.claude.json#mcpServers.playwright	-	lib/ui-capture.sh, default scope user
-03	init,tools-fresh,install	added	.claude.json#mcpServers.chrome-devtools	-	lib/ui-capture.sh, default scope user
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.openaiDeveloperDocs	-	codex mcp add
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.playwright	-	codex mcp add
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.chrome-devtools	-	codex mcp add
-03	init	added	.claude/settings.json#mcpServers	-	bin/config.sh promotes the repo's .mcp.json servers
-03	init	added	.claude/settings.json#mcpServers.repoServer	-
-03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins	-	claude plugin install/enable --scope user
-03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins.codex@openai-codex	-
-03	init,tools-fresh	added	.claude/settings.json#enabledPlugins.pyright-lsp@claude-plugins-official	-
-03	init,tools-fresh,install	added	.claude/plugins	-
-03	init,tools-fresh,install	added	.claude/plugins/cache	-
-03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex	-
-03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex/codex	fold
-# Language plugins need a repository to detect; dx install runs outside one.
-03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official	-
-03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official/pyright-lsp	fold
-03	init,tools-fresh,install	added	.claude/plugins/installed_plugins.json	fold
-03	init,tools-fresh,install	added	.claude/plugins/known_marketplaces.json	fold
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces	-
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces/claude-plugins-official	fold	marketplace clone
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces/codex-plugin-cc	fold	marketplace clone
-03	init,tools-fresh,install	added	.codex/skills	-	lib/codex.sh skill links
-03	init,tools-fresh,install	added	.codex/skills/{dex-skill}	-
-03	init,tools-fresh,install	added	.codex/RTK.md	-	lib/rtk.sh Codex instructions
-03	init,tools-fresh,install	added	.codex/AGENTS.md	-	lib/rtk.sh RTK.md import
-03	uninstall	removed	.codex/skills/{dex-skill}	-
-03	uninstall	removed	.codex/RTK.md	-
-03	uninstall	removed	.codex/AGENTS.md	-
+# No step writes anything outside DEX_HOME and the repository.
