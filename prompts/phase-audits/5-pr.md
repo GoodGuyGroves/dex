@@ -107,7 +107,25 @@ that state so Phase 6 does not duplicate them.
 
 Mark the PR ready if it is still a draft, then verify the result — unless
 `.dex/dex.md` § Resources declares `full_gate: ci`, which leaves it a draft
-until Phase 6's CI gate:
+(and skips this sync) until Phase 6's CI gate.
+
+Before marking it ready, bring the branch up to date with its base
+(`$DEX_DIR/prompts/base-sync.md`):
+
+```bash
+SYNC_RC=0
+bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready || SYNC_RC=$?
+```
+
+- `0`: continue to `gh pr ready`.
+- `1`: the branch was rebased and pushed. Run
+  `dx run-gate --name full-gate <project aggregate gate>` on the new tree,
+  commit and push any repair, then run the sync again. Mark the PR ready only
+  after a sync answers `0`.
+- `4`: record the `behind=` count in the PR handoff, then continue.
+- Any other code: follow `$DEX_DIR/prompts/base-sync.md`. Do not mark the PR ready.
+
+Then mark it ready:
 
 ```bash
 PR_DRAFT=$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)
@@ -128,6 +146,7 @@ All of these must be true before you stop:
 - PR description title/body has passed through `dex:humanizer`
 - PR description attributes generation to Dex only, with no Claude Code generated-by footer
 - PR scope matches the plan — no unrelated changes, nothing missing
+- The pre-ready base sync answered `current`, `disabled` or `not-owned` (reported) immediately before `gh pr ready`; after any Phase 5 rebase, a `full-gate` receipt exists for the current tree (`bash "$DEX_DIR/bin/gate-receipt.sh" full-gate` exits 0). Under `full_gate: ci` this moves to Phase 6
 - The PR is ready for review (`gh pr view "$PR_NUM" --json isDraft -q .isDraft` returns `false`) — or, when `.dex/dex.md` § Resources declares `full_gate: ci`, it is deliberately still a draft and the handoff says so
 - UI proof is attached for READY, has a warned local handoff when automatic attachment is unavailable/incomplete, or records SKIPPED/N/A with a reason
 - All `request`-type reviewers from `dex.md § Reviewers` are attached to the PR,

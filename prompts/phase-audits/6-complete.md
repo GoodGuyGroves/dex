@@ -7,8 +7,10 @@ PR.
 
 When `.dex/dex.md` § Resources declares `full_gate: ci`, Phase 5 deliberately
 left the PR a draft and CI is this ticket's complete gate: fix and re-push
-through this same loop until it is green, then mark the PR ready before
-completing. CI is the final arbiter either way.
+through this same loop until it is green, then run the pre-ready base sync
+below and mark the PR ready before completing. A sync that rebases pushes a
+new commit, so wait for CI on it and sync again. CI is the final arbiter either
+way.
 
 This phase runs as a **cycle loop**. Each cycle is one Stop hook iteration. Between cycles you wait — the loop infrastructure handles wall-clock time, not you.
 
@@ -53,11 +55,17 @@ The state file is the canonical "setup has run" marker. Do NOT use `CYCLE -eq 0`
 
 ### Verify the PR is ready for review
 
+A draft is only marked ready after the pre-ready base sync answers `0` (or
+`not-owned`, reported). Run `bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready`
+and follow `$DEX_DIR/prompts/base-sync.md`: on `rebased`, re-run the full gate (or, under
+`full_gate: ci`, wait for CI on the pushed commit) and sync again. A PR that is
+already ready is left alone.
+
 ```bash
 PR_NUM=$(gh pr view --json number -q .number)
 PR_DRAFT=$(gh pr view --json isDraft -q .isDraft)
 if [[ "$PR_DRAFT" == "true" ]]; then
-  gh pr ready "$PR_NUM"
+  gh pr ready "$PR_NUM"   # only after the pre-ready sync answered 0
 fi
 ```
 

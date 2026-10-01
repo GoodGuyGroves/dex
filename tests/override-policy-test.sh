@@ -67,6 +67,16 @@ dx_override_set "$SESSION" complete.ci-fix-attempts 5 phase 6 agent \
   "Allow another CI repair approach" 0
 assert_eq "5" "$(dx_complete_ci_fix_attempts "$SESSION")" \
   "completion CI repair accessor"
+assert_eq "2" "$(dx_base_sync_max_rebases "$SESSION")" \
+  "pre-ready rebase default"
+dx_override_set "$SESSION" pr.rebase-attempts 4 phase 6 agent \
+  "The base branch is landing a release train" 0
+assert_eq "4" "$(dx_base_sync_max_rebases "$SESSION")" \
+  "pre-ready rebase accessor"
+if dx_override_set "$SESSION" pr.rebase-attempts many phase 6 agent \
+  "A non-numeric bound must be rejected" 0; then
+  fail "pr.rebase-attempts accepted a non-numeric value"
+fi
 dx_override_set "$SESSION" phase.min-audits 4 phase 2 agent \
   "Require more evidence for implementation" 0
 assert_eq "4" "$(dx_lifecycle_phase_min_audits 2)" \

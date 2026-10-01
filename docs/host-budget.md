@@ -246,6 +246,13 @@ substitute your own runner's variable and your own gates.
   the gates, CI, or test infrastructure runs the full gate locally regardless.
   This is for hosts where CI is the cheaper place to run a suite; it never
   skips the gate.
+- `rebase_before_ready` is on unless set to `false`. Dex then fetches the base
+  branch before Phase 4's gates and again before the PR is marked ready, and
+  rebases a branch this lifecycle created onto it, pushing with a lease on the
+  remote commit it last saw. Branches Dex did not create are reported and left
+  alone. Before ready, the base may move `pr.rebase-attempts` times (default 2)
+  before Dex escalates. Set it to `false` if your branch protection or your own
+  guards forbid force pushes. See `prompts/base-sync.md`.
 - `review_sensitive_paths` lists globs Dex adds to its own sensitive surfaces
   when it derives the review risk tier from the diff. Additive only: the
   built-in surfaces (auth, secrets, migrations, schemas, CI, hooks, guards,

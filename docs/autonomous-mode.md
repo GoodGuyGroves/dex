@@ -421,6 +421,7 @@ The built-in operational gates are:
 | `review.pass-timeout`, `review.recheck-seconds` | Review provider and quiet Phase 3 recheck budgets; `0` disables the provider deadline |
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
+| `pr.rebase-attempts` | Times the base may move between Phase 4 and the PR being marked ready before Dex escalates instead of rebasing again; default 2 (see `prompts/base-sync.md`) |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |
 | `maintain.budget-minutes`, `maintain.respond-budget-minutes` | Maintenance provider budgets |
@@ -637,7 +638,10 @@ Phase 0 leaves the new branch local. Phase 2 commits small coherent checkpoints
 early and often and pushes each one immediately, using the first real
 implementation commit to establish upstream tracking. Phase 3 does the same for
 accepted review fixes. Phase 4 is the final PR gate and records any repair
-checkpoints produced while making the required pipeline pass. If Phase 2
+checkpoints produced while making the required pipeline pass. Before Phase 4's
+gates and again before the PR is marked ready, a worktree lifecycle rebases its
+own branch onto the base (`prompts/base-sync.md`); an in-place checkout is
+never rewritten, and Dex reports how far behind the base it is instead. If Phase 2
 produces no branch-specific commit, the new branch stays local and the lifecycle
 pauses for user direction instead of entering the PR flow. The user may stop
 the lifecycle as no-change or choose an explicit lifecycle control action. If

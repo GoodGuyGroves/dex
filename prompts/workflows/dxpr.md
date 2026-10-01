@@ -210,7 +210,25 @@ If the `## Reviewers` section is missing or empty, skip this step entirely.
 ### 6. Mark the PR Ready for Review
 
 Before Phase 5 completes, mark the PR ready if it is still a draft, then verify
-the transition:
+the transition.
+
+Before marking it ready, bring the branch up to date with its base
+(`$DEX_DIR/prompts/base-sync.md`):
+
+```bash
+SYNC_RC=0
+bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready || SYNC_RC=$?
+```
+
+- `0`: continue to `gh pr ready`.
+- `1`: the branch was rebased and pushed. Run
+  `dx run-gate --name full-gate <project aggregate gate>` on the new tree,
+  commit and push any repair, then run the sync again. Mark the PR ready only
+  after a sync answers `0`.
+- `4`: record the `behind=` count in the PR handoff, then continue.
+- Any other code: follow `$DEX_DIR/prompts/base-sync.md`. Do not mark the PR ready.
+
+Then mark it ready:
 
 ```bash
 PR_DRAFT=$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)
@@ -226,8 +244,9 @@ the transition, report the error and leave the lifecycle in Phase 5 so it can
 be retried.
 
 One exception: when the project's `.dex/dex.md` § Resources declares
-`full_gate: ci`, the complete suite is CI's job. Leave the PR as a draft, say so
-in the handoff, and let Phase 6 mark it ready once CI is green.
+`full_gate: ci`, the complete suite is CI's job. Leave the PR as a draft, skip
+the pre-ready sync, say so in the handoff, and let Phase 6 sync and mark it
+ready once CI is green.
 
 ### 7. Update Ticket (if tracker configured)
 

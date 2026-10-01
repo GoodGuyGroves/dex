@@ -29,7 +29,8 @@ import shutil
 # can tell a primitive that belongs here from one a hook legitimately owns.
 __all__ = [
     'ASSIGNMENT_BUILTINS', 'CODE_EXECUTION_RE', 'CODE_FRAGMENT_SUFFIX_JOINS',
-    'DIRECT_SHELL_RUNNERS', 'ENV_OPTION_ARGS', 'EVAL_COMMANDS', 'HEREDOC_RE',
+    'DIRECT_SHELL_RUNNERS', 'ENV_OPTION_ARGS', 'EVAL_COMMANDS',
+    'GIT_OPTION_ARGS', 'HEREDOC_RE',
     'INLINE_BACKTICK_SUB_RE', 'INLINE_DOLLAR_SUB_RE', 'NICE_VALUE_OPTIONS',
     'NODE_VALUE_OPTIONS', 'PACKAGE_MANAGER_RUNNERS',
     'PARAMETER_EXPANSION_ROUNDS',
@@ -57,6 +58,7 @@ __all__ = [
     'extract_dollar_substitutions', 'extract_executable_backticks',
     'find_exec_commands', 'fragment_region_candidates',
     'function_definition_end', 'generated_script_for_path',
+    'git_subcommand_info',
     'heredoc_generated_scripts', 'heredoc_receiver_interpreter_kind',
     'heredoc_receiver_is_shell', 'heredoc_write_target',
     'interpreter_code_payloads', 'interpreter_heredoc_bodies',
@@ -71,7 +73,7 @@ __all__ = [
     'process_substitution_body', 'process_substitution_index_for_command',
     'process_substitution_literal_output', 'quoted_string_fragments',
     'redirect_generated_scripts', 'render_printf_once', 'render_printf_output',
-    'replace_xargs_placeholders', 'resolve_shell_path',
+    'replace_xargs_placeholders', 'resolve_dir', 'resolve_shell_path',
     'ruby_perl_exec_fragments', 'runner_command_end', 'runner_shell_payloads',
     'scan_backtick_word', 'scan_dollar_substitution_word',
     'shebang_interpreter_kind', 'shell_assignment_literal_pair',
@@ -1175,6 +1177,51 @@ def token_takes_value(token, value_options):
         return False
     # Short option with an attached value, e.g. -mo4-mini.
     return len(token) == 2 and token in value_options
+
+
+# Global git options that consume the next token, so the subcommand after
+# `git -C dir -c k=v push` is found the same way by both hooks.
+GIT_OPTION_ARGS = {
+    '-C', '-c', '--config-env', '--exec-path', '--git-dir', '--work-tree',
+    '--namespace', '--super-prefix',
+}
+
+
+def resolve_dir(cwd, path):
+    """Resolve a `git -C` argument. Unlike resolve_shell_path this does no
+    variable expansion: the caller has already expanded the token."""
+    if not path:
+        return cwd
+    if os.path.isabs(path):
+        return os.path.abspath(path)
+    return os.path.abspath(os.path.join(cwd, path))
+
+
+def git_subcommand_info(tokens, git_index, cwd):
+    index = git_index + 1
+    git_cwd = cwd
+    while index < len(tokens) and tokens[index] not in SHELL_SEPARATORS:
+        token = tokens[index]
+        if token == '--':
+            index += 1
+            break
+        if token == '-C':
+            if index + 1 >= len(tokens):
+                return index, git_cwd
+            git_cwd = resolve_dir(git_cwd, tokens[index + 1])
+            index += 2
+            continue
+        if token.startswith('-C') and token != '-C':
+            git_cwd = resolve_dir(git_cwd, token[2:])
+            index += 1
+            continue
+        if not token.startswith('-') or token == '-':
+            break
+        needs_value = token in GIT_OPTION_ARGS or token_takes_value(token, GIT_OPTION_ARGS)
+        index += 1
+        if needs_value and index < len(tokens):
+            index += 1
+    return index, git_cwd
 
 
 def short_option_has_attached_value(token, options):

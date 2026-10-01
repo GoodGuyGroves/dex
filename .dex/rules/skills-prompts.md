@@ -42,7 +42,7 @@ env_value: optional-exact-value
 - Built-in guards (by `name:`): `warn-claude-attribution`, `warn-destructive-commands`,
   `warn-raw-codex-delegation`, `warn-review-assessment-bash`,
   `warn-review-assessment-file-edits`, `warn-await-in-loop`,
-  `warn-hardcoded-secrets`, `warn-sensitive-files` — don't duplicate these
+  `warn-hardcoded-secrets`, `warn-sensitive-files`, `warn-force-push` — don't duplicate these
 
 ## Prompts
 
@@ -64,3 +64,6 @@ Stored in `prompts/`. Referenced by skills by plain repo-relative path
 - `phase-audits/*.md` — Numbered 0-6 matching lifecycle phases, plus
   `prompt-loop.md`; `3-review-loop.md` audits the lifecycle phase and
   `3-review.md` the individual wave the review loop injects
+- `base-sync.md` — What each `bin/branch-sync.sh` answer means. Any prompt or
+  skill that runs `gh pr ready` runs `branch-sync.sh sync --before-ready` first
+  (`tests/branch-sync-test.sh` asserts the ordering); none spells a forced push

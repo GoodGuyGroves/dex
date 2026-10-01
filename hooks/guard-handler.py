@@ -2307,6 +2307,97 @@ def has_detached_process(text, depth=0):
     return backgrounded and not waited
 
 
+
+# Words that run the command after them unchanged, so `env git push -f` and
+# `command git push --force` are still the push.
+FORCE_PUSH_PREFIX_WORDS = {'command', 'exec', 'env', 'sudo', 'nohup', 'time', 'nice'}
+FORCE_PUSH_FLAGS = {'--force', '--force-with-lease', '--force-if-includes', '--mirror'}
+# `git push` short options that take a value; their argument is not a flag.
+PUSH_VALUE_SHORT_OPTIONS = {'-o'}
+
+
+def _push_arguments_force(arguments):
+    """True when `git push` arguments rewrite remote history: -f (alone or
+    combined, as in -fu), --force, any --force-with-lease form,
+    --force-if-includes, --mirror, or a +refspec."""
+    after_double_dash = False
+    skip_value = False
+    for token in arguments:
+        if skip_value:
+            skip_value = False
+            continue
+        if after_double_dash or not token.startswith('-') or token == '-':
+            if token.startswith('+') and len(token) > 1:
+                return True
+            continue
+        if token == '--':
+            after_double_dash = True
+            continue
+        if token in FORCE_PUSH_FLAGS or token.startswith('--force-with-lease='):
+            return True
+        if token.startswith('--'):
+            continue
+        if token in PUSH_VALUE_SHORT_OPTIONS:
+            skip_value = True
+            continue
+        if token[:2] in PUSH_VALUE_SHORT_OPTIONS:
+            continue
+        if 'f' in token[1:]:
+            return True
+    return False
+
+
+def _segment_force_pushes(segment):
+    index = 0
+    while index < len(segment) and (is_shell_assignment(segment[index])
+                                    or token_basename(segment[index]) in FORCE_PUSH_PREFIX_WORDS):
+        index += 1
+    if index >= len(segment) or token_basename(segment[index]) != 'git':
+        return False
+    sub_index, _ = git_subcommand_info(segment, index, '')
+    if sub_index >= len(segment) or segment[sub_index] != 'push':
+        return False
+    return _push_arguments_force(segment[sub_index + 1:])
+
+
+def has_force_push(text, depth=0):
+    """True when a command force-pushes with git.
+
+    Dex rewrites a branch it created only through bin/branch-sync.sh, which
+    pushes with a lease on the exact remote commit and never appears here as a
+    `git push`. Anything else that forces a push is worth a second look. The
+    command is read with hooks/shell_parse.py, so `git -C dir push -f`, a
+    `bash -c` payload, a heredoc or a substitution counts, while
+    `echo git push --force` and `git commit -m "--force"` do not.
+    """
+    if depth > 8 or not text.strip():
+        return False
+
+    shell_text, heredoc_substitutions, heredoc_bodies = strip_heredoc_bodies(text)
+    for fragment in tuple(heredoc_substitutions) + tuple(heredoc_bodies):
+        if has_force_push(fragment, depth + 1):
+            return True
+    tokens = shell_tokens(shell_text)
+    for fragment in extract_dollar_substitutions(shell_text):
+        if has_force_push(fragment, depth + 1):
+            return True
+    for fragment in extract_executable_backticks(shell_text):
+        if has_force_push(fragment, depth + 1):
+            return True
+    for script in shell_c_scripts(shell_text, collect_literal_variables(tokens)):
+        if isinstance(script, str) and has_force_push(script, depth + 1):
+            return True
+
+    segment = []
+    for token in tokens:
+        if token in SHELL_SEPARATORS:
+            if _segment_force_pushes(segment):
+                return True
+            segment = []
+            continue
+        segment.append(token)
+    return _segment_force_pushes(segment)
+
 HEAVY_COMMAND_CACHE_ENTRIES = 32
 GATE_WRAPPER_SCRIPT = 'run-gate.sh'
 
@@ -2505,6 +2596,8 @@ def guard_detector_matches(guard, text):
         return has_raw_codex_delegation(text)
     if detector == 'await-in-loop':
         return has_await_in_loop(text)
+    if detector == 'force-push':
+        return has_force_push(text)
     if detector == 'detached-process':
         # One guard, one piece of advice: work the session should own and
         # account for. A detached launch escapes the accounting; a declared

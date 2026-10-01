@@ -70,5 +70,46 @@ else
   fail=$((fail + 1))
 fi
 
+# A forced push draws the force-push warning; ordinary pushes and text that
+# only mentions one do not. Dex's own rebase push runs inside branch-sync.sh.
+force_push_warning() {
+  local command="$1"
+  mkbashpayload "$command" | env DEX_GUARD_EVENT=bash python3 "$HANDLER" 2>&1 || true
+}
+
+check_force_push() {
+  local expected="$1" command="$2" output
+  output=$(force_push_warning "$command")
+  if [[ "$expected" == warn && "$output" == *'warn-force-push'* ]] \
+    || [[ "$expected" == clean && "$output" != *'warn-force-push'* ]]; then
+    pass=$((pass + 1))
+  else
+    printf 'FAIL (expected %s): %s\n%s\n' "$expected" "$command" "$output" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+check_force_push warn 'git push -f'
+check_force_push warn 'git push origin main --force'
+check_force_push warn 'git -C ../other push --force-with-lease'
+check_force_push warn 'git push --force-with-lease=refs/heads/b:abc123 origin HEAD:b'
+check_force_push warn 'git push --force-if-includes origin b'
+check_force_push warn 'git push --mirror backup'
+check_force_push warn 'git push origin +HEAD:b'
+check_force_push warn 'git push -fu origin b'
+check_force_push warn 'env GIT_TRACE=1 git push -f'
+check_force_push warn "bash -c 'git push --force'"
+check_force_push warn 'echo "$(git push -f origin b)"'
+check_force_push warn 'git status && git push origin b -f'
+check_force_push clean 'git push'
+check_force_push clean 'git push -u origin HEAD'
+check_force_push clean 'git push --follow-tags origin main'
+check_force_push clean 'git push -o ci.skip origin b'
+check_force_push clean 'git push --no-force-with-lease origin b'
+check_force_push clean 'echo git push --force'
+check_force_push clean 'git commit -m "--force"'
+check_force_push clean 'git fetch --force origin'
+check_force_push clean 'bash "$DEX_DIR/bin/branch-sync.sh" push'
+
 printf 'push-guards-test: %d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]] || assert_at $LINENO

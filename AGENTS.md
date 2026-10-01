@@ -227,7 +227,7 @@ env_value: optional-exact-value
   `warn-claude-attribution`, `warn-destructive-commands`, `warn-raw-codex-delegation`,
   `warn-review-assessment-bash`, `warn-review-assessment-file-edits`,
   `warn-await-in-loop`, `warn-hardcoded-secrets`, `warn-sensitive-files`,
-  `warn-ccr-live-state`, `warn-detached-processes`
+  `warn-ccr-live-state`, `warn-detached-processes`, `warn-force-push`
 - Every built-in guard advises rather than denies. The message reaches the agent as context
   and the tool call proceeds — the agent is expected to read it and decide, which is why the
   wording is guidance rather than a verdict. `action: block` still works for anyone who wants
