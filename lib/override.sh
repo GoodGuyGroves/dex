@@ -38,6 +38,7 @@ dx_override_gate_supported() {
     review.pass-timeout|review.recheck-seconds|\
     watch.pause-ttl|watch.cycle-timeout|watch.command-timeout|\
     complete.max-cycles|complete.wait-minutes|complete.ci-fix-attempts|\
+    pr.rebase-attempts|\
     failure.attempts-per-strategy|failure.max-strategies|\
     maintain.max-prs|sync.budget-minutes|maintain.budget-minutes|\
     maintain.respond-budget-minutes|maintain.command-timeout-seconds|\
@@ -64,7 +65,7 @@ dx_override_gate_value_valid() {
     loop.stall-timeout|loop.stall-escalate|review.pass-timeout|\
     review.recheck-seconds|watch.pause-ttl|\
     watch.cycle-timeout|watch.command-timeout|complete.max-cycles|\
-    complete.wait-minutes|complete.ci-fix-attempts|\
+    complete.wait-minutes|complete.ci-fix-attempts|pr.rebase-attempts|\
     failure.attempts-per-strategy|failure.max-strategies|maintain.max-prs|\
     sync.budget-minutes|maintain.budget-minutes|\
     maintain.respond-budget-minutes|maintain.command-timeout-seconds)

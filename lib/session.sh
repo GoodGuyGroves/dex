@@ -1648,6 +1648,19 @@ dx_complete_ci_fix_attempts() {
   printf '%s\n' "$attempts"
 }
 
+# dx_base_sync_max_rebases [session_id] — times the base may move between
+# Phase 4 and the PR being marked ready before Dex escalates instead of
+# rebasing again.
+dx_base_sync_max_rebases() {
+  local session_id="${1:-${DEX_SESSION_ID:-}}" rebases="2"
+  if dx_session_id_valid "$session_id"; then
+    rebases=$(dx_override_effective "$session_id" pr.rebase-attempts \
+      "$rebases" "${DEX_LOOP_PHASE:--}") || return 1
+  fi
+  [[ "$rebases" =~ ^[0-9]+$ ]] || rebases=2
+  printf '%s\n' "$rebases"
+}
+
 # dx_watch_lock_file <session_id> <watch_name> — per-watcher overlap guard
 dx_watch_lock_file() { echo "${DX_LOOP_DIR}/${1}.${2}.watch-lock"; }
 

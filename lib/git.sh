@@ -647,3 +647,276 @@ dx_slugify() {
   slug="${slug%-}"   # trim trailing dash
   echo "$slug"
 }
+
+# dx_lifecycle_branch_owned [repo_dir] [session_id]
+# Succeed only when the checked-out branch is one this Dex lifecycle created,
+# so rewriting and force-pushing it cannot take anyone else's work: the
+# tracker branch Dex renamed from its own placeholder (ticket_branch_source
+# new), or, with no tracker, the worktree-* branch dx created for the
+# worktree. An adopted remote branch, a pre-existing local branch, an in-place
+# checkout and a run without a session are never owned.
+dx_lifecycle_branch_owned() {
+  local repo_dir="${1:-.}" session_id="${2:-${DEX_SESSION_ID:-}}"
+  local branch_name recorded_branch original_branch workspace_mode branch_source
+  dx_session_id_valid "$session_id" || return 1
+  branch_name=$(git -C "$repo_dir" symbolic-ref --quiet --short HEAD 2>/dev/null) || return 1
+  [[ -n "$branch_name" && "$branch_name" != "$(dx_default_branch "$repo_dir")" ]] || return 1
+  workspace_mode=$(dx_meta_read "$session_id" workspace_mode)
+  [[ "$workspace_mode" != "in-place" ]] || return 1
+  original_branch=$(dx_meta_read "$session_id" original_branch)
+  recorded_branch=$(dx_meta_read "$session_id" current_branch)
+  [[ -n "$recorded_branch" ]] || recorded_branch="$original_branch"
+  [[ "$branch_name" == "$recorded_branch" ]] || return 1
+  branch_source=$(dx_meta_read "$session_id" ticket_branch_source)
+  case "$branch_source" in
+    new) return 0 ;;
+    "")
+      [[ "$workspace_mode" == "worktree" && "$branch_name" == "$original_branch" \
+        && "$branch_name" == worktree-* ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# dx_rebase_before_ready_enabled [repo_dir]
+# The project opts out with `rebase_before_ready: false` under `## Resources`
+# in .dex/dex.md. An absent key leaves the sync on; a malformed block is
+# reported and also leaves it on.
+dx_rebase_before_ready_enabled() {
+  local repo_dir="${1:-.}" top_dir setting contract_rc=0
+  top_dir=$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null) || top_dir="$repo_dir"
+  setting=$(dx_project_contract_values "$top_dir" Resources rebase_before_ready) \
+    || contract_rc=$?
+  if [[ "$contract_rc" -eq 2 ]]; then
+    dx_warn ".dex/dex.md § Resources is malformed; keeping rebase_before_ready on."
+    return 0
+  fi
+  [[ "$contract_rc" -eq 0 ]] || return 0
+  setting=$(printf '%s' "$setting" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$setting" in
+    false|no|off|0) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Where an in-progress rebase keeps its state, if one is running.
+__dx_branch_rebase_in_progress() {
+  local repo_dir="$1" state_dir
+  for state_dir in rebase-merge rebase-apply; do
+    state_dir=$(git -C "$repo_dir" rev-parse --git-path "$state_dir" 2>/dev/null) || continue
+    [[ "$state_dir" == /* ]] || state_dir="$repo_dir/$state_dir"
+    [[ -d "$state_dir" ]] && return 0
+  done
+  return 1
+}
+
+__dx_branch_conflict_report() {
+  local repo_dir="$1" conflict_files conflict_file
+  conflict_files=$(git -C "$repo_dir" diff --name-only --diff-filter=U 2>/dev/null || true)
+  [[ -n "$conflict_files" ]] || return 1
+  printf 'conflict\n'
+  while IFS= read -r conflict_file; do
+    [[ -n "$conflict_file" ]] && printf 'file=%s\n' "$conflict_file"
+  done <<< "$conflict_files"
+  printf 'next=resolve each file, git add it, then run branch-sync.sh continue --note TEXT; or git rebase --abort and escalate\n'
+}
+
+# dx_branch_lease_push [repo_dir] [session_id]
+# Push a rebased Dex-owned branch, replacing the remote branch only if it
+# still points where it did when the sync recorded the lease. Exit codes
+# follow dx_branch_sync_with_base: 0 pushed, 2 no recorded lease for this
+# branch, 4 not owned, 5 push failed, 7 the remote moved (lease rejected).
+dx_branch_lease_push() {
+  local repo_dir="${1:-.}" session_id="${2:-${DEX_SESSION_ID:-}}"
+  local branch_name lease_branch lease_oid push_output push_rc=0 head_oid
+  if ! dx_lifecycle_branch_owned "$repo_dir" "$session_id"; then
+    printf 'not-owned\nreason=this branch was not created by this Dex lifecycle; it is never force-pushed\n'
+    return 4
+  fi
+  branch_name=$(git -C "$repo_dir" symbolic-ref --quiet --short HEAD)
+  lease_branch=$(dx_meta_read "$session_id" base_sync_lease_branch)
+  if [[ "$lease_branch" != "$branch_name" ]]; then
+    printf 'cannot-run\nreason=no lease recorded for %s; run branch-sync.sh sync first\n' "$branch_name"
+    return 2
+  fi
+  lease_oid=$(dx_meta_read "$session_id" base_sync_lease_oid)
+  # An empty expected value means the remote branch must not exist yet.
+  push_output=$(dx_run_with_timeout 120 git -C "$repo_dir" push --porcelain \
+    "--force-with-lease=refs/heads/${branch_name}:${lease_oid}" \
+    origin "HEAD:refs/heads/${branch_name}" 2>&1) || push_rc=$?
+  if [[ "$push_rc" -ne 0 ]]; then
+    if [[ "$push_output" == *"stale info"* || "$push_output" == *"[rejected]"* \
+      || "$push_output" == *"fetch first"* ]]; then
+      printf 'remote-diverged\nreason=origin/%s moved since the lease was recorded; nothing was overwritten\n' "$branch_name"
+      return 7
+    fi
+    printf 'push-failed\nreason=%s\n' "$(printf '%s' "$push_output" | tail -n 1)"
+    return 5
+  fi
+  head_oid=$(git -C "$repo_dir" rev-parse HEAD)
+  git -C "$repo_dir" branch --set-upstream-to="origin/${branch_name}" "$branch_name" \
+    >/dev/null 2>&1 || true
+  dx_meta_write "$session_id" "base_sync_lease_branch=${branch_name}" \
+    "base_sync_lease_oid=${head_oid}" || true
+  return 0
+}
+
+# dx_branch_sync_with_base <repo_dir> [--before-ready]
+# Bring a Dex-owned lifecycle branch up to date with its base before final
+# verification (Phase 4) or before its PR is marked ready (--before-ready).
+# Prints a status word, then key=value details. Exit status is the answer:
+#   0  current or disabled: nothing to do
+#   1  rebased: rebased onto the base and pushed with a lease; re-run gates
+#   2  cannot-run: dirty tree, detached HEAD, rebase in progress, bad usage
+#   3  conflict: the rebase stopped; the conflicting files are listed
+#   4  not-owned: behind the base, but Dex did not create this branch
+#   5  fetch-failed: the base or the remote branch could not be read
+#   6  limit: --before-ready rebases are spent (pr.rebase-attempts)
+#   7  remote-diverged: the remote branch has commits this checkout lacks
+dx_branch_sync_with_base() {
+  local repo_dir="${1:-}" before_ready=0 session_id="${DEX_SESSION_ID:-}"
+  local branch_name default_branch base_ref base_remote base_branch base_oid
+  local behind_count remote_line remote_rc=0 remote_branch_oid ready_rebases max_rebases
+  local push_rc=0 old_head
+  [[ -n "$repo_dir" ]] || { printf 'cannot-run\nreason=usage: dx_branch_sync_with_base <repo_dir> [--before-ready]\n'; return 2; }
+  case "${2:-}" in
+    "") ;;
+    --before-ready) before_ready=1 ;;
+    *) printf 'cannot-run\nreason=unknown option %s\n' "$2"; return 2 ;;
+  esac
+
+  if ! dx_rebase_before_ready_enabled "$repo_dir"; then
+    printf 'disabled\nreason=.dex/dex.md § Resources sets rebase_before_ready: false\n'
+    return 0
+  fi
+  branch_name=$(git -C "$repo_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [[ -z "$branch_name" ]]; then
+    printf 'cannot-run\nreason=HEAD is detached\n'
+    return 2
+  fi
+  if __dx_branch_rebase_in_progress "$repo_dir"; then
+    __dx_branch_conflict_report "$repo_dir" \
+      || printf 'cannot-run\nreason=a rebase is already in progress\n'
+    return 2
+  fi
+  if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    printf 'cannot-run\nreason=uncommitted changes to tracked files; commit them first\n'
+    return 2
+  fi
+
+  default_branch=$(dx_default_branch "$repo_dir")
+  if ! base_ref=$(dx_default_branch_base_ref "$repo_dir" "$default_branch" no-fetch 2>/dev/null) \
+    || [[ "$base_ref" != */* ]]; then
+    printf 'fetch-failed\nreason=no remote base branch found for %s\n' "$default_branch"
+    return 5
+  fi
+  base_remote="${base_ref%%/*}"
+  base_branch="${base_ref#*/}"
+  if ! dx_run_with_timeout 60 git -C "$repo_dir" fetch --quiet "$base_remote" \
+    "+refs/heads/${base_branch}:refs/remotes/${base_ref}" >/dev/null 2>&1; then
+    printf 'fetch-failed\nbase=%s\nreason=git fetch %s %s failed\n' "$base_ref" "$base_remote" "$base_branch"
+    return 5
+  fi
+  base_oid=$(git -C "$repo_dir" rev-parse --verify --quiet "${base_ref}^{commit}") || {
+    printf 'fetch-failed\nreason=%s does not resolve after fetching\n' "$base_ref"
+    return 5
+  }
+
+  if git -C "$repo_dir" merge-base --is-ancestor "$base_oid" HEAD 2>/dev/null; then
+    printf 'current\nbase=%s\n' "$base_ref"
+    return 0
+  fi
+  behind_count=$(git -C "$repo_dir" rev-list --count "HEAD..${base_oid}")
+  if ! dx_lifecycle_branch_owned "$repo_dir" "$session_id"; then
+    printf 'not-owned\nbase=%s\nbehind=%s\nreason=Dex did not create %s, so it is not rewritten; verification runs on the current tree\n' \
+      "$base_ref" "$behind_count" "$branch_name"
+    return 4
+  fi
+
+  remote_line=$(dx_run_with_timeout 60 git -C "$repo_dir" ls-remote --heads origin \
+    "refs/heads/${branch_name}" 2>/dev/null) || remote_rc=$?
+  if [[ "$remote_rc" -ne 0 ]]; then
+    printf 'fetch-failed\nreason=could not read origin/%s\n' "$branch_name"
+    return 5
+  fi
+  remote_branch_oid="${remote_line%%[[:space:]]*}"
+  if [[ -n "$remote_branch_oid" ]] \
+    && ! git -C "$repo_dir" merge-base --is-ancestor "$remote_branch_oid" HEAD 2>/dev/null; then
+    printf 'remote-diverged\nreason=origin/%s has commits this checkout does not; integrate them before syncing\n' "$branch_name"
+    return 7
+  fi
+
+  if [[ "$before_ready" -eq 1 ]]; then
+    ready_rebases=$(dx_meta_read "$session_id" base_sync_ready_rebases)
+    [[ "$ready_rebases" =~ ^[0-9]+$ ]] || ready_rebases=0
+    max_rebases=$(dx_base_sync_max_rebases "$session_id") || max_rebases=2
+    if [[ "$ready_rebases" -ge "$max_rebases" ]]; then
+      printf 'limit\nbase=%s\nbehind=%s\nrebases=%s\nreason=the base moved again after %s pre-ready rebases; raise pr.rebase-attempts to continue\n' \
+        "$base_ref" "$behind_count" "$ready_rebases" "$ready_rebases"
+      return 6
+    fi
+    dx_meta_write "$session_id" "base_sync_ready_rebases=$((ready_rebases + 1))" || return 2
+  fi
+  dx_meta_write "$session_id" "base_sync_lease_branch=${branch_name}" \
+    "base_sync_lease_oid=${remote_branch_oid}" || return 2
+
+  old_head=$(git -C "$repo_dir" rev-parse HEAD)
+  if ! GIT_EDITOR=true git -C "$repo_dir" rebase --no-autostash --quiet "$base_oid" >/dev/null 2>&1; then
+    __dx_branch_conflict_report "$repo_dir" && return 3
+    git -C "$repo_dir" rebase --abort >/dev/null 2>&1 || true
+    printf 'cannot-run\nreason=git rebase onto %s failed without a content conflict; the rebase was aborted\n' "$base_ref"
+    return 2
+  fi
+  dx_branch_lease_push "$repo_dir" "$session_id" || push_rc=$?
+  [[ "$push_rc" -eq 0 ]] || return "$push_rc"
+  printf 'rebased\nbase=%s\nbehind=%s\nfrom=%s\nto=%s\nnext=re-run the full gate on this tree\n' \
+    "$base_ref" "$behind_count" "$old_head" "$(git -C "$repo_dir" rev-parse HEAD)"
+  return 1
+}
+
+# dx_branch_sync_continue <repo_dir> <note>
+# Finish a rebase the sync stopped on after the agent resolved a simple
+# conflict: commit the resolution with a `Rebase-note:` trailer that records
+# what was done, continue the rebase, and push with the recorded lease.
+# Returns as dx_branch_sync_with_base: 1 rebased, 2 nothing to continue or no
+# note, 3 another conflict, 4/5/7 from the push.
+dx_branch_sync_continue() {
+  local repo_dir="${1:-}" rebase_note="${2:-}" session_id="${DEX_SESSION_ID:-}"
+  local message_file original_message push_rc=0
+  if [[ -z "$repo_dir" ]] || ! __dx_branch_rebase_in_progress "$repo_dir"; then
+    printf 'cannot-run\nreason=no rebase is in progress\n'
+    return 2
+  fi
+  if [[ -z "$rebase_note" || "$rebase_note" == *$'\n'* ]]; then
+    printf 'cannot-run\nreason=a one-line --note describing the resolution is required\n'
+    return 2
+  fi
+  __dx_branch_conflict_report "$repo_dir" && return 3
+  if git -C "$repo_dir" diff --cached --quiet; then
+    printf 'cannot-run\nreason=nothing is staged; resolve and git add the files, or git rebase --abort\n'
+    return 2
+  fi
+  original_message=$(git -C "$repo_dir" log -1 --format=%B REBASE_HEAD 2>/dev/null) || {
+    printf 'cannot-run\nreason=REBASE_HEAD is missing; this git is too old for the continue path\n'
+    return 2
+  }
+  message_file=$(mktemp "${TMPDIR:-/tmp}/dex-rebase-note.XXXXXX") || return 2
+  printf '%s\n' "$original_message" \
+    | git -C "$repo_dir" interpret-trailers --trailer "Rebase-note: ${rebase_note}" \
+    > "$message_file" || { rm -f "$message_file"; return 2; }
+  if ! git -C "$repo_dir" commit --quiet --no-edit -F "$message_file" >/dev/null 2>&1; then
+    rm -f "$message_file"
+    printf 'cannot-run\nreason=committing the resolution failed\n'
+    return 2
+  fi
+  rm -f "$message_file"
+  if ! GIT_EDITOR=true git -C "$repo_dir" rebase --continue >/dev/null 2>&1; then
+    __dx_branch_conflict_report "$repo_dir" && return 3
+    printf 'cannot-run\nreason=git rebase --continue failed\n'
+    return 2
+  fi
+  dx_branch_lease_push "$repo_dir" "$session_id" || push_rc=$?
+  [[ "$push_rc" -eq 0 ]] || return "$push_rc"
+  printf 'rebased\nto=%s\nnext=re-run the full gate on this tree\n' "$(git -C "$repo_dir" rev-parse HEAD)"
+  return 1
+}

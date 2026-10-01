@@ -306,7 +306,7 @@ run_sync --before-ready
 [[ "$(dx_meta_read "$SESSION" base_sync_ready_rebases)" == "2" ]] || assert_at $LINENO
 # A recorded override raises the bound.
 dx_override_set "$SESSION" pr.rebase-attempts 3 session - human \
-  "The base branch is busy today" >/dev/null
+  "The base branch is busy today" 0 >/dev/null
 [[ "$(dx_base_sync_max_rebases "$SESSION")" == "3" ]] || assert_at $LINENO
 advance_main
 run_sync --before-ready
