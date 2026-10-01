@@ -23,6 +23,12 @@ trap cleanup EXIT
 hook_log="$TMP_DIR/hook.log"
 transcript="$TMP_DIR/transcript.txt"
 
+# A hermetic run gives zsh a startup directory with no .zshrc, and an
+# interactive zsh then stops at the new-user menu instead of running anything.
+export ZDOTDIR="$TMP_DIR/zdotdir"
+mkdir -p "$ZDOTDIR"
+: > "$ZDOTDIR/.zshrc"
+
 # `zsh -i` on a pty: monitor is on, exactly as in the operator's terminal.
 # DEX_DIR points at this checkout so the shell's own rc file cannot swap in
 # another copy of the library. The supervised command's stdio is redirected
