@@ -403,8 +403,9 @@ cat "$SB_OBSERVED" >> "$ALL_OBSERVED"
 
 run_scenario installed 1
 # The installed run's other steps repeat the isolated run's entry points; its
-# own are install and uninstall.
-grep -E '^(install|uninstall)	' "$TMP_DIR/installed/observed.tsv" >> "$ALL_OBSERVED"
+# own are install and uninstall, which now write nothing: no match is a pass.
+grep -E '^(install|uninstall)	' "$TMP_DIR/installed/observed.tsv" >> "$ALL_OBSERVED" \
+  || [[ $? == 1 ]]
 
 python3 "$HELPER" check "$ALL_OBSERVED" "$FIXTURES/expected.tsv" "$ROOT" >&2 \
   || fail "global writes differ from tests/fixtures/global-writes/expected.tsv (above)"
