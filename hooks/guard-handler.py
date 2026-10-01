@@ -2311,9 +2311,21 @@ def has_detached_process(text, depth=0):
 # the `@` makes it an address or a longer word instead of a mention.
 COPILOT_MENTION = re.compile(r'(?i)(?:^|[^A-Za-z0-9_.\-])@(?:github-)?copilot')
 # Naming Copilot as a requested reviewer is the supported way to ask it for a
-# review, so the value of a reviewer flag is never read as a mention. `-r` is
-# --reviewer only for `gh pr create`; for `gh pr review` it is --request-changes.
-COPILOT_REVIEWER_FLAGS = ('--add-reviewer', '--remove-reviewer', '--reviewer')
+# review, so the value of a reviewer flag is never read as a mention. Only the
+# commands that have the flag count: elsewhere gh rejects it, so it can only
+# reach GitHub as another flag's value. `-r` is --reviewer only for
+# `gh pr create`; for `gh pr review` it is --request-changes.
+COPILOT_REVIEWER_FLAGS = {
+    ('pr', 'create'): ('--reviewer', '-r'),
+    ('pr', 'edit'): ('--add-reviewer', '--remove-reviewer'),
+}
+# Flags of those commands that take no value. Any other flag written without
+# `=value` takes the next argument as its value, even one that starts with `-`,
+# so `--body --add-reviewer=@copilot` posts the reviewer flag as the body.
+GH_PR_BOOLEAN_FLAGS = {
+    '--draft', '-d', '--fill', '-f', '--fill-first', '--fill-verbose',
+    '--web', '-w', '--no-maintainer-edit', '--dry-run', '--remove-milestone',
+}
 GH_POSTING_SUBCOMMANDS = {
     ('pr', 'comment'), ('pr', 'review'), ('pr', 'create'), ('pr', 'edit'),
     ('issue', 'comment'), ('issue', 'create'), ('issue', 'edit'),
@@ -2369,17 +2381,25 @@ def _copilot_reviewer_mentions(args):
             skip = True
         elif not arg.startswith('-'):
             words.append(arg)
-    short_reviewer = words[:2] == ['pr', 'create']
+    flags = COPILOT_REVIEWER_FLAGS.get(tuple(words[:2]), ())
+    long_prefixes = tuple(flag + '=' for flag in flags if flag.startswith('--'))
     count = 0
-    for index, arg in enumerate(args):
-        value = None
-        if (arg in COPILOT_REVIEWER_FLAGS or (short_reviewer and arg == '-r')) \
-                and index + 1 < len(args):
-            value = args[index + 1]
-        elif arg.startswith(tuple(flag + '=' for flag in COPILOT_REVIEWER_FLAGS)):
-            value = arg.split('=', 1)[1]
-        if value is not None:
-            count += len(COPILOT_MENTION.findall(value))
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == '--':
+            break
+        if arg in flags and index + 1 < len(args):
+            count += len(COPILOT_MENTION.findall(args[index + 1]))
+            index += 2
+        elif long_prefixes and arg.startswith(long_prefixes):
+            count += len(COPILOT_MENTION.findall(arg.split('=', 1)[1]))
+            index += 1
+        elif arg.startswith('-') and '=' not in arg and arg not in GH_PR_BOOLEAN_FLAGS:
+            # Skip this flag's value so a reviewer flag passed as it stays text.
+            index += 2
+        else:
+            index += 1
     return count
 
 

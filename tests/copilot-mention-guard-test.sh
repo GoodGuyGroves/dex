@@ -76,6 +76,14 @@ expect_blocked 'R=$(gh pr edit 7 --add-reviewer @copilot); gh pr comment 7 --bod
 expect_blocked 'gh pr comment 7 --body "I ran gh pr edit 7 --add-reviewer @copilot"'
 expect_blocked 'gh pr comment 7 --body "fixed -r @copilot please look"'
 expect_blocked 'gh pr review 7 -r -b "@copilot please fix"'
+# gh hands a value-taking flag the next argument even when it starts with `-`,
+# so a reviewer flag there is posted as text, and only pr create|edit have one.
+expect_blocked 'gh pr comment 7 --body --add-reviewer=@copilot'
+expect_blocked 'gh pr comment 7 -b --reviewer=@copilot'
+expect_blocked 'gh pr review 7 --comment -b --add-reviewer=@copilot'
+expect_blocked 'gh pr edit 7 --body --add-reviewer=@copilot'
+expect_blocked 'gh pr edit 7 --title --add-reviewer @copilot'
+expect_blocked 'gh pr create --title t --body -r @copilot'
 prose_file="$TMP_DIR/prose.md"
 printf 'Requested with gh pr edit 7 --add-reviewer @copilot\n' > "$prose_file"
 expect_blocked "gh pr comment 7 --body-file $prose_file"
@@ -88,6 +96,8 @@ expect_allowed 'gh pr edit 7 --add-reviewer=@copilot'
 expect_allowed 'gh pr create --fill --reviewer @copilot'
 expect_allowed 'gh pr create --fill -r @copilot,octocat'
 expect_allowed 'gh -R owner/repo pr create --fill -r @copilot'
+expect_allowed 'gh pr create --draft --title t --body b --reviewer @copilot'
+expect_allowed 'gh pr edit 7 --add-label bug --add-reviewer @copilot'
 expect_allowed "bash -c 'gh pr edit 7 --add-reviewer @copilot'"
 expect_allowed 'R=$(gh pr edit 7 --add-reviewer @copilot)'
 expect_allowed 'gh pr edit 7 --add-reviewer "@copilot"'
