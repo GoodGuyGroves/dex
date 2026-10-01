@@ -883,7 +883,7 @@ dx_branch_sync_with_base() {
 # note, 3 another conflict, 4/5/7 from the push.
 dx_branch_sync_continue() {
   local repo_dir="${1:-}" rebase_note="${2:-}" session_id="${DEX_SESSION_ID:-}"
-  local message_file original_message push_rc=0
+  local original_message push_rc=0
   if [[ -z "$repo_dir" ]] || ! __dx_branch_rebase_in_progress "$repo_dir"; then
     printf 'cannot-run\nreason=no rebase is in progress\n'
     return 2
@@ -901,16 +901,12 @@ dx_branch_sync_continue() {
     printf 'cannot-run\nreason=REBASE_HEAD is missing; this git is too old for the continue path\n'
     return 2
   }
-  message_file=$(mktemp "${TMPDIR:-/tmp}/dex-rebase-note.XXXXXX") || return 2
-  printf '%s\n' "$original_message" \
+  if ! printf '%s\n' "$original_message" \
     | git -C "$repo_dir" interpret-trailers --trailer "Rebase-note: ${rebase_note}" \
-    > "$message_file" || { rm -f "$message_file"; return 2; }
-  if ! git -C "$repo_dir" commit --quiet --no-edit -F "$message_file" >/dev/null 2>&1; then
-    rm -f "$message_file"
+    | git -C "$repo_dir" commit --quiet --no-edit -F - >/dev/null 2>&1; then
     printf 'cannot-run\nreason=committing the resolution failed\n'
     return 2
   fi
-  rm -f "$message_file"
   if ! GIT_EDITOR=true git -C "$repo_dir" rebase --continue >/dev/null 2>&1; then
     __dx_branch_conflict_report "$repo_dir" && return 3
     printf 'cannot-run\nreason=git rebase --continue failed\n'
