@@ -752,4 +752,37 @@ else
   assert_eq "3" "$?" "invalid repository result"
 fi
 
+# Prefixed tickets: the record's ticket is ticket_id. A ticket selector
+# matches it in any case, and by its number while that number is unambiguous.
+REPO_P="$TMP_DIR/owner-p/project"
+new_repo "$REPO_P"
+mkdir -p "$REPO_P/.dex/worktrees/ticket-eng-303" "$REPO_P/.dex/worktrees/ticket-ops-303"
+SID_ENG="$(cd "$REPO_P" && dx_session_id ticket-eng-303)"
+SID_OPS="$(cd "$REPO_P" && dx_session_id ticket-ops-303)"
+dx_meta_write "$SID_ENG" "ticket_number=303" "ticket_id=ENG-303" \
+  "wt_name=ticket-eng-303" "wt_dir=$REPO_P/.dex/worktrees/ticket-eng-303" \
+  "workspace_mode=worktree"
+printf '2\n' > "$(dx_state_file "$SID_ENG")"
+assert_eq "ENG-303" \
+  "$(json_field "$(dx_session_catalog_record "$SID_ENG" --repo "$REPO_P")" ticket)" \
+  "prefixed record ticket"
+SELECTED="$(dx_session_catalog_select ticket:eng-303 --repo "$REPO_P")"
+assert_eq "$SID_ENG" "$(json_field "$SELECTED" session_id)" "prefixed ticket selector"
+SELECTED="$(dx_session_catalog_select ticket:303 --repo "$REPO_P")"
+assert_eq "$SID_ENG" "$(json_field "$SELECTED" session_id)" "prefixed ticket number selector"
+dx_meta_write "$SID_OPS" "ticket_number=303" "ticket_id=OPS-303" \
+  "wt_name=ticket-ops-303" "wt_dir=$REPO_P/.dex/worktrees/ticket-ops-303" \
+  "workspace_mode=worktree"
+printf '2\n' > "$(dx_state_file "$SID_OPS")"
+SELECTED="$(dx_session_catalog_select ticket:OPS-303 --repo "$REPO_P")"
+assert_eq "$SID_OPS" "$(json_field "$SELECTED" session_id)" "second prefixed ticket selector"
+if dx_session_catalog_select ticket:303 --repo "$REPO_P" >/dev/null 2>&1; then
+  fail "a shared ticket number selected one of two prefixed tickets"
+else
+  assert_eq "2" "$?" "shared ticket number is ambiguous"
+fi
+dx_meta_write "$SID_OPS" "ticket_id=OPS 303"
+CORRUPT_RECORD="$(dx_session_catalog_record "$SID_OPS" --repo "$REPO_P")"
+assert_eq "corrupt" "$(json_field "$CORRUPT_RECORD" metadata_health)" "invalid ticket_id"
+
 printf 'session catalog core tests passed\n'

@@ -156,11 +156,10 @@ zsh -fc "$(declare -f assert_at)"$'\n''source "$1"' cases "$TMP_DIR/cases.sh"
 # A repository that never mentions ticket_prefixes must not pay for a python3
 # start on every dx command.
 mkdir -p "$TMP_DIR/stub-bin"
-cat > "$TMP_DIR/stub-bin/python3" <<'STUB'
-#!/bin/sh
-echo "python3 ran" >> "$PYTHON_LOG"
-exit 1
-STUB
+# A shell stub, written with printf so tests/inline-python.py does not read
+# it as Python.
+printf '%s\n' '#!/bin/sh' 'echo "python3 ran" >> "$PYTHON_LOG"' 'exit 1' \
+  > "$TMP_DIR/stub-bin/python3"
 chmod +x "$TMP_DIR/stub-bin/python3"
 export PYTHON_LOG="$TMP_DIR/python.log"
 bash -c '

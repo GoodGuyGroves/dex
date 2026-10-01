@@ -124,6 +124,14 @@ assert_eq "bin/dex-worktree before_remove" \
 dx_worktree_hook_run before_remove "$CONVENTION_REPO" "$CONVENTION_REPO/.dex/worktrees/ticket-42" \
   > "$TMP_DIR/convention.out" 2>&1 || assert_at $LINENO
 assert_contains "convention hook=before_remove name=ticket-42 ticket=42 repo=$CONVENTION_REPO" "$MARKER_FILE"
+# A prefixed workspace name carries the canonical ticket ID; a task name
+# carries none.
+dx_worktree_hook_run before_remove "$CONVENTION_REPO" "$CONVENTION_REPO/.dex/worktrees/ticket-eng-1234" \
+  > "$TMP_DIR/convention.out" 2>&1 || assert_at $LINENO
+assert_contains "convention hook=before_remove name=ticket-eng-1234 ticket=ENG-1234 repo=$CONVENTION_REPO" "$MARKER_FILE"
+dx_worktree_hook_run before_remove "$CONVENTION_REPO" "$CONVENTION_REPO/.dex/worktrees/task-fix-1" \
+  > "$TMP_DIR/convention.out" 2>&1 || assert_at $LINENO
+assert_contains "convention hook=before_remove name=task-fix-1 ticket= repo=$CONVENTION_REPO" "$MARKER_FILE"
 
 # A declared hook wins over the script for that name; the script still answers
 # the names the section leaves out.

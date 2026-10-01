@@ -488,6 +488,7 @@ def parse_metadata(session_id, families):
     except (FileNotFoundError, UnsafeStateError, UnicodeDecodeError):
         return {}, "corrupt"
     wanted = {
+        "ticket_id",
         "ticket_number",
         "wt_name",
         "wt_dir",
@@ -508,7 +509,14 @@ def parse_metadata(session_id, families):
         if field_name in values:
             return {}, "corrupt"
         values[field_name] = field_value
-    ticket = values.get("ticket_number")
+    # ticket_id is the canonical ticket (ENG-1234 when the project lists
+    # ticket_prefixes); records written before it existed only have the number.
+    ticket_id = values.get("ticket_id")
+    if ticket_id is not None and (
+        not valid_text(ticket_id, 128) or not re.fullmatch(r"[A-Za-z0-9._-]+", ticket_id)
+    ):
+        return {}, "corrupt"
+    ticket = ticket_id or values.get("ticket_number")
     workspace_name = values.get("wt_name")
     workspace = values.get("wt_dir")
     workspace_mode = values.get("workspace_mode")
@@ -1172,6 +1180,15 @@ def build_records():
     return [records[session_id] for session_id in sorted(records)]
 
 
+def ticket_matches(ticket, selector_value):
+    """ENG-1234 answers ENG-1234 in any case, and its bare number 1234."""
+    if ticket is None:
+        return False
+    if ticket.upper() == selector_value.upper():
+        return True
+    return selector_value.isdigit() and ticket.upper().endswith("-" + selector_value)
+
+
 def selector_matches(record, raw_selector):
     selector_kind = None
     selector_value = raw_selector
@@ -1187,7 +1204,7 @@ def selector_matches(record, raw_selector):
             raise CatalogInputError("session selector is invalid")
         return record["session_id"] == selector_value
     if selector_kind == "ticket":
-        return record["ticket"] == selector_value
+        return ticket_matches(record["ticket"], selector_value)
     workspace_candidates = {record["workspace_name"], record["workspace"]}
     if selector_kind == "workspace":
         if selector_value in workspace_candidates:
@@ -1196,7 +1213,7 @@ def selector_matches(record, raw_selector):
             candidate = selector_value if os.path.isabs(selector_value) else os.path.join(repo_root, selector_value)
             return record["workspace"] is not None and os.path.realpath(candidate) == os.path.realpath(record["workspace"])
         return False
-    if record["session_id"] == selector_value or record["ticket"] == selector_value:
+    if record["session_id"] == selector_value or ticket_matches(record["ticket"], selector_value):
         return True
     if selector_value in workspace_candidates:
         return True

@@ -202,12 +202,10 @@ dx_worktree_hook_run() {
 
   # Dex's own worktree names carry the ticket, and a project keys its
   # resources on one or the other, so derive both rather than making every
-  # call site remember to pass them.
+  # call site remember to pass them. ticket-eng-1234 carries ENG-1234.
   [[ -n "$hook_label" ]] || hook_label="${hook_dir##*/}"
   if [[ -z "$hook_ticket" ]]; then
-    case "$hook_label" in
-      ticket-?*) hook_ticket="${hook_label#ticket-}" ;;
-    esac
+    hook_ticket=$(dx_ticket_id_from_workspace_name "$hook_label" 2>/dev/null || true)
   fi
 
   hook_seconds=$(__dx_worktree_hook_timeout)

@@ -991,7 +991,7 @@ __dx_setup_worktree_claimed() {
   dx_link_build_caches_to_worktree "$_dx_repo_root" "$_dx_wt_dir"
   # Let the project stand up whatever else a worktree of it needs — a database,
   # a port, a container. Declared under `## Worktree Hooks`; absent runs nothing.
-  dx_worktree_hook_run after_create "$_dx_repo_root" "$_dx_wt_dir" "$_dx_wt_name"
+  dx_worktree_hook_run after_create "$_dx_repo_root" "$_dx_wt_dir" "$_dx_wt_name" "$_dx_ticket_id"
   __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
   local _dx_original_head
   _dx_original_head=$(git -C "$_dx_wt_dir" rev-parse --verify 'HEAD^{commit}') || return 1
