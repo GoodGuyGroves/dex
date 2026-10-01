@@ -346,6 +346,11 @@ zsh -fc '
   [[ "$(dx_meta_read "$_dx_session_id" ticket_number)" == 55 ]] || assert_at $LINENO
   __dx_startup_claim_release
   git switch -q main
+  # A bare number names the in-place prefixed session too, without taking it.
+  __dx_parse_ticket_input 55 "$PREFIX_REPO"
+  __dx_hint_prefixed_ticket_workspaces "$PREFIX_REPO" > "$PREFIX_OUT/inplace-hint.out"
+  grep -Fq "different ticket from ENG-55." "$PREFIX_OUT/inplace-hint.out" || assert_at $LINENO
+  [[ "$_dx_ticket_wt_name" == ticket-55 ]] || assert_at $LINENO
   legacy_inplace=$(__dx_session_id_for_workspace in-place ticket-56)
   dx_lifecycle_atomic_write "$(dx_state_file "$legacy_inplace")" 2
   __dx_resolve_workspace_name OPS-56 in-place "$PREFIX_REPO" > "$PREFIX_OUT/inplace.out"

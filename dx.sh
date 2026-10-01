@@ -526,14 +526,16 @@ __dx_is_ticket() {
 # __dx_parse_ticket_input <raw> [repo_root]
 # Parse a ticket reference with the project's ticket_prefixes. Sets
 # _dx_ticket_id, _dx_ticket_number and _dx_ticket_prefix (see lib/ticket.sh),
-# _dx_ticket_wt_name for its workspace, and _dx_ticket_legacy_name: the
+# _dx_ticket_wt_name for its workspace, _dx_ticket_legacy_name: the
 # number-only name a prefixed ticket's workspace had before prefixes were
-# configured, or empty. Returns 1 when raw is not a ticket.
+# configured, or empty, and _dx_ticket_prefix_list: the configured prefixes.
+# Returns 1 when raw is not a ticket.
 { unalias __dx_parse_ticket_input; unfunction __dx_parse_ticket_input; } 2>/dev/null || true
 __dx_parse_ticket_input() {
   local raw="$1" repo_root="${2:-}" ticket_prefixes=""
   _dx_ticket_wt_name=""
   _dx_ticket_legacy_name=""
+  _dx_ticket_prefix_list=""
   _dx_ticket_prefixes_configured=0
   dx_ticket_parse "$raw" 2>/dev/null || return 1
   [[ -n "$repo_root" ]] || repo_root=$(dx_repo_root 2>/dev/null) || repo_root=""
@@ -541,6 +543,7 @@ __dx_parse_ticket_input() {
   _dx_ticket_prefixes_configured=0
   if [[ -n "$ticket_prefixes" ]]; then
     _dx_ticket_prefixes_configured=1
+    _dx_ticket_prefix_list="$ticket_prefixes"
     dx_ticket_parse "$raw" "$ticket_prefixes"
   fi
   _dx_ticket_wt_name=$(dx_ticket_workspace_name "$_dx_ticket_id")
@@ -592,13 +595,22 @@ __dx_prefer_legacy_ticket_workspace() {
 # not pick one: 1234 and ENG-1234 are different tickets there.
 { unalias __dx_hint_prefixed_ticket_workspaces; unfunction __dx_hint_prefixed_ticket_workspaces; } 2>/dev/null || true
 __dx_hint_prefixed_ticket_workspaces() {
-  local worktrees_dir="${1}/.dex/worktrees" candidate name matches=()
+  local worktrees_dir="${1}/.dex/worktrees" candidate name prefix ticket_id matches=()
   [[ "$_dx_ticket_prefixes_configured" == 1 && -z "$_dx_ticket_prefix" ]] || return 0
   for candidate in "$worktrees_dir"/*(/N); do
     name="${candidate##*/}"
     [[ "$name" =~ ^ticket-[a-z][a-z0-9]{1,9}-[0-9]+$ ]] || continue
     [[ "${name##*-}" == "$_dx_ticket_number" ]] || continue
     matches+=("$(dx_ticket_id_from_workspace_name "$name")")
+  done
+  # An in-place lifecycle has no directory of its own, only its session record.
+  for prefix in ${(f)_dx_ticket_prefix_list}; do
+    ticket_id="${prefix}-${_dx_ticket_number}"
+    (( ${matches[(Ie)$ticket_id]} )) && continue
+    name=$(dx_ticket_workspace_name "$ticket_id")
+    [[ "$(dx_meta_read "$(__dx_session_id_for_workspace in-place "$name")" ticket_id)" == "$ticket_id" ]] \
+      || continue
+    matches+=("$ticket_id")
   done
   [[ ${#matches[@]} -gt 0 ]] || return 0
   dx_info "Ticket ${_dx_ticket_number} has no prefix, so it is a different ticket from ${(j:, :)matches}. Run dx with the prefixed ID to resume one of those."
