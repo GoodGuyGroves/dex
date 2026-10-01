@@ -105,5 +105,5 @@ fi
 # Dex launches turn Claude Code's auto-memory off (autoMemoryEnabled: false).
 if [[ "${DEX_LAUNCHED:-}" == 1 ]]; then
   echo ""
-  echo "Claude Code auto-memory is off in this Dex session. Record a durable lesson in .dex/memory/ (see prompts/sync-memory.md), never under ~/.claude/projects/*/memory."
+  echo "Claude Code auto-memory is off in this Dex session. Record a durable lesson in .dex/memory/ (see $DEX_DIR/prompts/sync-memory.md), never under ~/.claude/projects/*/memory."
 fi
