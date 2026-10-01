@@ -2311,27 +2311,76 @@ def has_detached_process(text, depth=0):
 # the `@` makes it an address or a longer word instead of a mention.
 COPILOT_MENTION = re.compile(r'(?i)(?:^|[^A-Za-z0-9_.\-])@(?:github-)?copilot')
 # Naming Copilot as a requested reviewer is the supported way to ask it for a
-# review, so the value of a reviewer flag is never read as a mention.
-COPILOT_REVIEWER_ARG = re.compile(
-    r'''(?:--add-reviewer|--remove-reviewer|--reviewer|(?<![\w-])-r)(?:=|\s+)["']?@?[A-Za-z0-9_\-\[\]/.,@]+["']?''')
+# review, so the value of a reviewer flag is never read as a mention. `-r` is
+# --reviewer only for `gh pr create`; for `gh pr review` it is --request-changes.
+COPILOT_REVIEWER_FLAGS = ('--add-reviewer', '--remove-reviewer', '--reviewer')
 GH_POSTING_SUBCOMMANDS = {
     ('pr', 'comment'), ('pr', 'review'), ('pr', 'create'), ('pr', 'edit'),
     ('issue', 'comment'), ('issue', 'create'), ('issue', 'edit'),
 }
-GH_BODY_FILE_FLAGS = {'--body-file', '-F'}
+# Flags whose value names a file gh reads the posted text from: --body-file
+# (`-F` for comments and bodies), and `gh api` fields (`-F key=@file`) and
+# --input.
+GH_BODY_FILE_FLAGS = ('--body-file', '-F', '--field', '--input')
 COPILOT_BODY_FILE_LIMIT = 1024 * 1024
 
 
 def _copilot_body_file_mentions(path_token):
-    """Whether a literal --body-file path that exists already mentions Copilot."""
+    """Whether a literal body file that exists already mentions Copilot.
+
+    The file is the posted text, so a reviewer flag written in it is prose and
+    still a mention. Only regular files are read: a FIFO would block the hook.
+    """
     if not path_token or path_token == '-' or '$' in path_token:
         return False
+    path = os.path.expanduser(path_token)
     try:
-        with open(os.path.expanduser(path_token), 'r', encoding='utf-8', errors='replace') as handle:
+        if not stat.S_ISREG(os.stat(path).st_mode):
+            return False
+        with open(path, 'r', encoding='utf-8', errors='replace') as handle:
             body = handle.read(COPILOT_BODY_FILE_LIMIT)
     except OSError:
         return False
-    return bool(COPILOT_MENTION.search(COPILOT_REVIEWER_ARG.sub(' ', body)))
+    return bool(COPILOT_MENTION.search(body))
+
+
+def _gh_body_file_paths(args):
+    """Literal paths a posting gh command reads its text from."""
+    for index, arg in enumerate(args):
+        value = None
+        if arg in GH_BODY_FILE_FLAGS and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith(('--body-file=', '--field=', '--input=')):
+            value = arg.split('=', 1)[1]
+        if value is None:
+            continue
+        yield value
+        if '=@' in value:
+            yield value.split('=@', 1)[1]
+
+
+def _copilot_reviewer_mentions(args):
+    """How many @copilot mentions are reviewer-flag values in one gh command."""
+    words, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in ('-R', '--repo'):
+            skip = True
+        elif not arg.startswith('-'):
+            words.append(arg)
+    short_reviewer = words[:2] == ['pr', 'create']
+    count = 0
+    for index, arg in enumerate(args):
+        value = None
+        if (arg in COPILOT_REVIEWER_FLAGS or (short_reviewer and arg == '-r')) \
+                and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith(tuple(flag + '=' for flag in COPILOT_REVIEWER_FLAGS)):
+            value = arg.split('=', 1)[1]
+        if value is not None:
+            count += len(COPILOT_MENTION.findall(value))
+    return count
 
 
 def _gh_api_writes(args):
@@ -2408,24 +2457,19 @@ def has_copilot_mention_comment(text):
     Writing @copilot in a comment, review or PR/issue body summons the Copilot
     coding agent, which can push commits to the branch. Requesting a Copilot
     review with `gh pr edit --add-reviewer @copilot` does not, so reviewer flag
-    values are ignored. The mention may sit in the command line, a heredoc, a
-    variable assigned in the same command, or a literal --body-file that
-    already exists.
+    values are ignored. Those are counted on the parsed arguments, not matched
+    in the raw text, so a body that quotes `--add-reviewer @copilot` is still a
+    mention. The mention may sit in the command line, a heredoc, a variable
+    assigned in the same command, or a literal body file that already exists.
     """
     segments = list(_gh_posting_segments(text))
     if not segments:
         return False
-    if COPILOT_MENTION.search(COPILOT_REVIEWER_ARG.sub(' ', text)):
+    reviewer_values = sum(_copilot_reviewer_mentions(args) for args in segments)
+    if len(COPILOT_MENTION.findall(text)) > reviewer_values:
         return True
-    for args in segments:
-        for index, arg in enumerate(args):
-            if arg in GH_BODY_FILE_FLAGS and index + 1 < len(args):
-                if _copilot_body_file_mentions(args[index + 1]):
-                    return True
-            elif arg.startswith('--body-file='):
-                if _copilot_body_file_mentions(arg.split('=', 1)[1]):
-                    return True
-    return False
+    return any(_copilot_body_file_mentions(path)
+               for args in segments for path in _gh_body_file_paths(args))
 
 
 HEAVY_COMMAND_CACHE_ENTRIES = 32
