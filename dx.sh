@@ -3641,9 +3641,11 @@ __dx_run_spec_apply_env() {
     export DX_EFFORT_OVERRIDE="$harness_effort"
   fi
 
-  # The run's own title names its Claude session over an inherited one.
+  # The run's own title names its Claude session over an inherited one, but
+  # not over `dx --title`. dx_title_flag is dx's local, read through dynamic
+  # scope; it is empty when dx run starts any other way.
   source_title=$(dx_run_spec_field "$spec_file" "source.title")
-  if [[ -n "$source_title" ]]; then
+  if [[ -n "$source_title" && -z "${dx_title_flag:-}" ]]; then
     export DEX_SESSION_TITLE="$source_title"
   fi
 

@@ -118,7 +118,7 @@ Optional fields:
 |-------|-------|
 | `harness.name` | `claude-code`, `claude`, or `codex`. Defaults to `claude-code`. |
 | `harness.model` | Optional model override for the selected harness. |
-| `source.title` | Also names the run's Claude session `<workspace> <title>`, over an inherited `DEX_SESSION_TITLE`. |
+| `source.title` | Also names the run's Claude session `<workspace> <title>`, over an inherited `DEX_SESSION_TITLE`; `dx --title` overrides it. |
 | `workflow.requires_plan_approval` | Defaults to `true`. When `false`, the run spec authorizes Phase 1 after plan quality checks pass. |
 | `workflow.requires_ui_evidence` | `auto`, `always`, `never`, `true`, or `false`. |
 | `sync.factory_url` | Enables Factory event sync unless `DEX_FACTORY_SYNC` disables it. |

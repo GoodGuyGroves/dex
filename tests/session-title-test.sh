@@ -196,4 +196,43 @@ spec_title() {
 [[ "$(spec_title "$TMP_DIR/spec-untitled.json" "Inherited")" == "Inherited" ]] || assert_at $LINENO
 [[ -z "$(spec_title "$TMP_DIR/spec-untitled.json" "")" ]] || assert_at $LINENO
 
+# dx --title beats the run spec's source.title: run a full spec through dx up to
+# workspace naming, which reports the title and stops.
+python3 - "$TMP_DIR/spec-full.json" "$TEST_REPO" <<'PY'
+import json
+import sys
+
+path, repo = sys.argv[1:3]
+spec = {
+    "run_id": "run_title_probe",
+    "company": {"slug": "c", "name": "C"},
+    "project": {"slug": "p", "name": "P"},
+    "repository": {"provider": "github", "full_name": "o/r",
+                   "default_branch": "main", "working_directory": repo},
+    "source": {"type": "github_issue", "id": "123",
+               "url": "https://github.com/o/r/issues/123",
+               "title": "Spec title", "body": "b"},
+    "harness": {"name": "claude-code", "model": None},
+    "workflow": {"name": "ticket_to_pr", "version": "v1",
+                 "requires_plan_approval": False,
+                 "requires_ui_evidence": "auto", "auto_merge": False},
+    "sync": {},
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(spec, handle)
+PY
+dx_run_title_probe() {
+  DEX_SESSION_TITLE=Inherited zsh -fc '
+    source "$DEX_DIR/dx.sh"
+    unfunction __dx_resolve_workspace_name 2>/dev/null
+    __dx_resolve_workspace_name() { printf "title=[%s]\n" "${DEX_SESSION_TITLE:-}"; return 1; }
+    dx "$@"
+  ' _ "$@" 2>&1 || true
+}
+dx_run_title_probe --title "Flag title" run --spec "$TMP_DIR/spec-full.json" \
+  > "$TMP_DIR/run-flag.out"
+assert_contains "title=[Flag title]" "$TMP_DIR/run-flag.out"
+dx_run_title_probe run --spec "$TMP_DIR/spec-full.json" > "$TMP_DIR/run-spec.out"
+assert_contains "title=[Spec title]" "$TMP_DIR/run-spec.out"
+
 echo "session-title-test: ok"
