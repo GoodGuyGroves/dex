@@ -80,7 +80,7 @@ dx_ticket_parse() {
   ticket_upper=$(printf '%s' "$ticket_head" | tr '[:lower:]' '[:upper:]')
   # ticket-N is Dex's own workspace name, not a tracker prefix.
   [[ "$ticket_upper" != TICKET ]] || return 0
-  if printf '%s\n' "$ticket_prefixes" | grep -qxF -- "$ticket_upper"; then
+  if grep -qxF -- "$ticket_upper" <<< "$ticket_prefixes"; then
     _dx_ticket_prefix="$ticket_upper"
     _dx_ticket_id="${ticket_upper}-${_dx_ticket_number}"
   else

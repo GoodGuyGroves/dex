@@ -587,11 +587,12 @@ __dx_prefer_legacy_ticket_workspace() {
 # not pick one: 1234 and ENG-1234 are different tickets there.
 { unalias __dx_hint_prefixed_ticket_workspaces; unfunction __dx_hint_prefixed_ticket_workspaces; } 2>/dev/null || true
 __dx_hint_prefixed_ticket_workspaces() {
-  local repo_root="$1" candidate name matches=()
+  local worktrees_dir="${1}/.dex/worktrees" candidate name matches=()
   [[ "$_dx_ticket_prefixes_configured" == 1 && -z "$_dx_ticket_prefix" ]] || return 0
-  for candidate in "${repo_root}/.dex/worktrees"/ticket-*-"${_dx_ticket_number}"(/N); do
-    name="${candidate:t}"
+  for candidate in "$worktrees_dir"/*(/N); do
+    name="${candidate##*/}"
     [[ "$name" =~ ^ticket-[a-z][a-z0-9]{1,9}-[0-9]+$ ]] || continue
+    [[ "${name##*-}" == "$_dx_ticket_number" ]] || continue
     matches+=("$(dx_ticket_id_from_workspace_name "$name")")
   done
   [[ ${#matches[@]} -gt 0 ]] || return 0
