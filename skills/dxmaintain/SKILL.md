@@ -28,7 +28,7 @@ requests. Do not manually implement write-capable maintain behavior from inside
 the skill unless the CLI is unavailable and the user explicitly accepts
 report/artifact-only output.
 
-Read and follow `prompts/maintain.md` when you are the provider launched by the
+Read and follow `$DEX_DIR/prompts/maintain.md` when you are the provider launched by the
 wrapper. That prompt is the source of truth for:
 
 - report/propose/fix-scoped modes;
@@ -40,7 +40,7 @@ wrapper. That prompt is the source of truth for:
 
 Provider budgets and configured command deadlines are soft session policy.
 The wrapper supervises its own provider budget live. Inside the provider,
-follow `prompts/maintain.md` and use `DEX_POLICY_SESSION_ID` with the live
+follow `$DEX_DIR/prompts/maintain.md` and use `DEX_POLICY_SESSION_ID` with the live
 timeout helper so a human or agent override reaches commands already running.
 
 ## Arguments
@@ -93,12 +93,12 @@ lines with `comment_id` and optional artifact-only context. Omit
 explicitly needs reviewer input. Do not post GitHub comments directly from the
 provider session. The wrapper publishes deterministic public summary/reply text
 rather than copying provider-authored free text.
-Invoke the `humanizer` skill before finalizing maintenance reports, response
+Invoke the `dex:humanizer` (`humanizer` outside Claude Code) skill before finalizing maintenance reports, response
 notes, or optional inline reply text. Preserve JSON shape, comment IDs, paths,
 SHAs, reviewer handles, commands, and status labels exactly.
 
 ## Output
 
-End with the maintenance report described in `prompts/maintain.md`. If files
+End with the maintenance report described in `$DEX_DIR/prompts/maintain.md`. If files
 changed, list each changed path, why it changed, and which verification command
 passed after the change.

@@ -8,12 +8,12 @@ issue. Session-only launches do not run this intake.
    context. Explore enough code to establish scope, testable acceptance
    criteria, a rough estimate, and any dependencies. Ask about consequential
    gaps. Keep implementation planning for Phase 1.
-2. Apply `prompts/issue-hygiene.md` to search open and closed issues and related
+2. Apply `$DEX_DIR/prompts/issue-hygiene.md` to search open and closed issues and related
    PRs. Read strong matches. Reuse an existing issue that covers the request;
    ask which issue to use when the matches are ambiguous. Do not reopen closed
    work or expand another issue's scope without approval.
 3. If a new issue is needed, draft its title, scope, acceptance criteria, and
-   estimate using project conventions. Apply `humanizer`, show the draft, and
+   estimate using project conventions. Apply `dex:humanizer` (`humanizer` outside Claude Code), show the draft, and
    ask whether to create it. If the work needs several issues, propose that
    split and ask which issue this workflow should implement. Create only the
    approved issues, after a final duplicate check. Record their returned URLs.
@@ -36,7 +36,7 @@ issue. Session-only launches do not run this intake.
    Use `declined` only when the user chose to continue without an issue;
    `unavailable` means no configured tracker or a headless spec without issue
    creation authorization. Explain the decision in the setup summary.
-6. Continue `prompts/ticket-instructions.md` with the selected issue: assignment,
+6. Continue `$DEX_DIR/prompts/ticket-instructions.md` with the selected issue: assignment,
    branch preparation through `dx_ticket_branch_prepare`, status, and the
    Phase 0 ready marker. If continuing without an issue, keep the task branch
    and mark ticket-specific steps N/A. Then let the normal phase handoff start

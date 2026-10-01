@@ -6,6 +6,6 @@ description: "Alias for dxproof: capture complete before-and-after visual proof 
 # Skill: dxcapture
 
 This is the `/dxcapture` alias for `/dxproof`. Use **manual proof mode** from
-`prompts/ui-proof.md` and follow that prompt end to end, including any arguments
+`$DEX_DIR/prompts/ui-proof.md` and follow that prompt end to end, including any arguments
 the user supplied with the command.
 

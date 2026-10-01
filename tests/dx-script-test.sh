@@ -84,7 +84,7 @@ DEX_DIR="$ROOT" zsh -fc 'source "$DEX_DIR/dx.sh"; dx help' > "$TMP_DIR/source-he
 assert_contains "Dex" "$TMP_DIR/source-help.out"
 
 DEX_DIR="$ROOT" zsh -fc 'source "$DEX_DIR/dx.sh"; __dx_phase_message 2' > "$TMP_DIR/phase-2-message.out"
-assert_contains "Follow prompts/commit-format.md" "$TMP_DIR/phase-2-message.out"
+assert_contains "Follow $ROOT/prompts/commit-format.md" "$TMP_DIR/phase-2-message.out"
 assert_contains "Do not wait for full verification" "$TMP_DIR/phase-2-message.out"
 assert_contains "push immediately after every commit" "$TMP_DIR/phase-2-message.out"
 assert_contains "stop the lifecycle as no-change" "$TMP_DIR/phase-2-message.out"

@@ -8,9 +8,9 @@
 
 Before stopping, critically audit your plan:
 
-Follow § Resource Discipline in `prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
 
-Apply `prompts/issue-hygiene.md` if planning uncovered material context that
+Apply `$DEX_DIR/prompts/issue-hygiene.md` if planning uncovered material context that
 changes the working issue, relates this work to another issue, or warrants a
 distinct follow-up. Keep related, bounded work in this plan and the same PR;
 rotate the approved criteria when scope changes. End the phase summary with
@@ -63,10 +63,10 @@ the contract's exact `Issue/PR work:` line.
 7. RISKS — Are unknowns identified?
    - For each risk, is there a mitigation strategy or fallback?
    - Are there questions that need answers before implementation can start?
-   - Were unresolved consequential risks clarified under Step 2.4 of `skills/dxplan/SKILL.md`, and understood risks documented with their mitigations?
+   - Were unresolved consequential risks clarified under Step 2.4 of `$DEX_DIR/skills/dxplan/SKILL.md`, and understood risks documented with their mitigations?
 
 8. ASSUMPTIONS — Were questions reserved for consequential gaps rather than routine recommendations?
-   - Apply Step 2.4 of `skills/dxplan/SKILL.md`: adopt high-confidence, in-scope recommendations supported by the requirements and inspected context, and state the rationale in the plan. Do not reopen a supported decision merely because no clarification question was asked.
+   - Apply Step 2.4 of `$DEX_DIR/skills/dxplan/SKILL.md`: adopt high-confidence, in-scope recommendations supported by the requirements and inspected context, and state the rationale in the plan. Do not reopen a supported decision merely because no clarification question was asked.
    - Ask about significant assumptions, missing or conflicting requirements, and low-confidence interpretations that could change the approach or outcome. Resolve consequential gaps from context or user answers, or obtain explicit user deferral; do not hide them inside implementation details.
    - Distinguish adopted recommendations, user decisions, and deferred unknowns. High confidence does not authorize overriding explicit choices, expanding scope, unauthorized external actions, or bypassing plan approval.
 
@@ -76,7 +76,7 @@ the contract's exact `Issue/PR work:` line.
 
 10. FREEFORM TRACKER INTAKE — If this is a freeform `dx "<task>"` request and
    `.dex/dex.md § Integrations` has an enabled ticket tracker, did you complete
-   or explicitly skip the tracker intake gate from `skills/dxplan/SKILL.md`?
+   or explicitly skip the tracker intake gate from `$DEX_DIR/skills/dxplan/SKILL.md`?
    - A completed Phase 0 `intake_decision` satisfies this gate. Honor its
      selected issue or decision to proceed without tracker write-back; do not
      ask the same question again. Reused existing issues are valid outcomes.
@@ -117,6 +117,6 @@ If you find gaps in any of the above, fix them and re-present the plan.
   are preserved in a valid `dx_review_criteria_file` artifact for Phase 3
 - Freeform tracker intake is complete, explicitly skipped, or not applicable
 - Any material planning discovery has been reconciled under
-  `prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
+  `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
 
 When all criteria are met, stop. The Stop hook will verify your work and provide completion instructions.

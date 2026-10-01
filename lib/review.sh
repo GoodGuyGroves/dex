@@ -1983,10 +1983,21 @@ if os.environ["DX_REVIEW_FINGERPRINT_MODE"] == "scope":
             continue
         else:
             raise SystemExit(1)
-        object_id = git(
-            "hash-object", "--path", os.fsdecode(raw_path), os.fsdecode(raw_path),
-            check=False,
-        ).strip()
+        if file_mode == b"120000":
+            # git stores a symlink as a blob of its target; hash-object on the
+            # path would follow it, and fails when it points at a directory.
+            object_id = subprocess.run(
+                ["git", "-C", str(root), "hash-object", "--stdin"],
+                input=os.fsencode(os.readlink(path)),
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            ).stdout.strip()
+        else:
+            object_id = git(
+                "hash-object", "--path", os.fsdecode(raw_path), os.fsdecode(raw_path),
+                check=False,
+            ).strip()
         if not object_id:
             raise SystemExit(1)
         digest.update(

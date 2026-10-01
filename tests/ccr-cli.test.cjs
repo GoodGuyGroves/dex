@@ -29,6 +29,13 @@ test('prompt-only launch treats text after the option terminator literally', () 
   assert.equal(launchArguments(['--resume', 'conversation', '--', '--fork-session']).resume, true);
 });
 
+test('every --plugin-dir reaches claude with its value, in order', () => {
+  const { args } = launchArguments(['--plugin-dir', '/dex/plugin', '--plugin-dir', '/mine', '-p', '--', 'go']);
+  const dirs = args.flatMap((arg, index) => arg === '--plugin-dir' ? [args[index + 1]] : []);
+  assert.deepEqual(dirs, ['/dex/plugin', '/mine']);
+  assert.deepEqual(args.slice(-2), ['--', 'go']);
+});
+
 test('routed picker has one automatic entry and explicit models remain labeled as routed', () => {
   const config = { default_model: 'anthropic/new', phases: { 0: { model: 'anthropic/new', fallbacks: ['anthropic/previous', 'openai/new'] }, 2: { model: 'anthropic/new' } },
     models: ['anthropic/new', 'anthropic/previous', 'openai/new'].map(id => ({ id })) };

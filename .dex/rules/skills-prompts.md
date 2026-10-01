@@ -6,11 +6,11 @@ Each skill lives in `skills/<name>/SKILL.md` with markdown content.
 
 - Directory naming: lowercase, `dx`-prefixed (`dxplan`, `dximplement`, etc.)
 - Exceptions: the orchestrator is `dex`; the writing pass is `humanizer`
-- Reference shared prompts by plain repo-relative path (`prompts/<file>.md`)
+- Reference shared prompts as `$DEX_DIR/prompts/<file>.md` (`${DEX_DIR}` where shell-rendered); a relative path resolves against the target repo
 - Skills are codebase-agnostic — they discover toolchains at runtime
-- Skills auto-discovered after symlink via `dx install`
+- Skills load per launch as the plugin `dex` (`--plugin-dir "$DEX_DIR/plugin"`); `dx install --global-skills` also links them into `~/.claude/skills`
 
-Use the `humanizer` skill whenever writing or editing copy, documentation,
+Use the `dex:humanizer` (`humanizer` outside Claude Code) skill whenever writing or editing copy, documentation,
 ticket bodies, PR descriptions, GitHub/tracker comments, review replies,
 user-facing messages, code comments, or doc comments. Preserve technical
 identifiers, commands, paths, markdown structure, and required attribution while

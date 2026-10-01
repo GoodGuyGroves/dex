@@ -25,9 +25,6 @@
 
 # Isolated mode must not reach sessions Dex did not launch: a plain `claude`
 # keeps the user's own configuration and loses only Dex's.
-plain	skills	installed-only	dx*	unit 02: Dex skills only in Dex launches
-plain	skills	installed-only	dex	unit 02
-plain	skills	installed-only	humanizer	unit 02
 plain	plugins	installed-only	*@openai-codex	unit 03: Dex plugins only in Dex launches
 plain	plugins	installed-only	*@claude-plugins-official	unit 03
 plain	settings	installed-only	enabledPlugins=*	unit 03

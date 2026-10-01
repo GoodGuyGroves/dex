@@ -57,7 +57,7 @@ or relaunch it before the wave timeout the loop announced.
 Report the runner's actual result and receipt; starting a job or reaching a
 tool timeout is not a successful review.
 
-Read `prompts/issue-hygiene.md` for tracker ownership. Fresh review-wave
+Read `$DEX_DIR/prompts/issue-hygiene.md` for tracker ownership. Fresh review-wave
 children never create or update external issues. They return concrete
 out-of-scope candidates with evidence; after accepting a finding, the lifecycle
 owner performs the duplicate search and external write once. The Phase 3
@@ -85,7 +85,7 @@ depth and selects the global clean-wave policy:
 | `normal` | `standard` | 2 | 6 |
 | `complex` | `thorough` | 3 | 9 |
 
-Use `prompts/review-risk-assessment.md` as the source of truth. Its first
+Use `$DEX_DIR/prompts/review-risk-assessment.md` as the source of truth. Its first
 matching rule wins:
 
 - Choose `complex` when the scope touches a trust boundary; authentication,
@@ -109,7 +109,7 @@ free-form prose, paths, source excerpts, prompts, or secrets in the persisted
 reason field.
 
 The reason codes must satisfy the tier-specific combination rules in
-`prompts/review-risk-assessment.md`; an allowed code with a contradictory tier
+`$DEX_DIR/prompts/review-risk-assessment.md`; an allowed code with a contradictory tier
 is still invalid.
 
 The wrapper reserves the reason codes `operator-override` for an explicit

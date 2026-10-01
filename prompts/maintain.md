@@ -4,6 +4,9 @@ Dex maintenance is a repo-resident background workflow. It uses durable
 repo memory, deterministic checks, and focused review to produce a useful report
 or a small draft PR. It must be conservative by default.
 
+`$DEX_DIR` is the Dex installation directory (from the `DEX_DIR` environment
+variable; resolve it in the shell before reading these paths).
+
 ## Core Rules
 
 - Please remove all mannered prose from reports and replies.
@@ -100,7 +103,7 @@ skipped. Keep the configured mode, fix categories, and PR limit in both cases.
    - For each selected surface, record the reason and the evidence source.
 
 4. **Run deterministic checks**
-   - Reuse the discovery discipline in `skills/dxverify/SKILL.md`.
+   - Reuse the discovery discipline in `$DEX_DIR/skills/dxverify/SKILL.md`.
    - Prefer targeted commands for selected surfaces.
    - Keep commands bounded by the invocation budget and command timeout. When
      `DEX_POLICY_SESSION_ID` and a numeric `Command timeout seconds` are
@@ -111,7 +114,7 @@ skipped. Keep the configured mode, fix categories, and PR limit in both cases.
    - Log commands and results in the report.
 
 5. **Run focused semantic review**
-   - Use `prompts/review-wave.md` as the review discipline, scoped to the
+   - Use `$DEX_DIR/prompts/review-wave.md` as the review discipline, scoped to the
      selected surfaces or generated diff.
    - Build context before broad review.
    - Drop findings that lack file, command, reproduction, or current-code
@@ -135,7 +138,7 @@ skipped. Keep the configured mode, fix categories, and PR limit in both cases.
 8. **Report**
    - Always write the compact maintenance report to the invocation `Report file`.
    - Also print a short completion summary when running interactively.
-   - Invoke the `humanizer` skill on free-form report prose before finalizing it.
+   - Invoke the `dex:humanizer` (`humanizer` outside Claude Code) skill on free-form report prose before finalizing it.
      Preserve tables, commands, paths, SHAs, run IDs, labels, and status values
      exactly.
    - Include run id, repo, base ref, mode, sync result, selected surfaces,
@@ -153,7 +156,7 @@ Use this flow when the invocation command is `respond`.
   prefix. Fork PR heads are not supported by DX maintain V1.
 3. Use the review context files listed in the invocation instead of calling
    GitHub write APIs directly.
-4. Read `skills/dxprreview/SKILL.md` and follow its process. Prepare fixes and
+4. Read `$DEX_DIR/skills/dxprreview/SKILL.md` and follow its process. Prepare fixes and
    concise reply text in the report; the CLI wrapper or workflow publish job
    posts the summary and pushes any commits after the provider exits.
    - Write PR-level response notes to the `response.md` path named in the
@@ -167,7 +170,7 @@ Use this flow when the invocation command is `respond`.
      `resolve_thread`, or set it to `true`, when the reply closes the comment.
      Set `resolve_thread: false` only when the reply asks a follow-up question
      or explicitly needs reviewer input.
-   - Invoke the `humanizer` skill on response notes and optional inline reply
+   - Invoke the `dex:humanizer` skill on response notes and optional inline reply
      body text before writing the artifacts. Preserve comment IDs, paths, SHAs,
      reviewer handles, and section headings exactly.
 5. Treat each unaddressed comment as one of:

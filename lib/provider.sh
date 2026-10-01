@@ -940,7 +940,8 @@ __dx_provider_launch_settings_dir() {
 # __dx_provider_launch_settings <claude-args...> — write this launch's one
 # settings file and set, in the caller's scope, _dx_launch_file and
 # _dx_launch_args: the arguments with every --settings the caller passed
-# folded into that file, in order, and a single --settings in front.
+# folded into that file, in order, and a single --settings and Dex's
+# --plugin-dir in front.
 __dx_provider_launch_settings() {
   local arg statusline="" inbound="" rtk=0 dir caller_settings=() after_delimiter=0
   _dx_launch_args=()
@@ -1017,7 +1018,44 @@ __dx_provider_launch_settings() {
     dx_error "Dex could not build this launch's Claude settings (above)."
     return 1
   fi
-  _dx_launch_args=(--settings "$_dx_launch_file" ${_dx_launch_args[@]+"${_dx_launch_args[@]}"})
+  # Dex's skills load per launch as the plugin `dex` (plugin/skills links to
+  # skills/). --plugin-dir repeats, so a caller's own stays beside it.
+  _dx_launch_args=(--settings "$_dx_launch_file" --plugin-dir "$DEX_DIR/plugin" ${_dx_launch_args[@]+"${_dx_launch_args[@]}"})
+}
+
+# dx_skill_ref <name> — how a generated prompt names a Dex skill. Claude
+# launches load the skills as the plugin `dex`, and the prefixed name cannot
+# be captured by a user's own skill of the same name. Codex, and a session Dex
+# did not launch (global links only), know the bare name.
+dx_skill_ref() {
+  case "${DX_PROVIDER_ENGINE:-}" in
+    claude|anthropic-gateway|ccr) printf 'dex:%s\n' "$1" ;;
+    codex-plugin) printf '%s\n' "$1" ;;
+    *)
+      if [[ "${DEX_LAUNCHED:-}" == 1 ]]; then
+        printf 'dex:%s\n' "$1"
+      else
+        printf '%s\n' "$1"
+      fi
+      ;;
+  esac
+}
+
+# dx_skill_refs_render <text> — print <text> with every `skill: "<dex skill>"`
+# rewritten through dx_skill_ref. For prompts fixed before the engine is known.
+dx_skill_refs_render() {
+  local text="$1" skill_dir name ref from to
+  for skill_dir in "$DEX_DIR"/skills/*/; do
+    name="${skill_dir%/}"
+    name="${name##*/}"
+    ref=$(dx_skill_ref "$name")
+    [[ "$ref" != "$name" ]] || continue
+    # An unquoted replacement: bash 3.2 keeps quotes in it literally. It holds
+    # a skill name, never the & that bash 5.2's patsub_replacement expands.
+    from="skill: \"$name\"" to="skill: \"$ref\""
+    text="${text//"$from"/$to}"
+  done
+  printf '%s\n' "$text"
 }
 
 # The engine dispatch behind dx_provider_claude. env_args comes from the

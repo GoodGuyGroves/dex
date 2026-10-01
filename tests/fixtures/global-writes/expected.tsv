@@ -25,12 +25,8 @@
 # Steps that write nothing today: tools, reload, status, session (after init
 # has written it all), status-fresh, reload-fresh, plain and plain-fresh.
 # Unit 01 is done: Dex's hooks reach only the sessions Dex launches, through
-# each launch's --settings file.
-
-# ── 02: Dex skills linked into ~/.claude/skills ──────────────────────────────
-02	init,install	added	.claude/skills/{dex-skill}	-	per-skill links beside the user's own skill
-02	tools-fresh	added	.claude/skills	-	no skills directory yet: one link to $DEX_DIR/skills
-02	uninstall	removed	.claude/skills/{dex-skill}	-
+# each launch's --settings file. Unit 02 is done: Dex's skills reach them as
+# the plugin `dex`, through each launch's --plugin-dir.
 
 # ── 03: user-scope MCP servers, plugins, marketplaces, Codex config ─────────
 03	init,tools-fresh,install	added	.claude.json#mcpServers.openaiDeveloperDocs	-	lib/agent-tools.sh

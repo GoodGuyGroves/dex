@@ -11,7 +11,7 @@ repairs any remaining draft state, requests configured reviewers, posts
 failures, and closes the ticket once CI is green and actionable review feedback
 is resolved. It never merges the PR.
 
-This skill runs as a **cycle loop** driven by `prompts/phase-audits/6-complete.md`. The Stop hook re-injects the audit prompt every iteration. Read `dx_complete_wait_minutes` and `dx_complete_max_cycles` each cycle so in-session overrides apply. Defaults are 5 minutes per cycle and 3 cycles before pausing for manual follow-up.
+This skill runs as a **cycle loop** driven by `$DEX_DIR/prompts/phase-audits/6-complete.md`. The Stop hook re-injects the audit prompt every iteration. Read `dx_complete_wait_minutes` and `dx_complete_max_cycles` each cycle so in-session overrides apply. Defaults are 5 minutes per cycle and 3 cycles before pausing for manual follow-up.
 
 ## When to Use
 
@@ -27,10 +27,10 @@ pending checks or feedback follow-up is handled by the Stop hook cycle loop and
 the current `dx_complete_wait_minutes` value.
 
 Before posting PR comments, ticket updates, or final prose summaries, invoke the
-`humanizer` skill. Preserve reviewer handles, PR numbers, ticket IDs, commands,
+`dex:humanizer` (`humanizer` outside Claude Code) skill. Preserve reviewer handles, PR numbers, ticket IDs, commands,
 tables, counts, and status labels exactly.
 
-Read `prompts/issue-hygiene.md`. Apply it once to material CI or review
+Read `$DEX_DIR/prompts/issue-hygiene.md`. Apply it once to material CI or review
 discoveries, using the lifecycle owner for tracker writes so scheduled cycles
 cannot file duplicates. Every cycle and terminal summary ends with its exact
 `Issue/PR work:` line.
@@ -194,7 +194,7 @@ If any condition is not met, return to Step 5 (do not advance to closure).
 
 ### 7. Reconcile and Update Ticket
 
-Before closure, apply `prompts/issue-hygiene.md` to accepted CI and review
+Before closure, apply `$DEX_DIR/prompts/issue-hygiene.md` to accepted CI and review
 findings. Update the working issue and PR when their descriptions are stale;
 create deduplicated linked follow-up issues for concrete distinct work. Then
 mark the ticket as Done via the configured tracker (see `dex.md §
@@ -204,7 +204,7 @@ criteria are met by this PR; a sub-issue that is not met stays open with a
 comment saying what is missing and which follow-up carries it. Skip tracker
 writes if no tracker is configured.
 
-Invoke the `humanizer` skill on the final ticket summary before posting it. Keep commit SHAs, PR links, ticket IDs, reviewer handles, and verification details exact.
+Invoke the `dex:humanizer` skill on the final ticket summary before posting it. Keep commit SHAs, PR links, ticket IDs, reviewer handles, and verification details exact.
 
 ### 8. Print Summary
 
@@ -259,7 +259,7 @@ Do not emit `DEX_TICKET_COMPLETE` on this timeout path.
 ## Notes
 
 - Do not merge the PR — that's the user's decision (autonomous merging is intentionally out of scope).
-- Handle follow-up work under `prompts/issue-hygiene.md`: update an existing
+- Handle follow-up work under `$DEX_DIR/prompts/issue-hygiene.md`: update an existing
   issue when it matches, automatically create a linked issue for concrete
   distinct work, and ask only when the classification or product choice is
   genuinely ambiguous.

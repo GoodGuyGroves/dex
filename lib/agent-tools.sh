@@ -73,34 +73,94 @@ dx_install_claude_dex_links() {
   return "$failed"
 }
 
-dx_check_claude_dex_links() {
-  local failed=0 claude_dir link current installed expected
-  claude_dir=$(dx_claude_dir)
+# Dex's skills reach Claude per launch, as the plugin `dex` that
+# dx_provider_claude passes with --plugin-dir. Linking them into
+# ~/.claude/skills as well, for sessions Dex did not launch, is opt-in
+# (`dx install --global-skills`). A Dex session then lists each skill twice,
+# bare and as dex:<name>, which is harmless.
 
-  link="$claude_dir/skills"
+# none, linked (the whole directory, or a link for every Dex skill name the
+# user does not already use for a skill of their own) or partial (some
+# names have nothing at all, which --global-skills would fill).
+dx_claude_global_skills_state() {
+  local link skill_dir
+  link="$(dx_claude_dir)/skills"
   if [[ -L "$link" ]]; then
-    current=$(readlink "$link")
-    if [[ "$current" == "$DEX_DIR/skills" ]]; then
-      dx_ok "${HOME}/.claude/skills -> ${DEX_DIR}/skills"
+    if [[ "$(readlink "$link")" == "$DEX_DIR/skills" ]]; then
+      printf 'linked\n'
     else
-      dx_warn "${HOME}/.claude/skills points to ${current}; expected ${DEX_DIR}/skills"
-      failed=1
+      printf 'none\n'
     fi
-  elif [[ -d "$link" ]]; then
-    installed=$(dx_count_claude_dex_skill_links "$link")
-    expected=$(dx_count_dex_skills)
-    if [[ "$installed" -eq "$expected" && "$expected" -gt 0 ]]; then
-      dx_ok "${HOME}/.claude/skills has ${installed}/${expected} Dex skill link(s)"
-    else
-      dx_warn "${HOME}/.claude/skills has ${installed}/${expected} Dex skill link(s)"
-      failed=1
-    fi
-  else
-    dx_warn "${HOME}/.claude/skills is not linked to Dex"
-    failed=1
+    return 0
   fi
+  if [[ "$(dx_count_claude_dex_skill_links "$link")" -eq 0 ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  for skill_dir in "$DEX_DIR"/skills/*/; do
+    [[ -f "${skill_dir}SKILL.md" ]] || continue
+    skill_dir="${skill_dir%/}"
+    if [[ ! -e "$link/${skill_dir##*/}" && ! -L "$link/${skill_dir##*/}" ]]; then
+      printf 'partial\n'
+      return 0
+    fi
+  done
+  printf 'linked\n'
+}
 
-  return "$failed"
+dx_check_claude_dex_links() {
+  case "$(dx_claude_global_skills_state)" in
+    none) dx_ok "Claude skills load per launch (plugin dex)" ;;
+    linked) dx_ok "Claude skills load per launch (plugin dex), plus global links in ~/.claude/skills ('dx install --no-global-skills' removes them)" ;;
+    *)
+      dx_warn "${HOME}/.claude/skills has a partial set of Dex skill links; run 'dx install --global-skills' or 'dx install --no-global-skills'"
+      return 1
+      ;;
+  esac
+}
+
+# Remove the Dex links from ~/.claude/skills: the whole-directory link, or
+# each per-skill link. Anything not pointing into Dex stays. Shared by
+# `dx uninstall` and `dx install --no-global-skills`.
+dx_remove_claude_skill_links() {
+  local skills_dir target current removed=0 failed=0
+  skills_dir="$(dx_claude_dir)/skills"
+  if [[ -L "$skills_dir" ]]; then
+    target=$(readlink "$skills_dir")
+    if [[ "$target" == "$DEX_DIR/skills" ]]; then
+      rm "$skills_dir"
+      dx_done "Removed ~/.claude/skills symlink"
+    else
+      dx_skip "${HOME}/.claude/skills points to $target (not Dex)"
+    fi
+    return 0
+  fi
+  if [[ ! -d "$skills_dir" ]]; then
+    dx_skip "No ${HOME}/.claude/skills; nothing to remove"
+    return 0
+  fi
+  while IFS= read -r target; do
+    [[ -L "$target" ]] || continue
+    current=$(readlink "$target")
+    case "$current" in
+      "$DEX_DIR"/skills/*)
+        if rm "$target"; then
+          removed=$((removed + 1))
+        else
+          dx_warn "Could not remove ${target}"
+          failed=$((failed + 1))
+        fi
+        ;;
+    esac
+  done < <(find "$skills_dir" -mindepth 1 -maxdepth 1 -type l 2>/dev/null)
+  if [[ $failed -gt 0 ]]; then
+    dx_warn "Removed ${removed} Claude skill link(s); failed ${failed}"
+    return 1
+  elif [[ $removed -gt 0 ]]; then
+    dx_done "Removed ${removed} Claude skill link(s)"
+  else
+    dx_skip "No Dex Claude skill links found"
+  fi
 }
 
 # Dex's hooks reach Claude through each launch's --settings file
@@ -787,7 +847,6 @@ dx_bootstrap_agent_tooling() {
   fi
 
   dx_info "Installing Claude/Codex tooling bootstrap"
-  dx_install_claude_dex_links || failed=1
 
   if command -v codex >/dev/null 2>&1; then
     dx_install_codex_skills || failed=1

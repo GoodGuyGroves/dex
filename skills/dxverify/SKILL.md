@@ -13,7 +13,7 @@ holding the entire repair set until the pipeline is green. Keep failed and
 pending checks explicit, continue remediation, and report success only after
 the complete required pipeline passes.
 
-Read `prompts/issue-hygiene.md`. Apply it only when verification reveals
+Read `$DEX_DIR/prompts/issue-hygiene.md`. Apply it only when verification reveals
 material new context, not for transient failures repaired within accepted
 scope. Reconcile concrete findings before handoff and end the Phase 4 summary
 with the contract's exact `Issue/PR work:` line.
@@ -73,7 +73,7 @@ Scope supplemental checks to affected workspaces where appropriate, but never
 scope away a command required by `.dex/dex.md`.
 
 Keep every runner inside the host budget — § Resource Discipline in
-`prompts/guardrails.md` is the contract. `DX_TEST_JOBS` is the number of
+`$DEX_DIR/prompts/guardrails.md` is the contract. `DX_TEST_JOBS` is the number of
 workers this session may use; runners that read an environment variable
 (vitest, pytest-xdist, cargo, go, make) already have it, and the rest take it
 as a flag: `jest --maxWorkers=$DX_TEST_JOBS`, `playwright test
@@ -98,7 +98,7 @@ When a check fails:
 5. Continue to the next gate only after it passes.
 
 On the second failure of the same check type, read
-`prompts/failure-recovery.md`, choose a different recovery strategy, and follow
+`$DEX_DIR/prompts/failure-recovery.md`, choose a different recovery strategy, and follow
 it. Try at most three times per strategy and two strategies per check type. If
 both strategies fail, stop and report the command, relevant output, approaches
 tried, and recommended next step.

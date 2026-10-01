@@ -6,7 +6,7 @@ description: "Alias for dxtriage: investigate, clarify, estimate, and organise t
 # Skill: dxrefine
 
 Run the `dxtriage` skill with the original input and options. If skill invocation
-is unavailable, read `skills/dxtriage/SKILL.md` from the Dex installation and follow
+is unavailable, read `$DEX_DIR/skills/dxtriage/SKILL.md` from the Dex installation and follow
 it directly. Apply its standalone-session check before any writes.
 
 This alias no longer requires an architecture-file bootstrap, mandatory question

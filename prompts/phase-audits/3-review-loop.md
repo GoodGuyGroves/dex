@@ -7,9 +7,9 @@ review-wave sessions. Review runs in the current checkout. It must not run Phase
 0 setup, create or switch worktrees, create or rename branches, or call
 `dx <ticket-or-task>`.
 
-Follow § Resource Discipline in `prompts/guardrails.md`; inside a review wave `bin/review-check.sh` is the heavy lease, not `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`; inside a review wave `bin/review-check.sh` is the heavy lease, not `dx run-gate`; own what you start.
 
-Apply `prompts/issue-hygiene.md` after the lifecycle owner accepts review
+Apply `$DEX_DIR/prompts/issue-hygiene.md` after the lifecycle owner accepts review
 findings. Fresh review children report out-of-scope issue candidates but never
 write to the tracker; the owner performs one duplicate search and one external
 write. End the phase summary with the contract's exact `Issue/PR work:` line.
@@ -93,7 +93,7 @@ All of these must be true:
   switch branches or create or update a PR. Re-run `/dxreviewloop` after any
   code change.
 - Accepted review findings were reconciled under
-  `prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`.
+  `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`.
 - No session-owned background process in flight, per `dx ps`.
 
 When the soft wave budget is spent the loop pauses; an agent or human may raise

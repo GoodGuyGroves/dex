@@ -497,6 +497,10 @@ dx_sync_inline_phase_from_state() {
 }
 
 dx_inline_phase_message() {
+  dx_skill_refs_render "$(__dx_inline_phase_text "$1")"
+}
+
+__dx_inline_phase_text() {
   case "$1" in
     0)
       cat <<'EOF'
@@ -511,8 +515,8 @@ For headless dx run sessions with workflow.requires_plan_approval=false, the run
 EOF
       ;;
     2)
-      cat <<'EOF'
-The plan is approved. Invoke the Skill tool with skill: "dximplement" to begin implementation. Phase focus: implementation, testing, and UI capture evidence. For UI-affecting changes, invoke dxuicapture before UI edits for baseline evidence, then capture after evidence and link the visual manifest/screenshots/videos/traces before stopping. Follow prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When implementation is complete and the audit criteria are met, stop so the Stop hook can advance the lifecycle.
+      cat <<EOF
+The plan is approved. Invoke the Skill tool with skill: "dximplement" to begin implementation. Phase focus: implementation, testing, and UI capture evidence. For UI-affecting changes, invoke dxuicapture before UI edits for baseline evidence, then capture after evidence and link the visual manifest/screenshots/videos/traces before stopping. Follow ${DEX_DIR}/prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When implementation is complete and the audit criteria are met, stop so the Stop hook can advance the lifecycle.
 EOF
       ;;
     3)
@@ -1435,7 +1439,7 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "1" ]]; then
       printf '\n%s\n\n' "--- Dex Phase 1 Gate: dxplan required ---" >&2
       printf '%s\n' "No audit iteration was counted, and no completion receipt is available yet." >&2
       printf '%s\n' "" >&2
-      printf '%s\n' "Mandatory next step: invoke the dxplan skill now (Skill tool with skill: \"dxplan\", or /dxplan if slash skills are the available interface)." >&2
+      printf '%s\n' "Mandatory next step: invoke the dxplan skill now (Skill tool with skill: \"$(dx_skill_ref dxplan)\", or /dxplan if slash skills are the available interface)." >&2
       printf '%s\n' "Do not manually fetch the ticket, rename branches, update tracker status, explore code, or draft the plan outside that skill unless the skill explicitly instructs you to." >&2
     else
       printf '\n%s\n\n' "--- Dex Phase 1 Gate: dxplan still in progress ---" >&2
@@ -1686,7 +1690,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       printf '\n%s\n\n' "--- Dex Review Pass Gate: evidence manifest missing or invalid ---" >&2
       printf '%s\n' "Completion receipt rejected; this pass must write valid versioned evidence for its result, profile, and scope fingerprint." >&2
       printf '%s\n' "Evidence manifest: ${REVIEW_EVIDENCE_FILE}" >&2
-      printf '%s\n' "Follow prompts/review-wave.md, replace the manifest, then use the fresh receipt below." >&2
+      printf '%s\n' "Follow ${DEX_DIR}/prompts/review-wave.md, replace the manifest, then use the fresh receipt below." >&2
       printf '%s\n' "" >&2
       dx_print_rejected_receipt_command
       exit 2
@@ -1781,7 +1785,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       printf '\n%s\n\n' "--- Dex Phase 2 Gate: review risk selection missing or stale ---" >&2
       printf '%s\n' "Completion receipt rejected; Phase 2 did not advance." >&2
       printf '%s\n' "" >&2
-      printf '%s\n' "Choose the review risk tier for the implementation you just completed: trivial, small, normal, or complex. Use the ordered rubric in prompts/review-risk-assessment.md and persist comma-separated reason codes." >&2
+      printf '%s\n' "Choose the review risk tier for the implementation you just completed: trivial, small, normal, or complex. Use the ordered rubric in ${DEX_DIR}/prompts/review-risk-assessment.md and persist comma-separated reason codes." >&2
       printf '%s\n' "" >&2
       printf '%s\n' "Record the current-scope choice, then stop again:" >&2
       printf '%s\n' '```bash' >&2
@@ -2321,7 +2325,7 @@ if [[ $IS_STALLED -eq 1 ]] && [[ $STALL_COUNT -ge $STALL_ESCALATE_AFTER ]]; then
   printf '%s\n' "" >&2
   printf '%s\n' "You appear to be stuck in a loop. The last $STALL_COUNT iterations each took longer than $(dx_format_duration "$STALL_TIMEOUT") without making progress." >&2
   printf '%s\n' "" >&2
-  printf '%s\n' "MANDATORY: Read prompts/failure-recovery.md and run the failure analysis." >&2
+  printf '%s\n' "MANDATORY: Read ${DEX_DIR}/prompts/failure-recovery.md and run the failure analysis." >&2
   printf '%s\n' "Choose a materially different recovery strategy. Do not retry the same approach or change the approved criteria." >&2
   if dx_print_escalation_command; then
     printf '%s\n' "If two different strategies have failed, the command above pauses this exact generation for human help. It does not signal completion." >&2
@@ -2336,7 +2340,7 @@ if [[ $SEMANTIC_STUCK -eq 1 ]]; then
   printf '%s\n' "" >&2
   printf '%s\n' "The last 3+ review cycles found the SAME issues. You are going in circles." >&2
   printf '%s\n' "" >&2
-  printf '%s\n' "MANDATORY: Read prompts/failure-recovery.md and run the failure analysis." >&2
+  printf '%s\n' "MANDATORY: Read ${DEX_DIR}/prompts/failure-recovery.md and run the failure analysis." >&2
   printf '%s\n' "Try a materially different implementation or isolate the failing check. Do not relax, split, defer, or mark approved criteria complete." >&2
   if dx_print_escalation_command; then
     printf '%s\n' "If two different strategies have failed, the command above pauses this exact generation for human help. It does not signal completion." >&2

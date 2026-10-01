@@ -82,8 +82,8 @@ verification, task completion, or phase completion to record meaningful work.
 ### Humanized Writing
 
 - Please remove all mannered prose.
-- Before writing or publishing user-facing prose, markdown copy, docs, release notes, PR descriptions, issue/ticket bodies, review replies, or tracker/GitHub comments, invoke the `humanizer` skill and apply its final-pass checklist.
-- Apply `humanizer` in code-comment mode to code and doc comments you add or edit: keep only what the code cannot — the why, the invariant, the edge case — or what a public contract needs. A convention the project documents or enforces wins.
+- Before writing or publishing user-facing prose, markdown copy, docs, release notes, PR descriptions, issue/ticket bodies, review replies, or tracker/GitHub comments, invoke the `dex:humanizer` (`humanizer` outside Claude Code) skill and apply its final-pass checklist.
+- Apply `dex:humanizer` in code-comment mode to code and doc comments you add or edit: keep only what the code cannot — the why, the invariant, the edge case — or what a public contract needs. A convention the project documents or enforces wins.
 - Preserve required templates, exact commands, paths, identifiers, checkboxes, code blocks, attribution footers, and any comment a script, test, or tool reads, requires, publishes, or runs. Grep the tree for a comment's literal text before deleting or rewording it.
 
 ### Research Before Implementing
@@ -243,7 +243,7 @@ When a fix attempt fails:
 - Do NOT retry the identical approach. The same input produces the same output.
 - Before your second attempt, analyze WHY the first attempt failed.
 - If two different approaches both fail, the problem may be in your understanding of the requirement, not in the code. Re-read the acceptance criteria and the error message together.
-- Refer to `prompts/failure-recovery.md` for the full recovery decision framework when you hit 2+ failures on the same check or finding.
+- Refer to `$DEX_DIR/prompts/failure-recovery.md` for the full recovery decision framework when you hit 2+ failures on the same check or finding.
 
 ### Type Safety at Boundaries
 

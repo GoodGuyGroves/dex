@@ -22,7 +22,7 @@ lifecycle parent remains quiescent, and Phase 4 records any final verification
 repairs. Verification is the PR gate, not a commit prerequisite. Phase 5 owns
 PR setup, and Phase 6 owns external review follow-through.
 
-Read `prompts/issue-hygiene.md` for the lifecycle-wide issue and PR contract.
+Read `$DEX_DIR/prompts/issue-hygiene.md` for the lifecycle-wide issue and PR contract.
 Phase 0 performs the full duplicate, relationship, and existing-PR search.
 Later phases apply the contract when material new context appears. Every phase
 handoff and completed-phase summary must include its exact `Issue/PR work:`
@@ -31,7 +31,7 @@ line, including when all fields are unchanged or N/A.
 ### Phase 0: Setup
 
 1. Runs in NORMAL mode (no plan mode) so the agent can write to git and the tracker before any planning starts.
-2. Follow `prompts/ticket-instructions.md` end to end:
+2. Follow `$DEX_DIR/prompts/ticket-instructions.md` end to end:
    - Read the ticket from the configured tracker (including all comments).
    - If unassigned, assign the ticket to the authenticated user. If assigned to someone else, pause and ask by default. A justified `setup.ticket-ownership` waiver may continue without claiming ownership changed.
    - Run `dx_ticket_branch_prepare` with the tracker's git branch name. It
@@ -41,7 +41,7 @@ line, including when all fields are unchanged or N/A.
      publishes it after the first implementation commit. Draft PR creation
      normally stays with Phase 5.
    - Set ticket status to **In Progress**.
-   - Apply `prompts/issue-hygiene.md`: search for duplicates and related work,
+   - Apply `$DEX_DIR/prompts/issue-hygiene.md`: search for duplicates and related work,
      reconcile accepted comment decisions into the issue, and read and update
      the existing open PR when its title or body is stale.
    - If the description is empty or unclear, draft 2-3 sentences plus an acceptance-criteria checklist, present to the user, and update the ticket once confirmed.
@@ -97,7 +97,7 @@ line, including when all fields are unchanged or N/A.
    of advancing toward Phase 5. The user may stop the lifecycle as no-change or
    choose an explicit lifecycle control action.
 10. Reconcile material implementation discoveries under
-    `prompts/issue-hygiene.md` before the phase handoff.
+    `$DEX_DIR/prompts/issue-hygiene.md` before the phase handoff.
 
 ### Phase 3: Review
 
@@ -150,13 +150,13 @@ line, including when all fields are unchanged or N/A.
    ledger, and any lower-target override. Report whether the trusted target
    passed or the attributed lower target was waived.
 10. Review children report tracker candidates only. The lifecycle owner applies
-    `prompts/issue-hygiene.md` once for accepted findings so waves cannot create
+    `$DEX_DIR/prompts/issue-hygiene.md` once for accepted findings so waves cannot create
     duplicate follow-up issues.
 
 ### Phase 4: Verify
 
 1. Run `/dxverify` — format, lint, typecheck, generate, test.
-2. Fix any failures. Re-run until all green, using the current retry defaults from `dx_failure_attempts_per_strategy` and `dx_failure_max_strategies` as described in `prompts/failure-recovery.md`.
+2. Fix any failures. Re-run until all green, using the current retry defaults from `dx_failure_attempts_per_strategy` and `dx_failure_max_strategies` as described in `$DEX_DIR/prompts/failure-recovery.md`.
 3. Treat this as the final PR gate, not the first opportunity to commit. As
    verification repairs reach coherent checkpoints, run `/dxcommit` and push
    each one immediately even while later checks are still pending or failing.
@@ -166,14 +166,14 @@ line, including when all fields are unchanged or N/A.
    commit is pushed. A newly created local branch with no branch-specific
    commits cannot use the ordinary Phase 4 completion path; return to Phase 2's
    user-direction path instead of publishing it.
-5. Apply `prompts/issue-hygiene.md` to material verification discoveries before
+5. Apply `$DEX_DIR/prompts/issue-hygiene.md` to material verification discoveries before
    the phase handoff.
 
 ### Phase 5: PR
 
 1. Run `/dxpr` — generate the PR description, refresh any UI after-capture handoff, create or update the PR, attach `request`-type reviewers from `dex.md § Reviewers`, mark the PR ready for review, and update the tracker if available.
 2. Reconcile the working issue, related issues, and PR under
-   `prompts/issue-hygiene.md` before finalizing its copy.
+   `$DEX_DIR/prompts/issue-hygiene.md` before finalizing its copy.
 3. Phase 5 must leave the PR ready for review. Phase 6 verifies readiness and normally owns the `@mention` comments.
 4. Output `PHASE_5_COMPLETE` only when the PR is current, ready for review, and reviewers are attached.
 
@@ -189,7 +189,7 @@ line, including when all fields are unchanged or N/A.
    `/dxcomplete`'s final verification. Reviewer requests and GitHub's
    merge-time approval state do not gate Phase 6. Update the tracker to Done,
    report review state for the maintainer, and print the summary.
-8. Apply `prompts/issue-hygiene.md` once to accepted CI or review discoveries;
+8. Apply `$DEX_DIR/prompts/issue-hygiene.md` once to accepted CI or review discoveries;
    scheduled watcher cycles must not create duplicate follow-ups.
 9. Output `DEX_TICKET_COMPLETE` once verification passes.
 

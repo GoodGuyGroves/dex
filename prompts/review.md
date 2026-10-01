@@ -1,9 +1,9 @@
 # Implementation Review Criteria
 
 Evaluate every changed file against the passes below. The `/dxreview` skill and
-`prompts/review-wave.md` drive how these criteria are applied; this prompt
+`$DEX_DIR/prompts/review-wave.md` drive how these criteria are applied; this prompt
 defines the criteria only. These criteria complement the implementation
-discipline described in `prompts/guardrails.md`.
+discipline described in `$DEX_DIR/prompts/guardrails.md`.
 
 For each finding, report: `file:line | pass | severity | confidence | issue | suggested fix`.
 
@@ -23,7 +23,7 @@ Read in this order — stop early when you have enough to judge the change:
 4. **The plan or ticket** — if a plan file or ticket context exists, read the acceptance criteria and the chosen approach. A "missing case" finding is invalid if the case was explicitly out of scope per the plan.
 5. **Similar code in the repo** — for any pattern the change introduces (a new auth check, a new query, a new error type), `Grep` for existing instances. If the codebase already uses pattern X for this scenario in 3+ places, the change should follow X. If X is established and the change introduces Y → finding. If you flag the change as "doesn't match best practice Z" without confirming Z is the project's pattern, that's a false positive.
 6. **Recent fix history of touched files** — `git log --oneline --since=3.months -- <file>` for each deep-review file. Recent `fix:` commits → fragile area; apply extra scrutiny.
-7. **Failure-recovery and debt records** — `prompts/failure-recovery.md` (recovery strategies for stuck-loop scenarios) and any `.debt` ledger files in the loop dir. A finding that someone has already accepted as debt should not be re-raised.
+7. **Failure-recovery and debt records** — `$DEX_DIR/prompts/failure-recovery.md` (recovery strategies for stuck-loop scenarios) and any `.debt` ledger files in the loop dir. A finding that someone has already accepted as debt should not be re-raised.
 
 For each pass below, an explicit "context check" step references back to the artefacts gathered here. Findings that don't pass the context check are downgraded or filtered.
 

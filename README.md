@@ -166,7 +166,7 @@ no secret the reviewer lacks. Keep the human review gate on the PR. See
 ## Common Commands
 
 ```bash
-dx install                 # Install shell functions, skills, and tooling (--global-hooks: hooks outside Dex sessions too)
+dx install                 # Install shell functions and tooling (--global-hooks / --global-skills: hooks / skills outside Dex sessions too)
 dx status                  # Show global and project setup
 dx init                    # Analyze the current repo and create .dex/
 dx sync                    # Refresh durable repo memory and rules
@@ -298,6 +298,15 @@ them.
 Upgrading: hooks an earlier `dx install` wrote into your Claude settings are
 reported as a legacy install. `dx status`, `dx tools doctor` and the bootstrap
 flag them until you choose `--global-hooks` or `--no-global-hooks`.
+
+Dex's skills load the same way, per launch. Every Claude session Dex starts
+passes `--plugin-dir "$DEX_DIR/plugin"`, which loads them as the plugin `dex`:
+`/dxplan` works, and so does `/dex:dxplan`. `dx install` no longer links them
+into `~/.claude/skills`. Run `dx install --global-skills` to get them in plain
+`claude` sessions too, and `dx install --no-global-skills` to remove the links.
+Links an earlier install made stay until you remove them. They are harmless,
+though a Dex session then lists each skill twice, bare and as `dex:<name>`.
+Codex skill links are unchanged.
 
 Known limits:
 - A launch removes its settings file when it returns. A killed launch leaves

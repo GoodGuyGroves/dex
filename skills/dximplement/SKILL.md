@@ -5,9 +5,9 @@ description: "Execute the approved implementation plan with TDD discipline and c
 
 # Skill: dximplement
 
-Read and follow `prompts/workflows/dximplement.md` from the installed Dex
-directory before implementation. Use `$DEX_DIR`; if unset, resolve this skill
-directory's symlink and use its grandparent. Do not substitute a project file.
+Read and follow `$DEX_DIR/prompts/workflows/dximplement.md` before implementation. If
+`$DEX_DIR` is unset, resolve this skill directory's real path (realpath) and
+use its grandparent. Do not substitute a file from the target project.
 
 The full workflow owns approved criteria, testing, checkpoints, manual proof,
 review-risk selection and the ready marker. Preserve every gate. After

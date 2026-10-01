@@ -39,7 +39,7 @@ handoff, not the existence of working-history commits.
 
 ### 2. Stage, Commit, and Push Each Group
 
-Read the commit format guide from the Dex prompts directory (`prompts/commit-format.md`) for the full format specification.
+Read the commit format guide from the Dex prompts directory (`$DEX_DIR/prompts/commit-format.md`) for the full format specification.
 
 For each logical group, finish all four steps before starting the next group:
 
@@ -53,7 +53,7 @@ For each logical group, finish all four steps before starting the next group:
    git diff --cached --name-only
    ```
 
-3. **Write a conventional commit message** following the format in `prompts/commit-format.md`. Include the Dex `Co-Authored-By` trailer and no Claude attribution:
+3. **Write a conventional commit message** following the format in `$DEX_DIR/prompts/commit-format.md`. Include the Dex `Co-Authored-By` trailer and no Claude attribution:
    ```
    Co-Authored-By: Dex <noreply@dexcode.ai>
    ```
@@ -95,7 +95,7 @@ For each logical group, finish all four steps before starting the next group:
    `--fill-first` titles the draft from the first commit, which is already a
    conventional message. Keep the body short: link the ticket and say it is a
    work in progress. Phase 5 writes the real description with
-   `prompts/pr-description.md` and marks the PR ready for review; never mark
+   `$DEX_DIR/prompts/pr-description.md` and marks the PR ready for review; never mark
    it ready here. If `gh` is unavailable or unauthenticated, report that the
    draft is pending and continue; publication is not a reason to stop work.
 

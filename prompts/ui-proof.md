@@ -31,7 +31,7 @@ commit it. Use local or explicitly authorized test data, keep credentials out of
 storyboards and media, and do not point the recorder at production unless the
 user explicitly requested and authorized that environment.
 
-Follow § Resource Discipline in `prompts/guardrails.md`: a capture is heavy
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: a capture is heavy
 work, so it runs through `dx run-gate`, and this session owns — and stops —
 every process it starts, servers included.
 

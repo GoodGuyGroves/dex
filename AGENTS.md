@@ -30,11 +30,14 @@ docs/                Extended documentation (guards, autonomous mode, run specs,
 hooks/               Claude Code hooks, guard handler, shared shell parser
   guards/            Built-in guard rules (markdown with YAML frontmatter)
 lib/                 Shared shell libraries sourced by common.sh; see the module table below
+plugin/              The Claude plugin `dex` each launch loads with --plugin-dir
+  .claude-plugin/    plugin.json manifest (name only, no version)
+  skills             Committed symlink to ../skills
 prompts/             Prompt templates for skills and CLI harness workflows
   phase-audits/      Phase-specific audit prompts (0-6 + prompt-loop)
 research/            Benchmarks: scenario suite, Dex-vs-bare comparison (compare/), review-loop evaluation — not shipped functionality
 scripts/             Python/Node helpers imported by lib/ and Dex-managed tooling
-skills/              Lifecycle skills (linked into ~/.claude/skills/ and individually to $CODEX_HOME/skills/)
+skills/              Lifecycle skills (the plugin's skills for Claude; linked individually into $CODEX_HOME/skills/)
 templates/           Files Dex installs into other repos (the dx-maintain GitHub workflow)
 tests/               Test suite: check.sh (static), run-all.sh (manifest runner), *-test.sh
 .github/workflows/   CI plus the DexCode plan, Dependabot-guard, and maintenance workflows
@@ -139,14 +142,15 @@ Each skill lives in `skills/<name>/SKILL.md` with YAML frontmatter containing `n
 
 - Directory naming: lowercase, `dx`-prefixed (`dxplan`, `dximplement`, etc.)
 - Exceptions: the orchestrator is `dex`; the writing pass is `humanizer`
-- Skills reference prompts by plain repo-relative path (`prompts/<file>.md`)
 - Skills are codebase-agnostic — they discover toolchains at runtime
-- Claude gets skills via a single `~/.claude/skills -> $DEX_DIR/skills` symlink when possible; if `~/.claude/skills` is already a directory, `dx install` preserves unrelated skills and installs Dex skill symlinks inside it
+- Claude gets skills per launch: every Dex launch passes `--plugin-dir "$DEX_DIR/plugin"`, which loads them as the plugin `dex`, invokable as `dex:<name>` or by bare name. A user skill with the same name captures the bare name, so generated `skill: "<name>"` text goes through `dx_skill_ref` / `dx_skill_refs_render` (lib/provider.sh): `dex:<name>` for Claude engines, bare for Codex. Prose names `humanizer` as `dex:humanizer` (bare outside Claude Code); `dx*` names stay bare, since a collision is unlikely
+- Skills and prompts name Dex files by absolute path (`$DEX_DIR/prompts/<file>.md`, `$DEX_DIR/skills/<name>/SKILL.md`); a relative one resolves against the target repo. `tests/plugin-packaging-test.sh` rejects relative ones
+- Linking skills into `~/.claude/skills` is opt-in (`dx install --global-skills`): a single `~/.claude/skills -> $DEX_DIR/skills` symlink when possible, or per-skill links inside an existing directory. `--no-global-skills` removes them
 - Codex gets skills via individual symlinks in `$CODEX_HOME/skills/<name>` (`CODEX_HOME` defaults to `~/.codex`) so Dex does not replace Codex system/plugin skills
 
 ### Writing copy and comments
 
-Use the `humanizer` skill whenever writing or editing copy, documentation,
+Use the `dex:humanizer` (`humanizer` outside Claude Code) skill whenever writing or editing copy, documentation,
 ticket bodies, PR descriptions, GitHub/tracker comments, review replies,
 user-facing messages, code comments, or doc comments. Preserve technical
 identifiers, commands, paths, markdown structure, and required attribution while
@@ -163,8 +167,8 @@ came from a plugin install; delete it. It belongs in the user's `~/.claude/` or 
 official integration.
 
 `skills/synced/` is the exception: Claude Code writes claude.ai organization skills to
-`~/.claude/skills/synced/`, and `~/.claude/skills` links to it. Gitignored — leave it, Claude
-Code recreates it.
+`~/.claude/skills/synced/`, and with `--global-skills` `~/.claude/skills` can link to it.
+Gitignored — leave it, Claude Code recreates it.
 
 To enable one:
 
@@ -237,8 +241,8 @@ env_value: optional-exact-value
 
 ## Prompt Conventions
 
-Stored in `prompts/`. Skills reference them by plain repo-relative path, e.g.
-"read the implementation guardrails from `prompts/guardrails.md`".
+Stored in `prompts/`. Skills reference them through `$DEX_DIR`, e.g.
+"read the implementation guardrails from `$DEX_DIR/prompts/guardrails.md`".
 
 - `guardrails.md` — Implementation discipline (shared across implement/review skills)
 - `review-risk-assessment.md` — Deterministic trivial/small/normal/complex review-tier selection before review waves
@@ -668,7 +672,7 @@ measured.
 1. Create `skills/<dxname>/SKILL.md` (`skills/<name>/SKILL.md` only for approved non-`dx` exceptions such as `humanizer`)
 2. Add YAML frontmatter with `name` and `description`
 3. Write the skill prompt as markdown
-4. Reference shared prompts by plain repo-relative path (`prompts/<file>.md`)
+4. Reference shared prompts as `$DEX_DIR/prompts/<file>.md`
 5. The symlink from `dx install` makes it available as `/<dxname>`
 
 ### Adding a new guard
