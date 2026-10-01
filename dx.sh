@@ -4291,6 +4291,10 @@ dx() {
       dx_error "Workspace flags apply to --workflow. A session uses the current checkout."
       return 2
     fi
+    if [[ -n "$dx_title_flag" ]]; then
+      dx_error "--title names a lifecycle session. Use it with a ticket or --workflow."
+      return 2
+    fi
     dx_provider_session "$raw_input"
     return $?
   fi

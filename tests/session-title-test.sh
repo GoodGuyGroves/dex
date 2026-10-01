@@ -69,6 +69,9 @@ expect resume-legacy "ticket-17" "$(resolve s-gh worktree ticket-17 1 "Fix login
 dx_meta_write s-gh "claude_session_name=17 First title"
 expect stored-fresh "17 First title" "$(resolve s-gh worktree ticket-17 0 "Other")"
 expect stored-resume "17 First title" "$(resolve s-gh worktree ticket-17 1 "")"
+# A stored name keeps an "=" and everything after it.
+dx_meta_write s-eq "claude_session_name=17 a=b == c"
+expect stored-equals "17 a=b == c" "$(resolve s-eq worktree ticket-17 1 "")"
 SH
 for test_shell in bash zsh; do
   "$test_shell" "$TMP_DIR/resolver.sh" \
@@ -171,6 +174,9 @@ for bad in "--title" "--title= 17" "--title --model x 17"; do
   assert_contains "Usage: dx --title" "$TMP_DIR/flag-bad.out"
   assert_not_contains "title=[" "$TMP_DIR/flag-bad.out"
 done
+# A prompt-only session is not named by Dex, so a title there is refused.
+dx_title_probe --session --title "Flag title" "fix login" > "$TMP_DIR/flag-session.out"
+assert_contains "--title names a lifecycle session" "$TMP_DIR/flag-session.out"
 
 # Run spec: source.title becomes DEX_SESSION_TITLE and beats an inherited value.
 cat > "$TMP_DIR/spec.json" <<'JSON'
