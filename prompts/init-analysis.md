@@ -91,6 +91,9 @@ heavy_commands:
   - [exact command]
 targeted_tests: "[exact command] {files}"
 full_gate: local  # or ci: the PR stays a draft and CI is the gate Phase 6 fixes through
+# The one check whose success means CI is green, for repositories without
+# required status checks; Phase 6 treats it as pending until it passes.
+readiness_check: [roll-up check name]
 # Review-tier derivation: extra sensitive globs, the size bounds for `trivial`
 # and for a broad change, and the diff size above which thorough may use scouts.
 review_sensitive_paths: ["**/migrations/**", "**/auth*"]
@@ -150,10 +153,20 @@ aliases to GitHub CLI's special `@copilot` reviewer value. Strip leading `@`
 from normal GitHub usernames only. If GitHub says a reviewer is not requestable
 for the repository, Dex records a warning and continues.
 
-| Handle | Type | Notes |
-|--------|------|-------|
-| @[auth-user] | request | Authenticated GitHub user (auto-detected by `dx config`) |
-| Copilot | request | GitHub Copilot review |
+`Wait` and `Adapter` are optional. `Adapter` (`greptile`, `copilot` or
+`generic`) says how Dex asks an AI reviewer for a review and tells when it has
+finished (see `prompts/reviewers/`). With `Wait: yes` on an adapter row, Phase 6
+does not complete until that reviewer has reviewed the PR's current head commit
+or `DEX_REVIEWER_WAIT_MINUTES` (default 20) runs out; a timeout is reported as
+not reviewed. Dex never writes `@copilot` in a comment, because that summons the
+Copilot coding agent; a Copilot row is always a `request` row. To make CI green
+depend on one roll-up check, set `readiness_check: <check name>` in the
+`## Resources` block.
+
+| Handle | Type | Wait | Adapter | Notes |
+|--------|------|------|---------|-------|
+| @[auth-user] | request | no | generic | Authenticated GitHub user (auto-detected by `dx config`) |
+| Copilot | request | no | copilot | GitHub Copilot review |
 
 If the table is empty or only contains `_none_` rows, Phase 6 skips review-request and mention steps. Edit rows directly or rerun `dx config`.
 

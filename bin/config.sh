@@ -175,6 +175,9 @@ fi
 #
 # Defaults: current authenticated GitHub user + Copilot (both request type).
 # If GitHub does not allow a reviewer on this repo, Dex warns and continues.
+# Optional per-row Wait (yes/no) and Adapter (greptile|copilot|generic)
+# columns opt an AI reviewer into the Phase 6 wait gate; rerunning this keeps
+# the values already set for reviewers that stay.
 
 echo ""
 echo "Reviewers (attached in Phase 5 before the PR is marked ready):"
@@ -201,31 +204,66 @@ if command -v gh &>/dev/null; then
   fi
 fi
 
+# Wait/Adapter values already in dex.md, keyed by lower-cased handle without
+# `@`, so a rerun does not reset them.
+PRIOR_REVIEWERS=$(dx_reviewers_rows "$repo_root" 2>/dev/null || true)
+
+# reviewer_row <handle> <type> <default-adapter> <notes> [wait] [adapter]
+reviewer_row() {
+  local row_handle="$1" row_type="$2" row_adapter="$3" row_notes="$4"
+  local row_wait="${5:-}" explicit_adapter="${6:-}" key prior
+  key=$(printf '%s' "${row_handle#@}" | tr '[:upper:]' '[:lower:]')
+  prior=$(printf '%s\n' "$PRIOR_REVIEWERS" | awk -F'\t' -v k="$key" '
+    { h = tolower($1); sub(/^@/, "", h) }
+    h == k { print $3 "\t" $4; exit }')
+  if [[ -z "$row_wait" && -n "$prior" ]]; then
+    row_wait="${prior%%$'\t'*}"
+  fi
+  if [[ -z "$explicit_adapter" && -n "$prior" && "${prior#*$'\t'}" != "generic" ]]; then
+    explicit_adapter="${prior#*$'\t'}"
+  fi
+  printf '| %s | %s | %s | %s | %s |\n' "$row_handle" "$row_type" \
+    "${row_wait:-no}" "${explicit_adapter:-$row_adapter}" "$row_notes"
+}
+
 REVIEWER_ROWS=""
 if [[ -n "$CURRENT_GH_USER" ]]; then
   echo "  Detected GitHub user: @${CURRENT_GH_USER}"
   if ask_yn "Add @${CURRENT_GH_USER} as a reviewer (request)?" "y"; then
-    REVIEWER_ROWS+="| @${CURRENT_GH_USER} | request | Authenticated GitHub user |"$'\n'
+    REVIEWER_ROWS+="$(reviewer_row "@${CURRENT_GH_USER}" request generic "Authenticated GitHub user")"$'\n'
   fi
 else
   echo "  (Could not auto-detect GitHub user — install/auth gh to enable.)"
 fi
 
 if ask_yn "Add Copilot as a reviewer (request)?" "y"; then
-  REVIEWER_ROWS+="| Copilot | request | GitHub Copilot review |"$'\n'
+  REVIEWER_ROWS+="$(reviewer_row Copilot request copilot "GitHub Copilot review")"$'\n'
 fi
 
 echo ""
 echo "Add additional reviewers? Enter '<handle> <type>' (type = request|mention),"
+echo "optionally followed by wait=yes and adapter=greptile|copilot|generic,"
 echo "or empty to finish. Handles may be GitHub users or org/team references."
-echo "Example: '@dependabot mention' or 'octocat request'"
+echo "Example: '@dependabot mention', 'octocat request' or"
+echo "'@greptileai mention wait=yes adapter=greptile'"
 while true; do
   printf "Reviewer: "
   read -r reviewer_line
   [[ -z "$reviewer_line" ]] && break
-  read -r rev_handle rev_type rev_extra <<< "$reviewer_line"
-  if [[ -n "$rev_extra" ]]; then
-    echo "  Invalid reviewer — enter exactly one handle and one type. Try again."
+  read -r rev_handle rev_type rev_opt1 rev_opt2 rev_extra <<< "$reviewer_line"
+  rev_wait=""
+  rev_adapter=""
+  rev_bad=""
+  for rev_opt in "$rev_opt1" "$rev_opt2"; do
+    case "$rev_opt" in
+      "") ;;
+      wait=yes|wait=no) rev_wait="${rev_opt#wait=}" ;;
+      adapter=greptile|adapter=copilot|adapter=generic) rev_adapter="${rev_opt#adapter=}" ;;
+      *) rev_bad=1 ;;
+    esac
+  done
+  if [[ -n "$rev_extra" || -n "$rev_bad" ]]; then
+    echo "  Invalid reviewer — enter exactly one handle and one type, then optionally wait=yes|no and adapter=greptile|copilot|generic. Try again."
     continue
   fi
   case "$rev_type" in
@@ -240,12 +278,12 @@ while true; do
     echo "  Invalid handle '$rev_handle' — use a GitHub user or org/team reference. Try again."
     continue
   fi
-  REVIEWER_ROWS+="| ${rev_handle} | ${rev_type} | Added via dx config |"$'\n'
+  REVIEWER_ROWS+="$(reviewer_row "$rev_handle" "$rev_type" generic "Added via dx config" "$rev_wait" "$rev_adapter")"$'\n'
   echo "  Added: ${rev_handle} (${rev_type})"
 done
 
 if [[ -z "$REVIEWER_ROWS" ]]; then
-  REVIEWER_ROWS="| _none_ | _none_ | No reviewers configured — Phase 6 will skip review-request and mention steps |"$'\n'
+  REVIEWER_ROWS="| _none_ | _none_ | no | generic | No reviewers configured — Phase 6 will skip review-request and mention steps |"$'\n'
 fi
 
 REVIEWERS="## Reviewers
@@ -267,8 +305,18 @@ or Copilot aliases to GitHub CLI's special \`@copilot\` reviewer value. Normal
 GitHub usernames are passed without a leading \`@\`. If GitHub says a reviewer is
 not requestable for the repository, Dex records a warning and continues.
 
-| Handle | Type | Notes |
-|--------|------|-------|
+\`Wait\` and \`Adapter\` are optional. \`Adapter\` (\`greptile\`, \`copilot\` or
+\`generic\`) says how Dex asks an AI reviewer for a review and tells when it has
+finished (see \`prompts/reviewers/\`). With \`Wait: yes\` on an adapter row,
+Phase 6 does not complete until that reviewer has reviewed the PR's current
+head commit or \`DEX_REVIEWER_WAIT_MINUTES\` (default 20) runs out; a timeout
+is reported as not reviewed. Dex never writes \`@copilot\` in a comment,
+because that summons the Copilot coding agent; a Copilot row is always a
+\`request\` row. To make CI green depend on one roll-up check, set
+\`readiness_check: <check name>\` in the \`## Resources\` block.
+
+| Handle | Type | Wait | Adapter | Notes |
+|--------|------|------|---------|-------|
 ${REVIEWER_ROWS}
 Edit rows directly or rerun \`dx config\`. Remove a row to skip a reviewer."
 
