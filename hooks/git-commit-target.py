@@ -38,10 +38,6 @@ def _timeout_handler(signum, frame):
 # costs nothing and keeps an exotic-but-real command from being abandoned.
 COMMIT_PARSE_TIMEOUT_SECONDS = int(os.environ.get('DEX_COMMIT_PARSE_TIMEOUT', '5') or 5)
 
-GIT_OPTION_ARGS = {
-    '-C', '-c', '--config-env', '--exec-path', '--git-dir', '--work-tree',
-    '--namespace', '--super-prefix',
-}
 GIT_COMMIT_NO_CREATE_OPTIONS = {
     '--dry-run', '--short', '--porcelain', '--long', '-z', '--null',
     '--help', '-h',
@@ -145,43 +141,6 @@ def direct_script_commit_target(tokens, command_index, cwd, generated_scripts, v
     if not script_body:
         return None
     return executable_script_git_commit_target(script_body, cwd, depth + 1)
-
-
-def resolve_dir(cwd, path):
-    """Resolve a `git -C` argument. Unlike resolve_shell_path this does no
-    variable expansion: the caller has already expanded the token."""
-    if not path:
-        return cwd
-    if os.path.isabs(path):
-        return os.path.abspath(path)
-    return os.path.abspath(os.path.join(cwd, path))
-
-
-def git_subcommand_info(tokens, git_index, cwd):
-    index = git_index + 1
-    git_cwd = cwd
-    while index < len(tokens) and tokens[index] not in SHELL_SEPARATORS:
-        token = tokens[index]
-        if token == '--':
-            index += 1
-            break
-        if token == '-C':
-            if index + 1 >= len(tokens):
-                return index, git_cwd
-            git_cwd = resolve_dir(git_cwd, tokens[index + 1])
-            index += 2
-            continue
-        if token.startswith('-C') and token != '-C':
-            git_cwd = resolve_dir(git_cwd, token[2:])
-            index += 1
-            continue
-        if not token.startswith('-') or token == '-':
-            break
-        needs_value = token in GIT_OPTION_ARGS or token_takes_value(token, GIT_OPTION_ARGS)
-        index += 1
-        if needs_value and index < len(tokens):
-            index += 1
-    return index, git_cwd
 
 
 def git_commit_creates_commit(tokens, commit_index):
