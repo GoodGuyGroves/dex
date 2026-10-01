@@ -23,39 +23,9 @@
 # 05 DEX_HOME state root (#7).
 #
 # Steps that write nothing today: tools, reload, status, session (after init
-# has written it all) and status-fresh.
-
-# ── 01: Dex hooks and settings merged into ~/.claude/settings.json ──────────
-# bin/install-settings.sh, reached from dx install, dx init and dx tools
-# (dx_bootstrap_agent_tooling) and dx reload (dx.sh:147).
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.SessionStart	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.UserPromptSubmit	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PreToolUse	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PostToolUse	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.Stop	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.SessionEnd	fold
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#hooks.PreCompact[*]	-	Dex's group beside the user's
-01	init,tools-fresh,install,reload-fresh	added	.claude/settings.json#worktree	fold	worktree.symlinkDirectories
-# .dex-install-state.json has two writers: install-settings.sh records the
-# worktree directories it manages (01), bin/config.sh records the
-# session-messaging answer (05, below).
-01	init,tools-fresh,install,reload-fresh	added	.claude/.dex-install-state.json	-
-01	init,tools-fresh,install,reload-fresh	added	.claude/.dex-install-state.json#worktree	fold
-# Global hooks firing in a session Dex did not launch.
-01	plain,plain-fresh	added	.claude/.dex-phases/guard-heavy-commands.json	fold	guard-handler.py heavy-command cache
-01	plain,plain-fresh	added	.gw-on-session-end	-	session-end.sh ran the repo's on_session_end hook
-01	plain-fresh	added	.claude/.dex-phases	-	guard-handler.py state directory
-01	plain-fresh	added	.claude/.dex-loops	-	hooks/phase-loop.sh:32 mkdir in every Stop hook
-# dx uninstall takes back what install-settings.sh added.
-01	uninstall	removed	.claude/settings.json#hooks.SessionStart	fold
-01	uninstall	removed	.claude/settings.json#hooks.UserPromptSubmit	fold
-01	uninstall	removed	.claude/settings.json#hooks.PreToolUse	fold
-01	uninstall	removed	.claude/settings.json#hooks.PostToolUse	fold
-01	uninstall	removed	.claude/settings.json#hooks.Stop	fold
-01	uninstall	removed	.claude/settings.json#hooks.SessionEnd	fold
-01	uninstall	removed	.claude/settings.json#hooks.PreCompact[*]	-	the user's own group must survive (checked separately)
-01	uninstall	removed	.claude/settings.json#worktree	fold
-01	uninstall	removed	.claude/.dex-install-state.json	fold
+# has written it all), status-fresh, reload-fresh, plain and plain-fresh.
+# Unit 01 is done: Dex's hooks reach only the sessions Dex launches, through
+# each launch's --settings file.
 
 # ── 02: Dex skills linked into ~/.claude/skills ──────────────────────────────
 02	init,install	added	.claude/skills/{dex-skill}	-	per-skill links beside the user's own skill
@@ -101,7 +71,10 @@
 04	wt-remove	removed	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_unlink_claude_from_worktree
 
 # ── 05: state and tool caches outside DEX_HOME ──────────────────────────────
-05	config	added	.claude/.dex-install-state.json#sessionMessaging	-	bin/config.sh, asked on a terminal only
+# bin/config.sh records the session-messaging answer, asked on a terminal
+# only; dx uninstall deletes the file.
+05	config	added	.claude/.dex-install-state.json	fold
+05	uninstall	removed	.claude/.dex-install-state.json	fold
 05	init,session-fresh,phase-fresh	added	.claude/.dex-phases	-	DX_STATE_DIR default
 05	init,session-fresh,phase-fresh	added	.claude/.dex-loops	-	DX_LOOP_DIR default
 05	init,sync	added	.claude/.dex-phases/init-*.run-id	-	run-id pointer

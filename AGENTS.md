@@ -324,7 +324,20 @@ and state paths; these rules are what its message points at.
 
 ### Hook integration
 
-Hooks defined in `settings.json`, referenced by paths to Dex scripts:
+Hooks defined in `settings.json`, referenced by paths to Dex scripts. They are
+launch-scoped: `dx_provider_claude` is the only place a `--settings` is
+emitted, and every Dex Claude launch (all engines but codex-plugin) gets one
+merged file under `${DEX_HOME:-$DX_LOOP_DIR}/launch-settings/` built by
+`scripts/settings-json.py launch-settings`. Lowest to highest: Dex's status
+line (lifecycle phases only, requested with `DX_LAUNCH_STATUS_LINE=1`) and
+`crossSessionInbound`, the caller's `--settings` in argv order, then
+`DEX_EXTRA_SETTINGS` (a file). Hook arrays add up and Dex's groups are always
+present (the file sets `disableAllHooks: false`); a second `--settings` hidden in
+argv is refused; RTK's hook is dropped unless RTK is
+enabled and installed. Never add a per-caller `--settings`. Nothing is written
+to `~/.claude/settings.json` unless the user runs `dx install --global-hooks`,
+whose commands are gated on `DEX_LAUNCHED` so a Dex launch does not run them
+twice; `dx install --no-global-hooks` removes them.
 
 | Hook | Matcher | Script | Purpose |
 |------|---------|--------|---------|
@@ -676,7 +689,7 @@ measured.
 
 1. This is zsh-only — zsh syntax is fine here
 2. Prefix functions with `unalias/unfunction` guards for re-sourcing safety
-3. After editing, users run `dx reload` to apply shell changes and refresh Claude hook settings
+3. After editing, users run `dx reload` to apply shell changes (it also refreshes opt-in global hooks)
 
 ### Adding a shared library function
 

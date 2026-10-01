@@ -178,8 +178,8 @@ dx config --session-messaging on
 dx config --session-messaging off
 ```
 
-When the answer is on or not yet given, every Dex launch (lifecycle phases and `dxloop`) passes
-`crossSessionInbound: accept` in its `--settings` value, so the change reaches
+When the answer is on or not yet given, every Dex Claude launch passes
+`crossSessionInbound: accept` in its launch `--settings` file, so the change reaches
 only sessions Dex starts. Dex does not edit `~/.claude/settings.json` for
 this. A `hold` or `refuse` you set there yourself wins and Dex passes nothing;
 managed settings and stricter project files apply on their own under Claude
@@ -702,7 +702,7 @@ During autonomous phases (2-6), a custom status line displays live information i
 - Audit loop iteration count (e.g., `Audit 3/30`)
 - Total elapsed time (e.g., `4m 22s`)
 
-The status line is driven by `bin/status-line.sh` which reads state files from `~/.claude/.dex-phases/` and `~/.claude/.dex-loops/`. It is injected per-session via `--settings` and does not affect the global settings.
+The status line is driven by `bin/status-line.sh` which reads state files from `~/.claude/.dex-phases/` and `~/.claude/.dex-loops/`. It is injected into lifecycle phase launches through their launch `--settings` file and does not affect the global settings.
 
 ## Run Events
 

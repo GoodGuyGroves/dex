@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2088,SC1091
-# Install or refresh Dex's Claude Code settings entries.
+# Install or refresh Dex's opt-in global hooks (dx install --global-hooks) in
+# the user's Claude settings. Every command is gated on DEX_LAUNCHED: a
+# session Dex launched already carries these hooks in its --settings file.
 set -euo pipefail
 
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
@@ -16,11 +18,10 @@ for arg in "$@"; do
   esac
 done
 
-CLAUDE_DIR="$HOME/.claude"
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-INSTALL_STATE_FILE="$CLAUDE_DIR/.dex-install-state.json"
+SETTINGS_FILE=$(dx_claude_settings_file)
+INSTALL_STATE_FILE="$HOME/.claude/.dex-install-state.json"
 SETTINGS_JSON_HELPER="$DEX_DIR/scripts/settings-json.py"
-mkdir -p "$CLAUDE_DIR"
+mkdir -p "${SETTINGS_FILE%/*}" "${INSTALL_STATE_FILE%/*}"
 
 say_done() {
   [[ $QUIET -eq 1 ]] || dx_done "$1"
@@ -58,32 +59,32 @@ if [[ ! -f "$SETTINGS_JSON_HELPER" ]]; then
   say_error "Missing settings helper: $SETTINGS_JSON_HELPER"
   exit 1
 fi
-if ! local_settings=$(__dx_settings_json render-template "$DEX_DIR/settings.json" "$DEX_DIR"); then
+if ! local_settings=$(__dx_settings_json render-template "$DEX_DIR/settings.json" "$DEX_DIR" --gated); then
   say_error "Failed to customise the settings template"
   exit 1
 fi
 
 if [[ -f "$SETTINGS_FILE" ]]; then
   if ! managed_worktree_dirs_json=$(__dx_settings_json managed-dirs-added \
-    "$SETTINGS_FILE" "$DEX_DIR/settings.json" "$DEX_DIR" "$HOME"); then
+    "$SETTINGS_FILE" "$DEX_DIR/settings.json" "$DEX_DIR" "$HOME" --gated); then
     say_error "Failed to inspect existing worktree settings"
     exit 1
   fi
 
   if merged=$(__dx_settings_json merge-settings \
-    "$SETTINGS_FILE" "$DEX_DIR/settings.json" "$DEX_DIR" "$HOME") \
+    "$SETTINGS_FILE" "$DEX_DIR/settings.json" "$DEX_DIR" "$HOME" --gated) \
     && [[ -n "$merged" ]]; then
     tmpfile="${SETTINGS_FILE}.tmp.$$"
     if printf '%s\n' "$merged" > "$tmpfile" && mv "$tmpfile" "$SETTINGS_FILE"; then
       __dx_record_managed_worktree_dirs "$managed_worktree_dirs_json" || exit 1
-      say_done "Merged hooks and worktree settings into ~/.claude/settings.json"
+      say_done "Merged global hooks and worktree settings into $SETTINGS_FILE"
     else
       rm -f "$tmpfile" 2>/dev/null || true
-      say_error "Failed to merge settings — settings.json left unchanged"
+      say_error "Failed to merge settings — $SETTINGS_FILE left unchanged"
       exit 1
     fi
   else
-    say_error "Failed to merge settings — settings.json left unchanged"
+    say_error "Failed to merge settings — $SETTINGS_FILE left unchanged"
     exit 1
   fi
 else
@@ -91,7 +92,7 @@ else
   if printf '%s\n' "$local_settings" > "$tmpfile" && mv "$tmpfile" "$SETTINGS_FILE"; then
     managed_worktree_dirs_json=$(__dx_settings_json template-dirs "$DEX_DIR/settings.json")
     __dx_record_managed_worktree_dirs "$managed_worktree_dirs_json" || exit 1
-    say_done "Created ~/.claude/settings.json with hooks and worktree settings"
+    say_done "Created $SETTINGS_FILE with global hooks and worktree settings"
   else
     rm -f "$tmpfile" 2>/dev/null || true
     say_error "Failed to copy settings.json"

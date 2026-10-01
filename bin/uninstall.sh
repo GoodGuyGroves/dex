@@ -6,37 +6,8 @@ set -euo pipefail
 
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
 CLAUDE_DIR="$HOME/.claude"
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 INSTALL_STATE_FILE="$CLAUDE_DIR/.dex-install-state.json"
-SETTINGS_JSON_HELPER="$DEX_DIR/scripts/settings-json.py"
 ZSHRC="$HOME/.zshrc"
-
-__dx_settings_json() {
-  python3 "$SETTINGS_JSON_HELPER" "$@"
-}
-
-__dx_settings_have_dex_hooks() {
-  [[ -f "$SETTINGS_FILE" ]] || return 1
-  __dx_settings_json has-dex-hooks "$SETTINGS_FILE" "$DEX_DIR" "$HOME"
-}
-
-__dx_managed_worktree_dirs_json() {
-  [[ -f "$INSTALL_STATE_FILE" ]] || {
-    printf '%s\n' "[]"
-    return 0
-  }
-
-  __dx_settings_json state-dirs "$INSTALL_STATE_FILE"
-}
-
-__dx_remove_dex_hooks_json() {
-  __dx_settings_json remove-dex-hooks "$SETTINGS_FILE" "$DEX_DIR" "$HOME"
-}
-
-__dx_remove_worktree_settings_json() {
-  local managed_dirs_json="$1"
-  __dx_settings_json remove-worktree-dirs "$SETTINGS_FILE" "$managed_dirs_json"
-}
 
 usage() {
   cat <<'USAGE'
@@ -123,56 +94,12 @@ if ! dx_uninstall_rtk_codex_instructions; then
   uninstall_failed=1
 fi
 
-# 3. Remove Dex hooks from settings (preserve non-Dex hooks)
-if __dx_settings_have_dex_hooks; then
-  settings_tmp="${SETTINGS_FILE}.tmp.$$"
-  if __dx_remove_dex_hooks_json > "$settings_tmp" && [[ -s "$settings_tmp" ]]; then
-    mv "$settings_tmp" "$SETTINGS_FILE"
-    dx_done "Removed hooks from ~/.claude/settings.json"
-  else
-    rm -f "$settings_tmp"
-    dx_error "Failed to remove Dex hooks from ~/.claude/settings.json. Install Python 3, then run 'dx uninstall' again."
-    uninstall_failed=1
-  fi
-else
-  hook_status=$?
-  if [[ $hook_status -eq 1 ]]; then
-    dx_skip "No Dex hooks in settings"
-  else
-    dx_error "Failed to inspect ~/.claude/settings.json. Install Python 3, then run 'dx uninstall' again."
-    uninstall_failed=1
-  fi
-fi
-
-# 4. Remove Dex-managed worktree settings while preserving user entries
-worktree_cleanup_complete=0
-if [[ -f "$INSTALL_STATE_FILE" ]]; then
-  if managed_dirs_json=$(__dx_managed_worktree_dirs_json); then
-    if [[ "$managed_dirs_json" == "[]" || ! -f "$SETTINGS_FILE" ]]; then
-      dx_skip "No Dex-managed worktree settings in settings"
-      worktree_cleanup_complete=1
-    else
-      settings_tmp="${SETTINGS_FILE}.tmp.$$"
-      if __dx_remove_worktree_settings_json "$managed_dirs_json" > "$settings_tmp" && [[ -s "$settings_tmp" ]]; then
-        mv "$settings_tmp" "$SETTINGS_FILE"
-        dx_done "Removed worktree settings from ~/.claude/settings.json"
-        worktree_cleanup_complete=1
-      else
-        rm -f "$settings_tmp"
-        dx_error "Failed to remove Dex worktree settings from ~/.claude/settings.json"
-        uninstall_failed=1
-      fi
-    fi
-  else
-    dx_error "Failed to read Dex install state; keeping $INSTALL_STATE_FILE for a later uninstall attempt"
-    uninstall_failed=1
-  fi
-else
-  dx_skip "No Dex-managed worktree settings in settings"
-  worktree_cleanup_complete=1
-fi
-if [[ $worktree_cleanup_complete -eq 1 ]]; then
+# 3. Remove global Dex hooks and Dex-managed worktree settings, keeping the
+# user's own entries. A failure keeps the install state for the next attempt.
+if dx_remove_claude_global_hooks; then
   rm -f "$INSTALL_STATE_FILE" 2>/dev/null || true
+else
+  uninstall_failed=1
 fi
 
 # 5. Remove source line and Dex comment from zshrc

@@ -166,7 +166,7 @@ no secret the reviewer lacks. Keep the human review gate on the PR. See
 ## Common Commands
 
 ```bash
-dx install                 # Install shell functions, hooks, skills, and tooling
+dx install                 # Install shell functions, skills, and tooling (--global-hooks: hooks outside Dex sessions too)
 dx status                  # Show global and project setup
 dx init                    # Analyze the current repo and create .dex/
 dx sync                    # Refresh durable repo memory and rules
@@ -283,9 +283,28 @@ Run IDs, lifecycle events, logs, summaries, and artifact manifests are stored
 locally under `~/.dex/runs/`; see [docs/events.md](docs/events.md).
 
 RTK support is installed by `dx install`, `dx init`, `dx sync`, and
-`dx tools bootstrap`. Claude Code sessions get a fail-open Bash rewrite hook;
+`dx tools bootstrap`. Dex-launched Claude Code sessions get a fail-open Bash rewrite hook;
 Codex gets global instructions to prefix shell commands with RTK when compact
 output is enough. Set `DX_RTK_ENABLED=0` to skip this bootstrap.
+
+Dex's hooks are launch-scoped. Every Claude session Dex starts gets them
+through its own `--settings` file, and `~/.claude/settings.json` is left
+alone. A plain `claude` session therefore runs without Dex's guards, RTK
+rewriting, stop sound, ticket banner and worktree `symlinkDirectories`, unless
+you run `dx install --global-hooks`. Those global hooks skip themselves inside
+Dex sessions (`DEX_LAUNCHED=1`), and `dx install --no-global-hooks` removes
+them.
+
+Upgrading: hooks an earlier `dx install` wrote into your Claude settings are
+reported as a legacy install. `dx status`, `dx tools doctor` and the bootstrap
+flag them until you choose `--global-hooks` or `--no-global-hooks`.
+
+Known limits:
+- A launch removes its settings file when it returns. A killed launch leaves
+  the file under the state root's `launch-settings/` until a later launch
+  sweeps files older than 7 days.
+- `DEX_LAUNCHED` is inherited by every process in a Dex session, so a raw
+  `claude` started from inside one also skips the opt-in global hooks.
 
 ## Project Context
 

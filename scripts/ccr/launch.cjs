@@ -14,11 +14,14 @@ function launchArguments(args) {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--') { forwarded.push(...args.slice(index)); break; }
-    if (arg === '--settings') {
+    // Dex folds every settings layer into one launch file, so a second
+    // --settings would be silently dropped here; refuse it instead.
+    if (arg === '--settings' || arg.startsWith('--settings=')) {
+      if (settings !== undefined) throw new Error('Pass --settings once; Dex merges every settings layer into one launch file.');
+      if (arg.startsWith('--settings=')) { settings = arg.slice(11); continue; }
       if (!args[index + 1]) throw new Error('--settings requires a value.');
       settings = args[++index]; continue;
     }
-    if (arg.startsWith('--settings=')) { settings = arg.slice(11); continue; }
     if (['--model', '--fallback-model', '--permission-mode'].includes(arg)) {
       if (!args[index + 1]) throw new Error(`${arg} requires a value.`);
       if (arg === '--model' && plainModel(args[index + 1]) !== 'dex/active') requested = plainModel(args[index + 1]);
@@ -34,6 +37,7 @@ function launchArguments(args) {
   return { requested, resume, settings, mcpExplicit, toolsExplicit, args: ['--dangerously-skip-permissions', '--permission-mode', 'bypassPermissions', '--model', longContext('dex/active'), ...forwarded] };
 }
 
+// Relies on dx_provider_claude having already merged every settings layer and Dex's hooks into this one file.
 function launchSettings(input, config) {
   let supplied = {};
   if (input !== undefined) {

@@ -29,7 +29,6 @@ set -euo pipefail
 [[ "${DEX_TRIAGE_ACTIVE:-0}" == 1 || "${DEX_SESSION_ONLY:-0}" == 1 ]] && exit 0
 
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
-mkdir -p "$DX_LOOP_DIR"
 
 # Expected Stop-hook control flow uses Claude Code's structured protocol so a
 # phase handoff or in-flight wait is not rendered as a hook error. Genuine
@@ -569,7 +568,9 @@ dx_compact_repeat_audit_prompt() {
   esac
 }
 
-# Check activation: env var OR .active file (for in-session /dxloop skill)
+# Check activation: DEX_LOOP_ACTIVE, or the .active file a trusted launch
+# wrapper (dx, dxloop, the review loop) writes. The /dxloop skill never writes
+# it; it hands the user a terminal dxloop command instead.
 ACTIVE_FILE=$(dx_active_file "$SESSION_ID")
 LOOP_ACTIVE="${DEX_LOOP_ACTIVE:-0}"
 if [[ "$LOOP_ACTIVE" != "1" ]] && [[ ! -f "$ACTIVE_FILE" ]]; then
@@ -582,6 +583,10 @@ if [[ "${DEX_REVIEW_PASS_ACTIVE:-}" == "1" \
   && ! -e "$ACTIVE_FILE" && ! -L "$ACTIVE_FILE" ]]; then
   exit 0
 fi
+
+# Only an active loop keeps state here; an inactive session's Stop must not
+# create the directory.
+mkdir -p "$DX_LOOP_DIR"
 
 # The provider sends the hook payload on stdin; session_id identifies the
 # concrete agent session this Stop fired in. Used for the ownership guard

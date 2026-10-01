@@ -10,6 +10,8 @@ cleanup() {
 trap cleanup EXIT
 
 export HOME="$TMP_DIR/home"
+# run-all.sh points CLAUDE_CONFIG_DIR at its own sandbox; these tests own HOME.
+unset CLAUDE_CONFIG_DIR
 export DEX_DIR="$ROOT"
 export DX_STATE_DIR="$TMP_DIR/state"
 export DX_LOOP_DIR="$TMP_DIR/loops"
@@ -47,12 +49,30 @@ zsh -fc '
   fi
   grep -Fq "does not accept arguments" "$TEST_REPO/reload-invalid.out"
 
+  # Hooks are launch-scoped: reload leaves settings without a global install alone.
   mkdir -p "$HOME/.claude"
   print -r -- "{}" > "$HOME/.claude/settings.json"
   dx reload > "$TEST_REPO/reload.out"
+  grep -Fq "Reloaded Dex shell functions." "$TEST_REPO/reload.out"
+  [[ "$(<"$HOME/.claude/settings.json")" == "{}" ]] || exit 1
+
+  # An opted-in global install is refreshed: a lost timeout comes back.
+  bash "$DEX_DIR/bin/install-settings.sh" --quiet
+  python3 -c "
+import json, sys
+path = sys.argv[1]
+settings = json.load(open(path))
+for group in settings[\"hooks\"][\"UserPromptSubmit\"]:
+    for hook in group[\"hooks\"]:
+        hook.pop(\"timeout\", None)
+json.dump(settings, open(path, \"w\"))
+" "$HOME/.claude/settings.json"
+  if dx_claude_settings_complete; then
+    print -u2 -- "settings without the UserPromptSubmit timeout read as complete"
+    exit 1
+  fi
+  dx reload > "$TEST_REPO/reload.out"
   dx_claude_settings_complete
-  grep -Fq "Reloaded Dex shell functions and refreshed Claude hook settings" \
-    "$TEST_REPO/reload.out"
 
   invalid_cases=(
     "dxcomplete unexpected"
