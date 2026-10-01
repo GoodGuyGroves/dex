@@ -291,6 +291,21 @@ zsh -fc '
   dxrm 1234 > /dev/null
   [[ -d "$wt/ticket-eng-1234" ]] || assert_at $LINENO
 
+  # The other way round: ENG-4321 does not take the workspace of the bare
+  # ticket 4321, and neither ticket rewrites the ticket_id of the other.
+  __dx_setup_worktree 4321 > /dev/null 2>&1
+  bare_session="$_dx_session_id"
+  __dx_startup_claim_release
+  [[ "$(dx_meta_find_workspace_by_ticket ENG-4321 2>/dev/null)" == "" ]] || assert_at $LINENO
+  __dx_setup_worktree ENG-4321 > "$PREFIX_OUT/bare-owned.out" 2>&1
+  [[ "$_dx_wt_name" == ticket-eng-4321 && "$_dx_session_id" != "$bare_session" ]] || assert_at $LINENO
+  grep -Fq "ticket-4321 belongs to ticket 4321" "$PREFIX_OUT/bare-owned.out"
+  __dx_startup_claim_release
+  [[ "$(dx_meta_read "$bare_session" ticket_id)" == 4321 ]] || assert_at $LINENO
+  [[ -d "$wt/ticket-4321" && -d "$wt/ticket-eng-4321" ]] || assert_at $LINENO
+  dxrm ENG-4321 > /dev/null
+  dxrm 4321 > /dev/null
+
   # A ticket-N workspace from before the list existed: ENG-77 resumes it with
   # a notice and claims it, after which OPS-77 gets its own workspace.
   git worktree add -q "$wt/ticket-77" -b worktree-ticket-77 main

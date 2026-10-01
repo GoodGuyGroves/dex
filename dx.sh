@@ -551,12 +551,12 @@ __dx_parse_ticket_input() {
 # __dx_prefer_legacy_ticket_workspace <worktree|in-place> <repo_root>
 # A prefixed ticket whose own workspace does not exist yet resumes the
 # workspace it had under the number-only name, when one exists and no other
-# ticket has claimed it: its metadata names no ticket, only the number, or this
-# ticket. Metadata cannot say whether a number-only workspace predates the
-# prefix list, so one made later for a bare number qualifies too. Sets
-# _dx_ticket_wt_name to the legacy name and returns 0 when it does; returns 1
-# otherwise. Resuming writes this ticket's ID into the legacy workspace's
-# metadata, so another prefix cannot take it afterwards.
+# ticket has claimed it: its metadata has no ticket_id and names no ticket or
+# only the number, or its ticket_id is this ticket. A ticket_id that is the
+# bare number belongs to ticket N itself, which is a different ticket once
+# prefixes are listed. Sets _dx_ticket_wt_name to the legacy name and returns
+# 0 when it does; returns 1 otherwise. Resuming writes this ticket's ID into
+# the legacy workspace's metadata, so another prefix cannot take it afterwards.
 { unalias __dx_prefer_legacy_ticket_workspace; unfunction __dx_prefer_legacy_ticket_workspace; } 2>/dev/null || true
 __dx_prefer_legacy_ticket_workspace() {
   local workspace_mode="$1" repo_root="$2" legacy="$_dx_ticket_legacy_name"
@@ -573,9 +573,12 @@ __dx_prefer_legacy_ticket_workspace() {
     legacy_session=$(dx_session_id "$legacy")
   fi
   legacy_ticket=$(dx_meta_read "$legacy_session" ticket_id)
-  [[ -n "$legacy_ticket" ]] || legacy_ticket=$(dx_meta_read "$legacy_session" ticket_number)
-  if [[ -n "$legacy_ticket" && "$legacy_ticket" != "$_dx_ticket_number" \
-    && "$legacy_ticket" != "$_dx_ticket_id" ]]; then
+  if [[ -z "$legacy_ticket" ]]; then
+    legacy_ticket=$(dx_meta_read "$legacy_session" ticket_number)
+    [[ -z "$legacy_ticket" || "$legacy_ticket" == "$_dx_ticket_number" ]] || return 1
+  elif [[ "$legacy_ticket" != "$_dx_ticket_id" ]]; then
+    [[ "$legacy_ticket" != "$_dx_ticket_number" ]] \
+      || dx_info "${legacy} belongs to ticket ${legacy_ticket}, which has no prefix. Run dx ${legacy_ticket} to resume it."
     return 1
   fi
   dx_info "Using ${legacy} for ${_dx_ticket_id}: that number-only workspace is not claimed by another ticket."

@@ -71,8 +71,10 @@ ticket_prefixes: [ENG, OPS]
 
 Each listed prefix then gets its own workspace (`ticket-eng-123`) and branch,
 and Dex detects lowercase tracker branches such as `user/eng-123-title`.
-Workspaces created before you added the list still resume. Avoid listing a
-prefix that is also a common word in branch names, such as `ADD`.
+A `ticket-123` workspace from a Dex release that did not record ticket IDs
+resumes under `ENG-123`; one Dex recorded as ticket `123` stays with `dx 123`.
+Avoid listing a prefix that is also a common word in branch names, such as
+`ADD`.
 
 To prepare tickets before starting implementation, run `dx triage 1234` or
 `dx triage --project "Project name"`. It clarifies requirements, estimates effort,
