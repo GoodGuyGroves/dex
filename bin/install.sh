@@ -16,26 +16,33 @@ INSTALL_FAILED=0
 
 usage() {
   cat <<'USAGE'
-Usage: dx install [--global-hooks | --no-global-hooks]
+Usage: dx install [--global-hooks | --no-global-hooks] [--global-skills | --no-global-skills]
 
-Install Dex skills, tools, and shell integration for the current user.
-Sessions Dex launches get Dex's hooks through their own launch settings.
+Install Dex tools and shell integration for the current user.
+Sessions Dex launches get Dex's hooks through their own launch settings and
+Dex's skills as the plugin `dex` (--plugin-dir).
 
 Options:
-  --global-hooks     Also install Dex's hooks in your Claude settings, for
-                     sessions Dex did not launch
-  --no-global-hooks  Remove Dex's hooks from your Claude settings
-  -h, --help         Show this help
+  --global-hooks      Also install Dex's hooks in your Claude settings, for
+                      sessions Dex did not launch
+  --no-global-hooks   Remove Dex's hooks from your Claude settings
+  --global-skills     Also link Dex's skills into ~/.claude/skills, for
+                      sessions Dex did not launch
+  --no-global-skills  Remove Dex's links from ~/.claude/skills
+  -h, --help          Show this help
 USAGE
 }
 
 show_help=0
 global_hooks=""
+global_skills=""
 for arg in "$@"; do
   case "$arg" in
     -h|--help) show_help=1 ;;
     --global-hooks) global_hooks=install ;;
     --no-global-hooks) global_hooks=remove ;;
+    --global-skills) global_skills=install ;;
+    --no-global-skills) global_skills=remove ;;
     *)
       dx_error "Unknown install option: $arg"
       usage >&2
@@ -65,32 +72,16 @@ elif ! dx_github_pr_attachments_supported; then
   dx_warn "GitHub CLI does not support 'gh pr edit --attach'. Upgrade it to publish UI proof automatically."
 fi
 
-# Ensure ~/.claude directory exists (Claude Code normally creates it, but we
-# need it before creating symlinks)
+# Ensure ~/.claude exists (Claude Code normally creates it); the steps below
+# write into it.
 mkdir -p "$CLAUDE_DIR"
 
-# 1. Symlink skills
-if [[ -L "$CLAUDE_DIR/skills" ]]; then
-  current=$(readlink "$CLAUDE_DIR/skills")
-  if [[ "$current" == "$DEX_DIR/skills" ]]; then
-    dx_ok "~/.claude/skills → $DEX_DIR/skills"
-  else
-    dx_error "~/.claude/skills points to $current; remove it or choose a clean install target"
-    exit 1
-  fi
-elif [[ -d "$CLAUDE_DIR/skills" ]]; then
-  if ! dx_install_claude_skill_links "$CLAUDE_DIR/skills"; then
-    dx_warn "Continuing install after incomplete Claude skill link setup"
-    INSTALL_FAILED=1
-  fi
-else
-  if ln -s "$DEX_DIR/skills" "$CLAUDE_DIR/skills"; then
-    dx_done "Symlinked ~/.claude/skills → $DEX_DIR/skills"
-  else
-    dx_error "Failed to symlink ~/.claude/skills"
-    INSTALL_FAILED=1
-  fi
-fi
+# 1. Global skill links, only on request. Dex launches load the skills as a
+# plugin either way.
+case "$global_skills" in
+  install) dx_install_claude_dex_links || INSTALL_FAILED=1 ;;
+  remove) dx_remove_claude_skill_links || INSTALL_FAILED=1 ;;
+esac
 
 # 2. Global hooks, only on request. Before the bootstrap, which refreshes an
 # install that is already gated and warns about an ungated one.

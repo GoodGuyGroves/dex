@@ -11,7 +11,7 @@ consecutive clean gate: 1 wave for `trivial` and `small`, 2 for `normal`, 3 for
 - Review the full caller-supplied scope on a loop's first pass and on any pass
   that would be declared clean; in between, re-verify the findings ledger and
   review the diff since the previous wave. The wrapper says which this is.
-- Follow § Resource Discipline in `prompts/guardrails.md`: inside this wave
+- Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: inside this wave
   `bin/review-check.sh` is the heavy lease, and the wave stops what it starts.
 - Treat this as an independent review. Use only the current code, supplied
   scope, supplied acceptance criteria, and selected profile.
@@ -63,7 +63,7 @@ exact text is evidence. Orient with `rg`, `git diff --name-only`, `--stat` and
 - `DEESCALATE:trivial:codes`, `DEESCALATE:small:codes`, or
   `DEESCALATE:normal:codes` - this wave found nothing and the scope carries
   less risk than the selected tier. The suffix is the lower tier's own
-  comma-separated reason codes from `prompts/review-risk-assessment.md`, and
+  comma-separated reason codes from `$DEX_DIR/prompts/review-risk-assessment.md`, and
   they have to hold for the change: `trivial` requires
   `localized-change,focused-verification,no-behavior-change`, `small` requires
   exactly `localized-change,focused-verification`, `normal` usually
@@ -116,7 +116,7 @@ cargo, go, and make read it from the environment already). Never use watch mode,
 and stop every server, browser, or runner the wave started before publishing.
 
 Run checks through `bash "$DEX_DIR/bin/review-check.sh" <check-spec.json>`; read
-`prompts/review-checks.md` for the spec and reuse rules. The runner owns command
+`$DEX_DIR/prompts/review-checks.md` for the spec and reuse rules. The runner owns command
 execution, input validation, cache lookup, and host check capacity. Invoke it in
 every wave; a matching passing receipt can avoid running the command again.
 
@@ -248,7 +248,7 @@ If verified findings exist:
    wave non-clean; report `MECHANICAL:N` only for an in-inputs autofix.
 4. Re-run targeted review for changed surfaces and impacted callers.
 5. Repeat once if new verified findings appear; then use
-   `prompts/failure-recovery.md`.
+   `$DEX_DIR/prompts/failure-recovery.md`.
 
 Write `FINDINGS_FIXED:N` when all verified findings were fixed and rechecked.
 Never write `CLEAN` after applying a fix in the same wave.
@@ -292,7 +292,7 @@ review task, and cancel disposable timers, probes and other wave-owned
 background tasks. A late task notification must not trigger a second review or
 another completion command.
 
-Read `prompts/review-report.md` and write one structured report: the actual
+Read `$DEX_DIR/prompts/review-report.md` and write one structured report: the actual
 result, verified findings, fixes, coverage, check status, verifier conclusion,
 and an outcome with substantive evidence for every criterion. The publisher
 derives item hashes, evidence references, pass bindings and the findings

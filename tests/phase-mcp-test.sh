@@ -88,15 +88,16 @@ for phase in 1 4 5 6; do
   assert_eq '{"mcpServers":{}}' "$(cat "$config_file")" "phase $phase MCP config content"
   # Ahead of everything the caller passed, so the flags can never land between
   # an option and its value or after the prompt. Only the launch's own
-  # --settings file comes first.
+  # --settings file and Dex's --plugin-dir come first.
   assert_eq "--settings" "$(sed -n '1p' "$argv_file")" "phase $phase leads with its launch settings"
-  assert_eq "--strict-mcp-config" "$(sed -n '3p' "$argv_file")" \
+  assert_eq "--plugin-dir" "$(sed -n '3p' "$argv_file")" "phase $phase passes Dex's plugin next"
+  assert_eq "--strict-mcp-config" "$(sed -n '5p' "$argv_file")" \
     "phase $phase passes --strict-mcp-config next"
-  assert_eq "--mcp-config" "$(sed -n '4p' "$argv_file")" \
+  assert_eq "--mcp-config" "$(sed -n '6p' "$argv_file")" \
     "phase $phase passes --mcp-config after it"
-  assert_eq "$config_file" "$(sed -n '5p' "$argv_file")" \
+  assert_eq "$config_file" "$(sed -n '7p' "$argv_file")" \
     "phase $phase passes the config path after that"
-  assert_eq "-p" "$(sed -n '6p' "$argv_file")" "phase $phase leaves the caller's argv intact"
+  assert_eq "-p" "$(sed -n '8p' "$argv_file")" "phase $phase leaves the caller's argv intact"
   # Nothing else was added, and the task prompt still arrived.
   assert_contains "task" "$argv_file"
   assert_eq "1" "$(grep -cx -- '--mcp-config' "$argv_file" | tr -d '[:space:]')" \

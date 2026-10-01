@@ -750,7 +750,7 @@ elif [[ "$joined_args" == *"The plan is approved. Implement it now."* ]]; then
   action="${TEST_CLAUDE_PROMPT_RECEIPT:-complete}"
   purpose="dxloop-prompt"
   phase="prompt-loop"
-elif [[ "$joined_args" == *'skill: "dxcomplete"'* ]]; then
+elif [[ "$joined_args" == *'skill: "dex:dxcomplete"'* ]]; then
   action="${TEST_CLAUDE_COMPLETE_RECEIPT:-complete}"
   purpose="dxcomplete"
   phase="6"

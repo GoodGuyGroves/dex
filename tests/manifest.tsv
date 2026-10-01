@@ -60,6 +60,8 @@ parser-drift-test.sh	fast	all	600	hermetic
 pause-test.sh	fast	all	120	hermetic
 phase-loop-ownership-test.sh	slow	all	1200	hermetic
 phase-mcp-test.sh	fast	all	300	hermetic
+plugin-packaging-test.sh	fast	all	600	hermetic
+plugin-skills-probe-test.sh	fast	all	1500	shared
 portability-test.sh	fast	all	600	hermetic
 post-commit-guard-test.sh	fast	all	600	hermetic
 private-file-test.sh	fast	all	600	hermetic

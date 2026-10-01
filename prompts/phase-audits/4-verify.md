@@ -3,9 +3,9 @@ not reserve commits until verification is green: while repairing a failing
 gate, commit and push each coherent checkpoint as it forms, then continue the
 pipeline. The complete required pipeline must pass before Phase 5.
 
-Follow § Resource Discipline in `prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
 
-Apply `prompts/issue-hygiene.md` when verification exposes material new
+Apply `$DEX_DIR/prompts/issue-hygiene.md` when verification exposes material new
 requirements, a distinct defect, or stale issue/PR context. Do not create an
 issue for a transient test failure that was fixed as part of the accepted
 scope. End the phase summary with the contract's exact `Issue/PR work:` line.
@@ -86,6 +86,6 @@ ALL of these must be true before you stop:
 - A newly created local branch with no branch-specific commits did not enter
   the ordinary Phase 4 flow
 - Material verification findings were handled under
-  `prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
+  `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
 
 When all criteria are met, stop. The Stop hook will verify your work and provide completion instructions.

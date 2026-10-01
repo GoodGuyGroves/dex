@@ -4,7 +4,6 @@
 set -euo pipefail
 
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
-CLAUDE_DIR="$HOME/.claude"
 
 usage() {
   cat <<'USAGE'
@@ -46,28 +45,12 @@ echo ""
 
 # Global installation
 echo "Global:"
-if [[ -L "$CLAUDE_DIR/skills" ]]; then
-  target=$(readlink "$CLAUDE_DIR/skills")
-  if [[ "$target" == "$DEX_DIR/skills" ]]; then
-    # Count only directories (each skill is a dir containing SKILL.md), not .DS_Store etc.
-    count=$(find "$target" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
-    echo "  Skills:     $count skills symlinked"
-  else
-    echo "  Skills:     WRONG TARGET ($target)"
-  fi
-elif [[ -d "$CLAUDE_DIR/skills" ]]; then
-  skill_count=$(dx_count_claude_dex_skill_links "$CLAUDE_DIR/skills")
-  skill_expected=$(dx_count_dex_skills)
-  if [[ "$skill_count" -eq "$skill_expected" && "$skill_expected" -gt 0 ]]; then
-    echo "  Skills:     $skill_count/$skill_expected Dex skill link(s)"
-  elif [[ "$skill_count" -gt 0 ]]; then
-    echo "  Skills:     PARTIAL ($skill_count/$skill_expected Dex skill link(s))"
-  else
-    echo "  Skills:     NOT INSTALLED"
-  fi
-else
-  echo "  Skills:     NOT INSTALLED"
-fi
+skill_expected=$(dx_count_dex_skills)
+case "$(dx_claude_global_skills_state)" in
+  none) echo "  Skills:     $skill_expected loaded per launch (plugin dex)" ;;
+  linked) echo "  Skills:     $skill_expected loaded per launch (plugin dex), plus global links in ~/.claude/skills — 'dx install --no-global-skills' removes them" ;;
+  *) echo "  Skills:     loaded per launch (plugin dex); PARTIAL global links in ~/.claude/skills — run 'dx install --global-skills' or 'dx install --no-global-skills'" ;;
+esac
 
 case "$(dx_claude_global_hooks_state)" in
   none) echo "  Hooks:      launch-scoped (Dex sessions only)" ;;

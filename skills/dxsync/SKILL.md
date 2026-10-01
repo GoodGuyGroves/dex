@@ -32,7 +32,7 @@ dx_bootstrap_agent_tooling "$repo_root" "install"
 For `--dry-run` or `--trace-retrieval`, use mode `"check"` instead and report
 any drift without changing tooling.
 
-Read and follow `prompts/sync-memory.md`. That prompt is the source of truth for:
+Read and follow `$DEX_DIR/prompts/sync-memory.md`. That prompt is the source of truth for:
 
 - raw observations vs trusted memory
 - promotion and rejection criteria
@@ -59,5 +59,5 @@ Forward any user-provided arguments to the prompt contract:
 
 ## Output
 
-End with the DXSync report described in `prompts/sync-memory.md`. If files were
+End with the DXSync report described in `$DEX_DIR/prompts/sync-memory.md`. If files were
 changed, list each changed path and why it changed.

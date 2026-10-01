@@ -4,9 +4,9 @@ The dedicated Review phase (Phase 3) will handle adversarial code review. Your j
 
 Read the plan's `## Coherence Contract` before writing code and follow it: mirror the canonical files, reuse the helpers it names, honor the rules it cites, and change the docs, configuration, and tests it lists together with the code. Where you deviate, say so and why — Phase 3's coherence lens and Phase 5's PR body both read those deviations.
 
-Follow § Resource Discipline in `prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
 
-Apply `prompts/issue-hygiene.md` to material implementation discoveries.
+Apply `$DEX_DIR/prompts/issue-hygiene.md` to material implementation discoveries.
 Update the working issue and existing PR when their current descriptions are
 stale, keep accepted related work in the same PR, and create a linked follow-up
 for concrete distinct work after the duplicate search. End the phase summary
@@ -52,7 +52,7 @@ commits relative to the default branch:
   useful, and failed, pending, or unrun checks were reported honestly.
 - Commits are logically understandable rather than arbitrary splits made only
   to increase the commit count.
-- Every commit followed `prompts/commit-format.md`: specific-file staging,
+- Every commit followed `$DEX_DIR/prompts/commit-format.md`: specific-file staging,
   forbidden and sensitive file review, a conventional message, and Dex-only
   attribution.
 - The newly created branch stayed local until its first branch-specific commit;
@@ -150,7 +150,7 @@ All generated files must live under Dex's temporary artifact directory (`${DX_AR
 ## Step 7: Select Phase 3 Review Risk
 
 After the final in-scope change and verification run, use
-`prompts/review-risk-assessment.md` as the source of truth. Its first matching
+`$DEX_DIR/prompts/review-risk-assessment.md` as the source of truth. Its first matching
 rule wins:
 
 - Choose `complex` when the scope touches a trust boundary; authentication,
@@ -222,7 +222,7 @@ ALL of these must be true before you stop:
   passing `dx run-gate` receipt for this tree or is left to Phase 4
 - No acceptance criterion or verification gate is deferred, skipped, blocked, or delegated to future CI
 - Material implementation discoveries were handled under
-  `prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
+  `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
 - The change was exercised end-to-end locally and passed the manual smoke
   test, or manual verification is explicitly N/A with a reason
 - No TODO/FIXME/debugging artifacts remain

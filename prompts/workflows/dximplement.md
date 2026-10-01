@@ -27,7 +27,7 @@ dx_review_approve_criteria "$SESSION_ID" reapproved "$PREVIOUS_CRITERIA_HASH" "$
 Rotation clears earlier risk selection, clean credit, and receipts. Re-run the
 Phase 3 risk selection against the final scope afterward.
 
-Read `prompts/issue-hygiene.md`. Apply it whenever implementation produces
+Read `$DEX_DIR/prompts/issue-hygiene.md`. Apply it whenever implementation produces
 material evidence beyond the current issue or PR description. Keep accepted,
 bounded work for the same outcome in this PR; create a deduplicated linked
 follow-up for concrete distinct work. End the Phase 2 summary with the
@@ -42,7 +42,7 @@ contract's exact `Issue/PR work:` line.
 
 ### 1. Work Through Tasks
 
-Before starting, read the implementation guardrails from `prompts/guardrails.md`. Apply them throughout.
+Before starting, read the implementation guardrails from `$DEX_DIR/prompts/guardrails.md`. Apply them throughout.
 
 If `.dex/memory/index.md` exists, read it and load only the memory entries
 whose scope matches the approved plan, changed files, or current phase. Treat
@@ -74,7 +74,7 @@ For each task in the approved plan:
 4. As work reaches a small, coherent checkpoint, run a useful focused test or
    deterministic check when practical. The result informs the next step but
    does not decide whether the work may be committed. Read
-   `prompts/commit-format.md` before the first commit and apply its staging,
+   `$DEX_DIR/prompts/commit-format.md` before the first commit and apply its staging,
    forbidden-file, message, and Dex-attribution rules to every commit.
 5. Commit and push each coherent checkpoint immediately. Do not wait for the
    task, full test suite, phase, or final verification to finish, and do not
@@ -85,7 +85,7 @@ For each task in the approved plan:
    `origin/<current-branch>` as upstream; later commits push to that upstream.
    Never push the new branch before that commit, and never create an empty
    commit just to publish it. Right after that first push, open a draft PR for
-   the branch as `skills/dxcommit/SKILL.md` describes; later pushes update it.
+   the branch as `$DEX_DIR/skills/dxcommit/SKILL.md` describes; later pushes update it.
    Do not mark it ready for review: that is Phase 5.
 6. After completing the task, run deterministic quality checks (format, lint,
    typecheck) across all files changed by that task. Fix issues before moving to
@@ -149,7 +149,7 @@ audit. It pauses the run without claiming completion. Once the user provides
 direction and resumes the phase, continue from the approved scope.
 
 Update the ticket and any existing PR through the configured integrations with
-accepted scope-change details, following `prompts/issue-hygiene.md`. If no
+accepted scope-change details, following `$DEX_DIR/prompts/issue-hygiene.md`. If no
 tracker is configured, inform the user in conversation.
 
 ### 5. Implementation Inventory
@@ -207,7 +207,7 @@ measured duration for each gate. Do not include focused, partial, failed, or
 estimated evidence. If the checkout changes afterward, rerun the affected gate
 and replace the baseline from the final state. Older Phase 3 clients may reuse
 this evidence. Current review waves establish environment- and tool-bound
-receipts through `prompts/review-checks.md`; they do not rely on the legacy
+receipts through `$DEX_DIR/prompts/review-checks.md`; they do not rely on the legacy
 baseline alone. Reuse never excuses a check whose inputs changed after a fix.
 
 ### 7. UI Proof Decision
@@ -243,7 +243,7 @@ below: `dx_review_findings_ledger_seed "$SESSION_ID" "<lens>,..."`.
 ### 9. Select Phase 3 Review Risk
 
 After the final in-scope edit and verification run, use
-`prompts/review-risk-assessment.md` as the source of truth. Its first matching
+`$DEX_DIR/prompts/review-risk-assessment.md` as the source of truth. Its first matching
 rule wins:
 
 - Choose `complex` when the scope touches a trust boundary; authentication,
@@ -360,6 +360,6 @@ You SHOULD:
 
 - Stay in scope. Only implement what's in the plan.
 - If you think of improvements outside the plan, note them but don't implement them.
-- Route concrete out-of-scope discoveries through `prompts/issue-hygiene.md`
+- Route concrete out-of-scope discoveries through `$DEX_DIR/prompts/issue-hygiene.md`
   instead of leaving them as untracked notes.
 - Keep the user informed at natural milestones (e.g., "3 of 5 tasks complete").

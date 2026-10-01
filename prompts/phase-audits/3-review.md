@@ -10,7 +10,7 @@ Run in the current checkout. Do not run `dx <ticket-or-description>`, Phase 0
 setup, or any branch/worktree setup from this review skill. Do not create,
 switch, rename, or delete branches or worktrees.
 
-Follow § Resource Discipline in `prompts/guardrails.md`; inside a review wave `bin/review-check.sh` is the heavy lease, not `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`; inside a review wave `bin/review-check.sh` is the heavy lease, not `dx run-gate`; own what you start.
 
 This is an independent pass. Review only the current code and caller-supplied
 scope, criteria, risk tier, profile, and findings ledger. Do not read prior
@@ -27,7 +27,7 @@ standalone `N/A`, do not reconstruct them from other state.
 ## Required Workflow
 
 1. Invoke the Skill tool with skill: `dxreview` and `--single-pass`.
-2. Follow `prompts/review-wave.md` as the source of truth.
+2. Follow `$DEX_DIR/prompts/review-wave.md` as the source of truth.
 3. Use the full-scope diff/stat/file-name commands supplied by the caller. If any
    other prompt suggests only `origin/<default>...HEAD`, override it with the
    supplied full-scope commands. If the caller supplies an entire-codebase
@@ -71,7 +71,7 @@ Write exactly one of these values to `$(dx_review_result_file "$SESSION_ID")`:
 
 `CLEAN` is allowed only when this wave found zero verified findings and applied
 zero fixes. `NOTES:N` is the same wave with N items recorded below the finding
-bar in `prompts/review-wave.md` §4; both count toward the clean gate.
+bar in `$DEX_DIR/prompts/review-wave.md` §4; both count toward the clean gate.
 
 If this wave found and fixed any verified finding, write `FINDINGS_FIXED:N`.
 That is a successful pass execution, but it intentionally resets the outer clean
@@ -92,7 +92,7 @@ If the current risk tier is too low, write `ESCALATE:normal:reason-code` or
 fresh wave at the higher tier.
 
 If this wave found nothing, fixed nothing, and the whole change satisfies a
-lower tier's reason codes from `prompts/review-risk-assessment.md`, write
+lower tier's reason codes from `$DEX_DIR/prompts/review-risk-assessment.md`, write
 `DEESCALATE:<tier>:codes` with those codes instead of `CLEAN`. The outer loop
 keeps the clean credit already earned, lowers the gate to the lower tier's
 requirement, and completes if that credit already meets it. A surface the
@@ -117,7 +117,7 @@ conversation turns, session titles, AGENTS instructions, or unrelated ticket
 context. If the caller did not explicitly supply criteria for this review
 iteration, treat plan-dependent sections as `N/A`.
 
-Also write the single findings hash described in `prompts/review-wave.md`. The
+Also write the single findings hash described in `$DEX_DIR/prompts/review-wave.md`. The
 outer loop appends validated non-clean hashes to its stuck-loop history. Do not
 expose that hash to a later reviewer or telemetry.
 

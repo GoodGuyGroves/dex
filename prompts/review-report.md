@@ -56,7 +56,7 @@ the five core domains above plus `frontend`, `devops`, `performance`, and
 `observability`. Standard/light waves include core and any targeted domains
 actually reviewed. Record justified N/A surfaces in the coverage notes.
 
-Allowed results remain those in `prompts/review-wave.md`. Counts must agree.
+Allowed results remain those in `$DEX_DIR/prompts/review-wave.md`. Counts must agree.
 `CLEAN`, `NOTES:N`, `MECHANICAL:N` and `FINDINGS_FIXED:N` require passing checks
 and verifier, full required coverage, and every supplied criterion `met`.
 `NOTES:N` and `MECHANICAL:N` leave `findings` empty and `fixes_applied` at zero

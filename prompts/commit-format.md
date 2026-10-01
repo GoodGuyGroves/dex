@@ -12,7 +12,7 @@ for the task, phase, full test suite, or final verification to finish.
 Commit earliest at the start. The first checkpoint lands as soon as there is
 a coherent slice (a failing test and its skeleton is enough), and the early
 commits stay small while the shape of the change settles. The first push of a
-new branch also opens a draft PR (see `skills/dxcommit/SKILL.md`), so the work
+new branch also opens a draft PR (see `$DEX_DIR/skills/dxcommit/SKILL.md`), so the work
 is visible and CI runs from then on. Phase 5 turns that draft into the
 reviewable PR and marks it ready; nothing earlier marks it ready.
 
@@ -78,7 +78,7 @@ would make either commit meaningless.
 
 ## Rules
 
-- Apply `humanizer` to commit subjects and bodies. Please remove all mannered
+- Apply `dex:humanizer` (`humanizer` outside Claude Code) to commit subjects and bodies. Please remove all mannered
   prose. Preserve technical identifiers and the required attribution trailer.
 - Commit coherent checkpoints early and often, including during implementation,
   review fixes, and verification repairs.

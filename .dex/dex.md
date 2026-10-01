@@ -45,7 +45,8 @@ prompts/             Prompt templates for skills/agents
                      plus prompt-loop)
 research/            DX research and the isolated review-loop evaluation harness
 scripts/             Python runtime helpers, the Node UI-capture driver, and optional CCR extension
-skills/              Lifecycle and routing skills (linked into ~/.claude/skills/)
+skills/              Lifecycle and routing skills (loaded per launch as plugin dex)
+plugin/              Plugin manifest; plugin/skills links to skills/
 .dex/                Per-project config (this directory)
   providers.json     Repo-local default agent/provider profile
 ```

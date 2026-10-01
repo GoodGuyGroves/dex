@@ -849,8 +849,8 @@ Deterministic baseline binding: __REVIEW_BASELINE_BINDING__
 
 __REVIEW_CRITERIA_BLOCK__
 
-Review depth profile: \`__REVIEW_PROFILE__\`. Follow \`skills/dxreview/SKILL.md\`,
-the audit prompt, and \`prompts/review-wave.md\` for the full workflow and result
+Review depth profile: \`__REVIEW_PROFILE__\`. Follow \`${DEX_DIR}/skills/dxreview/SKILL.md\`,
+the audit prompt, and \`${DEX_DIR}/prompts/review-wave.md\` for the full workflow and result
 contract. Record \`Criteria binding: __REVIEW_CRITERIA_BINDING__\` exactly in the
 context pack.
 
@@ -2179,7 +2179,7 @@ Fresh factual scope input: ${pass_input_file}
 Read it before broad exploration. It is not a completed review context pack.
 Run checks through bash \"\$DEX_DIR/bin/review-check.sh\" <check-spec.json>.
 Use DEX_REVIEW_CHECK_CACHE_SESSION=${session_id} for snapshot-bound command reuse.
-Prefer the structured report publisher in prompts/review-report.md; the authorized generation is ${pass_generation}."
+Prefer the structured report publisher in ${DEX_DIR}/prompts/review-report.md; the authorized generation is ${pass_generation}."
     scout_count=$(__dx_review_scout_count "$pass_profile") || {
       terminal_reason="tier_resolution_error"
       __dx_review_cleanup_pass "$session_id" "$pass_session_id" "${review_interrupt_reason:-${terminal_reason:-}}"
@@ -2395,7 +2395,7 @@ Write exactly one allowed result to:
 Write exactly one lowercase 16-character findings hash to:
   $(dx_findings_file "$pass_session_id")
 
-Write the versioned evidence JSON described in prompts/review-wave.md to:
+Write the versioned evidence JSON described in ${DEX_DIR}/prompts/review-wave.md to:
   ${pass_evidence_file}
 
 Set its scope_fingerprint field to:

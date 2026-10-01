@@ -1,6 +1,6 @@
 Before stopping, audit your work against the original prompt. Do NOT stop until every step below passes.
 
-If you haven't already, read the implementation guardrails from `prompts/guardrails.md` — they inform what to look for in the review passes below.
+If you haven't already, read the implementation guardrails from `$DEX_DIR/prompts/guardrails.md` — they inform what to look for in the review passes below.
 
 ## Step 1: Acceptance Criteria Extraction
 
@@ -17,7 +17,7 @@ For each criterion, classify it:
 If the prompt references external context (a ticket, a URL, a document), ensure you have incorporated it into the acceptance criteria.
 
 Verify your understanding against the guardrails:
-- Can you answer the five understanding-check questions from `prompts/guardrails.md`?
+- Can you answer the five understanding-check questions from `$DEX_DIR/prompts/guardrails.md`?
 - Have you identified the failure modes and resource cleanup needs?
 - If this was a time-bounded or non-interactive run, did you create the exact requested deliverable and smallest runnable public API before optional scaffolding, broad abstractions, or extra approaches?
 - Did you design the test strategy before implementation, including where unit, integration, contract/API, and end-to-end tests belong for this change?
@@ -38,7 +38,7 @@ Read the report carefully. If the review wave applied fixes, restart this audit 
 
 Perform four manual review passes over ALL your changes, in addition to any `/dxreview --single-pass` findings from Step 2. For each issue, record: `[INV-N] file:line | Pass | Severity | Description`
 
-Reference `prompts/review.md` for the full criteria behind each pass.
+Reference `$DEX_DIR/prompts/review.md` for the full criteria behind each pass.
 
 ### Pass A: Logic & Correctness
 
@@ -61,7 +61,7 @@ For each acceptance criterion from Step 1, trace the implementing code end-to-en
 
 ### Pass C: Security
 
-Review all changes for security gaps (reference `prompts/review.md` Pass C for full criteria):
+Review all changes for security gaps (reference `$DEX_DIR/prompts/review.md` Pass C for full criteria):
 - New endpoints/routes have appropriate authentication and authorization?
 - No hardcoded secrets, credentials, or API keys?
 - No sensitive data in logs, error messages, or API responses?
@@ -133,7 +133,7 @@ Run /dxverify to execute the full quality verification pipeline:
    that already covers it (`bash "$DEX_DIR/bin/gate-receipt.sh" full-gate`)
 
 If any check fails, fix and re-run within the current budget from
-`prompts/failure-recovery.md`. If it still fails, run the exact generation-bound
+`$DEX_DIR/prompts/failure-recovery.md`. If it still fails, run the exact generation-bound
 escalation command printed with this audit. Do not accept debt, relax a
 criterion, or claim completion.
 

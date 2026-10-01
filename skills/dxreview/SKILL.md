@@ -9,7 +9,7 @@ Run one full-scope review wave. Direct `/dxreview` invocations dispatch to
 `/dxreviewloop`; single-pass mode is for callers that pass `--single-pass`
 explicitly (`/dxreviewloop`, Phase 3, and the dxloop audit).
 
-Read `prompts/issue-hygiene.md`, but do not perform its external writes from an
+Read `$DEX_DIR/prompts/issue-hygiene.md`, but do not perform its external writes from an
 isolated review wave. Report concrete out-of-scope issue candidates and their
 evidence to the lifecycle owner so it can deduplicate and write once.
 
@@ -24,14 +24,14 @@ Run the single-pass workflow only when the invocation includes
 
 ## Single-Pass Workflow
 
-Follow `prompts/review-wave.md` as the source of truth. In one wave:
+Follow `$DEX_DIR/prompts/review-wave.md` as the source of truth. In one wave:
 
 1. Review the caller-supplied full current change set on a loop's first pass
    and on any pass that would be clean; in between, re-verify the ledger and
    review the delta the wrapper names. With no change set, review the supplied
    whole-codebase inventory.
 2. Read the wrapper's fresh factual input pack and keep compact review notes.
-3. Run deterministic checks through the runner in `prompts/review-checks.md`.
+3. Run deterministic checks through the runner in `$DEX_DIR/prompts/review-checks.md`.
 4. Create lightweight repro probes for suspected correctness, contract, or
    regression findings when the repo has runnable tests or scripts.
 5. Harvest candidate issues one lens at a time, in this session, at the
@@ -44,7 +44,7 @@ Follow `prompts/review-wave.md` as the source of truth. In one wave:
 6. Verify, deduplicate, and rank candidates before changing code.
 7. Batch-fix all verified findings that are safe and in scope, then rerun
    affected checks and targeted review once.
-8. Publish one report using `prompts/review-report.md`; its helper validates
+8. Publish one report using `$DEX_DIR/prompts/review-report.md`; its helper validates
    the evidence and writes the result, findings fingerprint, and receipt.
 
 `DEX_REVIEW_SCOUT_PARALLELISM` is a concurrency ceiling, not a coverage limit,
@@ -119,13 +119,13 @@ credentials, or other free-form content in result suffixes. The legacy
 `ESCALATE_THOROUGH:reason` form is accepted but should not be emitted by new
 waves.
 
-Also write the single findings hash described in `prompts/review-wave.md`.
+Also write the single findings hash described in `$DEX_DIR/prompts/review-wave.md`.
 The outer wrapper uses it only for deterministic churn detection; subsequent
 reviewers must never receive it.
 
 ## Final Report
 
-End with the `Review Wave Result` block from `prompts/review-wave.md`.
+End with the `Review Wave Result` block from `$DEX_DIR/prompts/review-wave.md`.
 For lifecycle-bound criteria, commit and push coherent accepted-fix checkpoints
 as the wave works instead of leaving them for Phase 4. Do not wait for final
 verification, but keep failed and pending checks explicit and satisfy the

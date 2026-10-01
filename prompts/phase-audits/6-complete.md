@@ -13,12 +13,12 @@ completing. CI is the final arbiter either way.
 This phase runs as a **cycle loop**. Each cycle is one Stop hook iteration. Between cycles you wait — the loop infrastructure handles wall-clock time, not you.
 
 Before posting PR comments, ticket updates, or free-form status summaries, invoke
-the `humanizer` skill. Preserve reviewer handles, PR numbers, ticket IDs,
+the `dex:humanizer` (`humanizer` outside Claude Code) skill. Preserve reviewer handles, PR numbers, ticket IDs,
 commands, counts, status labels, and required audit wording exactly.
 
-Follow § Resource Discipline in `prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start, the PR watcher loop included.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start, the PR watcher loop included.
 
-Apply `prompts/issue-hygiene.md` whenever CI, review comments, or completion
+Apply `$DEX_DIR/prompts/issue-hygiene.md` whenever CI, review comments, or completion
 work reveals material new context. Reconcile accepted findings once through
 the lifecycle owner; do not let scheduled watcher cycles create duplicate
 issues. Every cycle summary, including idle and terminal cycles, ends with the
@@ -85,7 +85,7 @@ If there are any `mention`-type reviewers, post a single comment on the PR menti
 gh pr comment "$PR_NUM" --body "Requesting review from @bot1 @bot2."
 ```
 
-Run the body through `humanizer` before posting if you customize it. The point is the `@mention` so the bots see it.
+Run the body through `dex:humanizer` before posting if you customize it. The point is the `@mention` so the bots see it.
 
 ---
 
@@ -185,14 +185,14 @@ Case A applies regardless of whether there is a review, an approval, or a
 notifications. Substantive comments should already have been addressed via
 `/dxprreview`, with clear review threads resolved after Dex replies.
 
-Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
+Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `$DEX_DIR/skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
 
 ### Case B — Pending checks or unresolved feedback, but progress was made
 
 If new commits were pushed during the cycle (`/dxwatchpr` fixed CI or `/dxprreview` addressed comments), re-trigger reviewers:
 
 - For each `request` reviewer: run `dx_maintenance_request_reviewer "$PR_NUM" "<handle>"` again — they get a fresh notification when GitHub accepts the reviewer.
-- For each `mention` reviewer: post a new comment such as `Updated: @<handle>, please re-review.` after applying `humanizer`.
+- For each `mention` reviewer: post a new comment such as `Updated: @<handle>, please re-review.` after applying `dex:humanizer`.
 
 Increment the cycle counter (use arithmetic, not parameter expansion — `NEW_CYCLE=$((CYCLE + 1))`), reset `LAST_EPOCH` to now, write `"${NEW_CYCLE}:${NOW}"` to the state file. Stop. Next iteration starts a new wait window.
 
@@ -259,7 +259,7 @@ or `/dxcomplete` to resume completion.
   pending request, absent approval, or `REVIEW_REQUIRED` merge decision does not
   block Phase 6. Report merge-review state in the maintainer handoff.
 - Material CI and review findings were handled under
-  `prompts/issue-hygiene.md`, and the terminal summary contains `Issue/PR work:`.
+  `$DEX_DIR/prompts/issue-hygiene.md`, and the terminal summary contains `Issue/PR work:`.
 - No session-owned background process in flight, per `dx ps`, except the PR
   watcher loop, which must itself be session-owned.
 

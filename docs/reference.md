@@ -14,7 +14,7 @@ it.
 |--------|---------|---------------|
 | `common.sh` | Bootstrap, constants, sources all others | `dx_repo_root()` |
 | `lock.sh` | Advisory directory locks with owner records and serialized stale recovery | `dx_lock_acquire()`, `dx_lock_release()`, `dx_lock_with()` |
-| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_install_openai_docs_mcp_servers()` |
+| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap, opt-in global hooks and skill links | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_install_openai_docs_mcp_servers()`, `dx_claude_global_skills_state()`, `dx_remove_claude_skill_links()` |
 | `attribution.sh` | Commit/PR attribution installation, hook chaining, and restoration | `dx_install_repo_attribution()`, `dx_uninstall_repo_attribution()`, `dx_commit_attribution_message()` |
 | `codex.sh` | Codex CLI skill installation helpers | `dx_install_codex_skills()`, `dx_count_dex_skills()`, `dx_codex_dex_skills_complete()`, `dx_uninstall_codex_skills()` |
 | `completion.sh` | Generation-bound completion expectations, receipts, validation, and cleanup | `dx_completion_issue()`, `dx_completion_write_receipt()`, `dx_completion_consume()` |
@@ -48,6 +48,20 @@ it.
 | `triage.sh` | Standalone ticket triage arguments, provider launch, and isolated cleanup | `dx_triage_run()`, `dx_triage_cleanup()` |
 | `worker.sh` | DexCode worker registration and the poll/claim/lease/settle daemon | `dx_worker_command()`, `dx_worker_register()`, `dx_worker_daemon()` |
 | `worktree.sh` | Worktree management utilities, shared build-cache links, and the project's `## Worktree Hooks` lifecycle commands | `dx_wt_branch()`, `dx_wt_remove()`, `dx_worktree_hook_run()`, `dx_worktree_orphan_resources()`, `dx_cleanup_last_session()`, `dx_cleanup_stale_files()` |
+
+## `dx install` flags
+
+Every Claude session Dex launches gets Dex's hooks through its `--settings`
+file and Dex's skills as the plugin `dex` through `--plugin-dir
+"$DEX_DIR/plugin"` (skills answer to their bare name and to `dex:<name>`).
+These flags only change what plain `claude` sessions see.
+
+| Flag | Effect |
+|------|--------|
+| `--global-hooks` | Also install Dex's hooks in your Claude settings, gated on `DEX_LAUNCHED` so Dex launches do not run them twice |
+| `--no-global-hooks` | Remove Dex's hooks from your Claude settings |
+| `--global-skills` | Also link Dex's skills into `~/.claude/skills` (one directory link, or per-skill links beside your own) |
+| `--no-global-skills` | Remove Dex's links from `~/.claude/skills`; anything else there stays |
 
 ## Environment variables
 

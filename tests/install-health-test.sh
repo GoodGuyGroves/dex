@@ -338,11 +338,12 @@ if env \
   DEX_DIR="$ROOT" \
   DX_RTK_ENABLED=0 \
   DX_TOOL_DIR="$TMP_DIR/conflict-tools" \
-  bash "$ROOT/bin/install.sh" > "$TMP_DIR/conflict.out" 2>&1; then
+  bash "$ROOT/bin/install.sh" --global-skills > "$TMP_DIR/conflict.out" 2>&1; then
   printf 'global install succeeded with a conflicting Claude skills path\n' >&2
   exit 1
 fi
-grep -Fq "Failed to symlink ~/.claude/skills" "$TMP_DIR/conflict.out"
+grep -Fq ".claude/skills exists and is not a symlink; leaving it unchanged" "$TMP_DIR/conflict.out" || assert_at $LINENO
+grep -Fq "user-owned skill path" "$conflict_home/.claude/skills" || assert_at $LINENO
 grep -Fq "Install incomplete" "$TMP_DIR/conflict.out"
 if grep -Fq "Install complete." "$TMP_DIR/conflict.out"; then
   printf 'failed global install printed a completion message\n' >&2

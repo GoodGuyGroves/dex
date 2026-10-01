@@ -1,0 +1,9 @@
+{
+  "name": "dex",
+  "description": "Dex lifecycle skills, loaded per launch with --plugin-dir",
+  "author": {
+    "name": "Synthetic Industry",
+    "url": "https://syntheticindustry.ai/"
+  },
+  "homepage": "https://dexcode.ai"
+}

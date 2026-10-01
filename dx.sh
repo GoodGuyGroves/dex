@@ -163,7 +163,7 @@ __dx_cli() {
       echo "  Free-form prompts ask which mode to use; Enter selects session only."
       echo ""
       echo "Commands:"
-      echo "  dx install          Global install (skills, tools, zshrc)"
+      echo "  dx install          Global install (tools, zshrc; --global-skills/--global-hooks opt in)"
       echo "  dx uninstall        Global uninstall"
       echo "  dx init             Bootstrap current repo for Dex"
       echo "  dx sync             Refresh repo memory/rules from verified observations"
@@ -363,12 +363,12 @@ __dx_phase_message() {
   local workspace_mode="${3:-worktree}"
   local wt_dir="${4:-}"
   if [[ "$step" -eq 0 ]]; then
-    printf '%s\n' "$DX_PHASE_0_MESSAGE"
+    dx_skill_refs_render "$DX_PHASE_0_MESSAGE"
   else
-    printf '%s\n' "${DX_PHASE_MESSAGES[$step]}"
+    dx_skill_refs_render "${DX_PHASE_MESSAGES[$step]}"
   fi
   printf '%s\n' ""
-  printf '%s\n' "Read prompts/issue-hygiene.md. Apply it to material issue or PR context in this phase, and end every phase handoff or completed-phase summary with its exact Issue/PR work: line."
+  printf '%s\n' "Read ${DEX_DIR}/prompts/issue-hygiene.md. Apply it to material issue or PR context in this phase, and end every phase handoff or completed-phase summary with its exact Issue/PR work: line."
   __dx_provider_prompt
   if [[ -n "$raw_input" ]] || [[ "$workspace_mode" == "in-place" ]]; then
     printf '%s\n' ""
@@ -397,7 +397,7 @@ Call EnterPlanMode now. Then immediately invoke the dxplan skill using the Skill
 The dxplan skill writes the required Phase 1 lifecycle markers. Honor the Phase 0 intake_decision and selected issue; do not repeat issue creation or ask for the same approval. For freeform \`dx \"<task>\"\` requests with a configured tracker and no recorded intake decision, after the user approves the plan, offer the dxplan tracker intake choices before writing the Phase 1 ready marker: continue without tracker write-back, create a parent ticket, or create a parent plus sub-issues and select the first implementation ticket. After that gate is complete or explicitly skipped, follow the dxplan completion instructions, then stop once so the Dex Stop hook can audit the approved plan and advance to Phase 2 automatically. Do NOT tell the user to run /dximplement and do NOT wait for another prompt.
 
 For headless dx run sessions with workflow.requires_plan_approval=false, the run spec authorizes Phase 1 after the normal plan quality checks pass; follow the dxplan headless instructions instead of waiting for interactive approval." \
-  "The plan is approved. You MUST invoke the Skill tool with skill: \"dximplement\" to begin implementation. Do NOT implement ad-hoc — the skill enforces TDD and quality gates. Invoke dxuicapture early to make the UI proof decision: capture and surface a concise walkthrough when it helps, record SKIPPED with a reason when it would not, or record N/A when there is no browser impact. Phase focus: implementation, testing, and trustworthy proof. Follow prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If the approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When done, stop — the audit loop will verify your work." \
+  "The plan is approved. You MUST invoke the Skill tool with skill: \"dximplement\" to begin implementation. Do NOT implement ad-hoc — the skill enforces TDD and quality gates. Invoke dxuicapture early to make the UI proof decision: capture and surface a concise walkthrough when it helps, record SKIPPED with a reason when it would not, or record N/A when there is no browser impact. Phase focus: implementation, testing, and trustworthy proof. Follow ${DEX_DIR}/prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If the approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When done, stop — the audit loop will verify your work." \
   "Begin Phase 3: Review. Invoke the Skill tool with skill: \"dxreviewloop\". Use the current Phase 2 risk selection: trivial and small require 1, normal 2, and complex 3 consecutive independent clean waves (CLEAN or NOTES:N). Each fresh wave builds its own context pack, runs deterministic checks and its domain lenses in sequence with the coherence lens — scouts only when the wrapper offers them — verifies findings, batch-fixes safe issues, and rechecks. Any fix, MECHANICAL:N included, resets the clean streak; residual findings, blockers, churn, invalid results, and provider failures pause the loop. Phase focus: review and fixes. Commit and push accepted review fixes as small coherent checkpoints from the active wave; do not wait for Phase 4 or final verification, and keep failed or pending checks explicit. Do not switch branches or create or update a PR. When the loop writes a valid success receipt, stop — the audit loop will verify." \
   "Invoke the Skill tool with skill: \"dxverify\" to run the quality pipeline (format, lint, typecheck, test). This is the final PR gate. Fix failures and rerun until green; as repairs form natural coherent checkpoints, invoke skill: \"dxcommit\" to commit and push each coherent repair checkpoint immediately without waiting for the rest of the pipeline. Keep failing checks explicit. When the complete pipeline passes, confirm the working tree is clean and local HEAD matches origin. A newly created local branch with no branch-specific commits cannot enter the ordinary PR flow; return to Phase 2's user-direction path instead of publishing it. PR creation and broader implementation fixes remain available when useful. When the branch is verified and current, stop — the audit loop will verify." \
   "Invoke the Skill tool with skill: \"dxpr\" to generate the PR description, create or update the PR, attach current UI proof media when GitHub CLI supports it, attach the configured 'request' reviewers from dex.md § Reviewers, and mark the PR ready for review. Phase focus: PR creation, description, automatic visual attachment with a warned local fallback, reviewer attachment, and readiness. Do not stop while the PR is still a draft. Posting @mentions, implementation changes, commits, and pushes remain available when useful; Phase 6 still performs the normal completion workflow. When done, stop — the audit loop will verify." \
@@ -405,7 +405,7 @@ For headless dx run sessions with workflow.requires_plan_approval=false, the run
 )
 
 DX_PHASE_0_TIMEOUT="0"
-DX_PHASE_0_MESSAGE="Begin Phase 0: Setup. This phase runs in NORMAL mode (no plan mode) so you can write to git and the tracker. Follow prompts/ticket-instructions.md end to end. For a free-form workflow, first read prompts/freeform-intake.md: clarify scope, search related issues, ask before creating an issue, and record intake_decision before continuing ticket setup: (a) read the ticket from the configured tracker, including comments; (b) apply prompts/issue-hygiene.md to search for duplicates and related work, reconcile accepted decisions into the ticket, and reconcile any existing open PR; (c) check the assignee — if unassigned, assign to the authenticated user; if assigned to someone else, STOP and warn; (d) run dx_ticket_branch_prepare with the tracker's git branch name so an eligible branch already on origin is fetched and tracked while a genuinely new branch remains local until Phase 2's first real implementation commit; never create an empty bootstrap commit; new PR creation is normally deferred until Phase 5; (e) set ticket status to In Progress; (f) if the description is empty/unclear, draft acceptance criteria, present to the user, and update the ticket. If no tracker is configured, keep the current lifecycle branch local until its first implementation commit. Phase focus: ticket setup. Planning, implementation commits, and pushes begin in later phases. When setup is complete, write the Phase 0 ready marker (\`dx_phase_ready_file\` for step 0) and stop once so the Stop hook can audit and advance to Phase 1 automatically. Do NOT tell the user to run /dxplan and do NOT wait for another prompt."
+DX_PHASE_0_MESSAGE="Begin Phase 0: Setup. This phase runs in NORMAL mode (no plan mode) so you can write to git and the tracker. Follow ${DEX_DIR}/prompts/ticket-instructions.md end to end. For a free-form workflow, first read ${DEX_DIR}/prompts/freeform-intake.md: clarify scope, search related issues, ask before creating an issue, and record intake_decision before continuing ticket setup: (a) read the ticket from the configured tracker, including comments; (b) apply ${DEX_DIR}/prompts/issue-hygiene.md to search for duplicates and related work, reconcile accepted decisions into the ticket, and reconcile any existing open PR; (c) check the assignee — if unassigned, assign to the authenticated user; if assigned to someone else, STOP and warn; (d) run dx_ticket_branch_prepare with the tracker's git branch name so an eligible branch already on origin is fetched and tracked while a genuinely new branch remains local until Phase 2's first real implementation commit; never create an empty bootstrap commit; new PR creation is normally deferred until Phase 5; (e) set ticket status to In Progress; (f) if the description is empty/unclear, draft acceptance criteria, present to the user, and update the ticket. If no tracker is configured, keep the current lifecycle branch local until its first implementation commit. Phase focus: ticket setup. Planning, implementation commits, and pushes begin in later phases. When setup is complete, write the Phase 0 ready marker (\`dx_phase_ready_file\` for step 0) and stop once so the Stop hook can audit and advance to Phase 1 automatically. Do NOT tell the user to run /dxplan and do NOT wait for another prompt."
 
 # Thin wrappers over the shared phase tables in lib/lifecycle-control.sh; the
 # __dx_ names stay because dx.sh uses them throughout.
@@ -1126,7 +1126,7 @@ __dx_build_system_context() {
 - Do NOT explore code or draft a plan by hand outside dxplan unless the skill explicitly instructs you to
 - DO wait for explicit user approval via ExitPlanMode before marking Phase 1 ready" ;;
     2) scope_lines="- DO implement, test, and verify completeness via the Skill tool
-- Follow prompts/commit-format.md for staging, forbidden-file review, messages, and attribution
+- Follow ${DEX_DIR}/prompts/commit-format.md for staging, forbidden-file review, messages, and attribution
 - Commit small coherent checkpoints early and often and push immediately after every commit
 - Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and avoid arbitrary history splits
 - Establish upstream only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit
@@ -1311,10 +1311,9 @@ EOF
     printf '\n' >> "$_ctx_tmp"
   fi
 
-  cat >> "$_ctx_tmp" <<'EOF'
-CRITICAL: You MUST invoke skills using the Skill tool (e.g., Skill(skill="dximplement")).
-Do NOT implement skill functionality ad-hoc — invoke the actual skill.
-EOF
+  printf 'CRITICAL: You MUST invoke skills using the Skill tool (e.g., Skill(skill="%s")).\n' \
+    "$(dx_skill_ref dximplement)" >> "$_ctx_tmp"
+  printf '%s\n' 'Do NOT implement skill functionality ad-hoc — invoke the actual skill.' >> "$_ctx_tmp"
 
   __dx_provider_prompt >> "$_ctx_tmp"
   dx_session_messaging_prompt "$session_name" >> "$_ctx_tmp"
@@ -4794,12 +4793,12 @@ __dxcomplete_run() {
   fi
 
   local completion_prompt
-  completion_prompt="Invoke the Skill tool with skill: \"dxcomplete\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments, monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and close the ticket when all checks pass and all successfully requested reviewers have approved.
+  completion_prompt="Invoke the Skill tool with skill: \"$(dx_skill_ref dxcomplete)\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments, monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and close the ticket when all checks pass and all successfully requested reviewers have approved.
 When the Stop hook prints the exact command after the audit threshold, run this literal command only if every completion criterion is met, then stop again: bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"${session_id}\" \"${completion_generation}\"
 $(__dx_provider_prompt)"
 
   if [[ "$provider_agent" == "codex" ]]; then
-    completion_prompt="Run the standalone Dex completion workflow for PR #${pr_num}. Read skills/dxcomplete/SKILL.md and skills/dxwatchpr/SKILL.md, then carry out their checks and fixes directly in this Codex session.
+    completion_prompt="Run the standalone Dex completion workflow for PR #${pr_num}. Read ${DEX_DIR}/skills/dxcomplete/SKILL.md and ${DEX_DIR}/skills/dxwatchpr/SKILL.md, then carry out their checks and fixes directly in this Codex session.
 
 Direct Codex completion contract:
 - Codex has no Claude Stop hook or /loop scheduler. Perform the bounded watcher cycles synchronously, with at most ${complete_max_cycles} cycles and the current ${complete_wait_minutes}-minute interval. Re-read dx_complete_max_cycles and dx_complete_wait_minutes before each cycle so in-session overrides take effect.
@@ -4808,7 +4807,7 @@ Direct Codex completion contract:
 - If the bounded watch window expires or external state blocks completion, run: bash \"\$DEX_DIR/bin/escalate.sh\" \"${session_id}\" \"${completion_generation}\"
 - Run exactly one of those generation-bound commands. Escalation pauses the run; it does not claim completion.
 
-Use the humanizer skill before posting user-facing PR or ticket prose."
+Use the $(dx_skill_ref humanizer) skill before posting user-facing PR or ticket prose."
   fi
 
   DEX_SESSION_ID="$session_id" \

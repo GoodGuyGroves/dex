@@ -340,7 +340,7 @@ fresh() {
   cat "$SB_OBSERVED" >> "$ALL_OBSERVED"
 }
 fresh session-fresh 0 'dx --session "list the files"'
-# No ~/.claude/skills yet, so Dex links the whole directory.
+# No ~/.claude/skills yet; Dex must not create one.
 fresh tools-fresh 0 'dx tools bootstrap' --no-skills
 fresh status-fresh 0 'dx status'
 fresh phase-fresh 1 'dxcomplete'

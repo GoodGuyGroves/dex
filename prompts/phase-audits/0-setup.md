@@ -5,7 +5,7 @@
 
 Before stopping, audit your ticket bootstrap. Each item below must be verifiable. If any item is unmet, finish it now instead of stopping.
 
-Follow § Resource Discipline in `prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
+Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
 
 This worktree needs its own resources: a database, port, cache or fixture set
 another checkout is using is not yours to share. If `.dex/dex.md` § Worktree
@@ -13,12 +13,12 @@ Hooks declares `after_create`, they exist already; otherwise stand them up by
 the project's own setup path before anything runs against them, and record
 what you created so the phase that finishes can tear it down.
 
-Read and apply `prompts/issue-hygiene.md`. Phase 0 owns the full duplicate and
+Read and apply `$DEX_DIR/prompts/issue-hygiene.md`. Phase 0 owns the full duplicate and
 relationship search, reconciliation of accepted decisions into the working
 issue, and reconciliation of any existing open PR. End the phase summary with
 the exact `Issue/PR work:` line required by that contract.
 
-For a free-form workflow, verify `prompts/freeform-intake.md` was completed:
+For a free-form workflow, verify `$DEX_DIR/prompts/freeform-intake.md` was completed:
 the request was clarified, duplicate candidates were checked, and any new
 issue was created only after the user approved its draft. Session metadata
 records `intake_decision` and the selected issue when applicable. If the user

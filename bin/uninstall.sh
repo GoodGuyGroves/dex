@@ -42,45 +42,8 @@ echo ""
 
 uninstall_failed=0
 
-# 1. Remove skills symlink (only if it points to Dex)
-if [[ -L "$CLAUDE_DIR/skills" ]]; then
-  target=$(readlink "$CLAUDE_DIR/skills")
-  if [[ "$target" == "$DEX_DIR/skills" ]]; then
-    rm "$CLAUDE_DIR/skills"
-    dx_done "Removed ~/.claude/skills symlink"
-  else
-    dx_skip "~/.claude/skills points to $target (not Dex)"
-  fi
-else
-  if [[ -d "$CLAUDE_DIR/skills" ]]; then
-    removed=0
-    failed=0
-    while IFS= read -r target; do
-      [[ -L "$target" ]] || continue
-      current=$(readlink "$target")
-      skill_name=$(basename "$target")
-      case "$skill_name:$current" in
-        *:"$DEX_DIR"/skills/*)
-          if rm "$target"; then
-            removed=$((removed + 1))
-          else
-            dx_warn "Could not remove ${target}"
-            failed=$((failed + 1))
-          fi
-          ;;
-      esac
-    done < <(find "$CLAUDE_DIR/skills" -mindepth 1 -maxdepth 1 -type l 2>/dev/null)
-    if [[ $failed -gt 0 ]]; then
-      dx_warn "Removed ${removed} Claude skill link(s); failed ${failed}"
-    elif [[ $removed -gt 0 ]]; then
-      dx_done "Removed ${removed} Claude skill link(s)"
-    else
-      dx_skip "No Dex Claude skill links found"
-    fi
-  else
-    dx_skip "~/.claude/skills is not a symlink"
-  fi
-fi
+# 1. Remove Claude skill links (only those pointing into Dex)
+dx_remove_claude_skill_links || true
 
 # 2. Remove Codex skill links
 if ! dx_uninstall_codex_skills; then

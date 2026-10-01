@@ -2,7 +2,7 @@
 
 Analyze this codebase and generate project-specific Dex configuration. Write all output files to `.dex/` in the current repo.
 
-Apply `humanizer` to generated documentation and summaries. Please remove all
+Apply `dex:humanizer` (`humanizer` outside Claude Code) to generated documentation and summaries. Please remove all
 mannered prose. Preserve exact commands, paths, identifiers, and required structure.
 
 ## Step 1: Analyze the Codebase
@@ -217,7 +217,7 @@ input validation, contract compatibility, observability); database/migrations
 triggers, secrets, caches, artifacts, deploy gates); shell/tooling (language
 boundaries, quoting, cleanup, syntax checks); generated/docs (freshness and
 stale-documentation risk). Do not duplicate generic criteria from
-`prompts/review.md`; capture only project-specific focus by path or subsystem.
+`$DEX_DIR/prompts/review.md`; capture only project-specific focus by path or subsystem.
 
 ### `.dex/memory/index.md`
 
