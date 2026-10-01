@@ -4226,7 +4226,7 @@ dx() {
   fi
 
   if [[ $# -eq 0 ]]; then
-    echo "Usage: dx [--agent <claude|codex>] [--model <model>] <NUMBER|description|command>"
+    echo "Usage: dx [--agent <claude|codex>] [--model <model>] [--title <title>] <NUMBER|description|command>"
     return 1
   fi
 
