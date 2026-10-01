@@ -331,6 +331,33 @@ run_sync
 [[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == fetch-failed* ]] || assert_at $LINENO
 [[ "$(git -C "$FIXTURE_REPO" rev-parse HEAD)" == "$HEAD_BEFORE" ]] || assert_at $LINENO
 
+# --- The phase prompts run the sync where it matters. ---
+# first_line <file> <fixed-string> — line number of the first match, or 0.
+first_line() {
+  local hit
+  hit=$(grep -nF -- "$2" "$1" | head -n 1 | cut -d: -f1)
+  printf '%s\n' "${hit:-0}"
+}
+assert_file "$ROOT/prompts/base-sync.md"
+VERIFY_AUDIT="$ROOT/prompts/phase-audits/4-verify.md"
+SYNC_AT=$(first_line "$VERIFY_AUDIT" 'branch-sync.sh" sync')
+RECEIPT_AT=$(first_line "$VERIFY_AUDIT" 'gate-receipt.sh" full-gate')
+[[ "$SYNC_AT" -gt 0 && "$RECEIPT_AT" -gt "$SYNC_AT" ]] || assert_at $LINENO
+# Every place that marks a PR ready runs the pre-ready sync before it.
+for ready_doc in prompts/workflows/dxpr.md prompts/phase-audits/5-pr.md \
+  prompts/phase-audits/6-complete.md skills/dxcomplete/SKILL.md; do
+  SYNC_AT=$(first_line "$ROOT/$ready_doc" 'sync --before-ready')
+  READY_AT=$(first_line "$ROOT/$ready_doc" 'gh pr ready "$PR_NUM"')
+  [[ "$SYNC_AT" -gt 0 && "$READY_AT" -gt "$SYNC_AT" ]] || assert_at $LINENO
+done
+grep -qF 'branch-sync.sh" sync and follow prompts/base-sync.md' "$ROOT/hooks/phase-loop.sh" \
+  || assert_at $LINENO
+grep -qF 'branch-sync.sh" sync --before-ready' "$ROOT/hooks/phase-loop.sh" || assert_at $LINENO
+# Only the helper force-pushes; prompts and skills never spell a forced push.
+FORCED=$(grep -rnE -- 'push (-f|--force)|--force-with-lease' "$ROOT/prompts" "$ROOT/skills" \
+  | grep -v 'prompts/base-sync.md' || true)
+[[ -z "$FORCED" ]] || assert_at $LINENO
+
 # --- State stays in Dex's state directory; nothing lands in HOME. ---
 [[ -z "$(find "$HOME" -newer "$HOME_MARKER" -type f -print)" ]] || assert_at $LINENO
 [[ -f "$(dx_meta_file branch-sync-bound)" ]] || assert_at $LINENO

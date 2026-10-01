@@ -73,7 +73,10 @@ Check whether `dx_complete_state_file` exists. If it does NOT exist, perform set
 
 When setup runs:
 
-1. **Verify the PR is ready**, repairing an interrupted or pre-existing draft if needed:
+1. **Verify the PR is ready**, repairing an interrupted or pre-existing draft if needed.
+   Before marking a draft ready, run `bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready`
+   and follow `prompts/base-sync.md`; mark it ready only after the sync answers `0`
+   or `not-owned`:
    ```bash
    PR_NUM=$(gh pr view --json number -q .number)
    PR_DRAFT=$(gh pr view --json isDraft -q .isDraft)
