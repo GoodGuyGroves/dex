@@ -295,7 +295,13 @@ you run `dx install --global-hooks`. Those global hooks skip themselves inside
 Dex sessions (`DEX_LAUNCHED=1`), and `dx install --no-global-hooks` removes
 them.
 
-The same file sets two Claude Code settings for every Dex session:
+The same file sets three Claude Code settings for every Dex session:
+- `autoMemoryEnabled: false`. Claude Code's auto-memory writes to
+  `~/.claude/projects/<repo>/memory`, which every session in the repository
+  shares. Dex sessions keep durable notes in `.dex/memory/` instead.
+  `DEX_EXTRA_SETTINGS` can turn it back on, and so does an exported
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=0`, which Claude Code ranks above every
+  settings file.
 - `plansDirectory: ".dex/plans"`. Plan files land in the checkout the session
   runs in, not in `~/.claude/plans`. Claude Code only accepts a directory
   inside its working directory, so the path is relative. When a lifecycle or

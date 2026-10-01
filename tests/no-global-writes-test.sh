@@ -18,9 +18,12 @@
 # writes show.
 #
 # Claude's own session content is different: a plan file under ~/.claude/plans
-# fails outright (global_writes.py forbidden), whatever expected.tsv says. The
-# stub writes one in every launch Dex makes, honouring plansDirectory as the
-# real CLI does, so the check sees where Dex sends them.
+# or an auto-memory file under ~/.claude/projects/*/memory fails outright
+# (global_writes.py forbidden), whatever expected.tsv says. The stub writes a
+# plan in every interactive launch Dex makes, honouring plansDirectory, and
+# auto-memory in every launch unless autoMemoryEnabled or
+# CLAUDE_CODE_DISABLE_AUTO_MEMORY turns it off, as the real CLI does, so the
+# check sees what Dex's settings actually do.
 #
 # Expected failures: tests/fixtures/global-writes/expected.tsv lists today's
 # known writes, each keyed to the unit (01-05) that removes it. A write missing
@@ -341,6 +344,9 @@ grep -q '"hooks": \[[^]]*phase-loop' "$ISOLATED_STUB/launches.jsonl" \
 for label in session phase; do
   grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/plans.jsonl" \
     || fail "the stub wrote no plan for step $label"
+  # Auto-memory: the stub decides as Claude Code does, and writes when it is on.
+  grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/memory-checks.jsonl" \
+    || fail "the stub never decided auto-memory for step $label"
 done
 
 # fresh <label> <rc> <zsh code> [--no-skills] — one entry point alone.
