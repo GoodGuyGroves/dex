@@ -265,7 +265,7 @@ dx_reviewer_trigger() {
   local trig_session="$1" trig_repo="$2" trig_pr="$3" trig_handle="$4"
   local trig_adapter="$5" trig_focus="${6:-}" trig_head trig_key now existing=""
   local trig_started="-" trig_previous="-" trig_state=waiting check body
-  local persisted_rc=0
+  local persisted_rc=0 previous_state=""
   [[ "$trig_pr" =~ ^[0-9]+$ ]] || return 2
   dx_session_id_valid "$trig_session" || return 2
   case "$trig_adapter" in
@@ -280,15 +280,19 @@ dx_reviewer_trigger() {
   if existing=$(__dx_reviewers_ledger_get "$trig_session" reviewer "$trig_key" "$trig_head"); then
     trig_started=$(printf '%s\n' "$existing" | cut -f1)
     trig_previous=$(printf '%s\n' "$existing" | cut -f2)
+    previous_state=$(printf '%s\n' "$existing" | cut -f3)
   fi
   [[ "$trig_started" != "-" ]] || trig_started="$now"
+  # A timeout is final for this head: asking again still reaches the reviewer,
+  # but it does not reopen the wait.
+  [[ "$previous_state" != "timeout" ]] || trig_state=timeout
 
   if [[ "$trig_adapter" == "copilot" ]]; then
     (cd "$trig_repo" && dx_maintenance_request_reviewer "$trig_pr" "@copilot") || return 1
     (cd "$trig_repo" && dx_maintenance_review_request_persisted "$trig_pr" "@copilot") \
       >/dev/null 2>&1 || persisted_rc=$?
     case "$persisted_rc" in
-      10|11) trig_state=unavailable ;;
+      10|11) [[ "$trig_state" == "timeout" ]] || trig_state=unavailable ;;
     esac
   else
     if [[ -z "$trig_focus" ]]; then
@@ -297,7 +301,7 @@ dx_reviewer_trigger() {
       case "${check%%	*}" in
         queued|in_progress|pending|requested|waiting)
           __dx_reviewers_ledger_put "$trig_session" reviewer "$trig_key" \
-            "$trig_head" "$trig_started" "$trig_previous" waiting
+            "$trig_head" "$trig_started" "$trig_previous" "$trig_state"
           return
           ;;
       esac
@@ -448,11 +452,15 @@ PY
 #   handle<TAB>adapter<TAB>state<TAB>elapsed_seconds<TAB>detail
 # state: done | in-progress | not-started | failed | timeout | unavailable |
 # unknown. Only done, timeout and unavailable stop the wait.
-# Each reviewer's clock starts at its recorded trigger, else at the first time
-# the gate saw it on this head, and runs for dx_complete_reviewer_wait_minutes.
-# A timeout is final for that head and is a reported gap, never a clean review.
+# Each reviewer's clock starts at its first trigger on this head, else at the
+# first time the gate saw it there, and runs for
+# dx_complete_reviewer_wait_minutes; a later trigger on the same head does not
+# restart it. A timeout is final for that head and is a reported gap, never a
+# clean review.
 # rc 0: every waited reviewer is done, timed out or unavailable, or none waits.
-# rc 1: at least one is still waiting. rc 2: bad arguments.
+# rc 1: at least one is still waiting. rc 2: bad arguments. rc 3: the PR head
+# could not be read, so nothing could be measured; treat it like a CI query
+# error (an idle cycle), not as waiting.
 # With no waited rows it calls nothing, so existing configs see no change.
 dx_reviewer_gate() {
   [[ $# -ge 3 && $# -le 4 ]] || return 2
@@ -474,7 +482,7 @@ dx_reviewer_gate() {
     [[ -n "$handle" ]] || continue
     if [[ -z "$gate_head" ]]; then
       printf '%s\t%s\t%s\t%s\t%s\n' "$handle" "$adapter" unknown 0 "head unavailable"
-      waiting=1
+      waiting=3
       continue
     fi
     key=$(__dx_reviewers_key "$handle")
@@ -488,11 +496,7 @@ $existing
 EOF
     fi
     [[ "$started" != "-" ]] || started="$now"
-    if [[ "$triggered" != "-" ]]; then
-      elapsed=$((now - triggered))
-    else
-      elapsed=$((now - started))
-    fi
+    elapsed=$((now - started))
     case "$state" in
       done|timeout|unavailable)
         printf '%s\t%s\t%s\t%s\t%s\n' "$handle" "$adapter" "$state" "$elapsed" "recorded"

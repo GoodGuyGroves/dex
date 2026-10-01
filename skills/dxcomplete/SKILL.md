@@ -179,12 +179,13 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
 `CI_STATE` line 1 is `green`, `pending`, `stalled`, `failed` or `error`; with
 `readiness_check` declared under `## Resources`, only that check counts and a
 missing one is pending. `GATE_RC` 0 means every `wait: yes` reviewer is done on
-the head, timed out, or unavailable; 1 means one is still reviewing.
+the head, timed out, or unavailable; 1 means one is still reviewing; 3 means
+the PR head could not be read, which counts as a query error, not waiting.
 
 - **CI green, `GATE_RC` 0, AND no actionable review feedback remains unresolved** → proceed to Step 6 (final verification + close), regardless of `REVIEW_STATE`.
 - **New commits were pushed** (e.g., `/dxwatchpr` fixed CI or `/dxprreview` addressed comments) → re-request reviewers, re-trigger adapter reviewers with `dx_reviewer_trigger`, and re-post the mention comment so reviewers know there's something new. `dx_complete_record_cycle "$SESSION_ID" progress`.
 - **Waiting** (no new commits, but CI is `pending` or `GATE_RC` is 1) → `dx_complete_record_cycle "$SESSION_ID" waiting`. The counter stays put, so waiting does not spend the idle budget; the reviewer timeout and `dx_complete_pending_minutes` (default 120) bound it.
-- **Cycle was idle** (nothing pushed, nothing pending, and the first case does not hold; stalled CI and query errors count here) → `dx_complete_record_cycle "$SESSION_ID" idle`; rc 5 means the `dx_complete_max_cycles` budget is spent, so pause with the manual follow-up notice; otherwise keep waiting.
+- **Cycle was idle** (nothing pushed, nothing pending, and the first case does not hold; stalled CI, query errors and `GATE_RC` 3 count here) → `dx_complete_record_cycle "$SESSION_ID" idle`; rc 5 means the `dx_complete_max_cycles` budget is spent, so pause with the manual follow-up notice; otherwise keep waiting.
 - **Hard escalation** (3 same-check CI fails, scope change requested, secrets failure, architectural disagreement) → stop and escalate immediately with cited evidence.
 
 Use the review state for reporting and feedback routing, not as a completion

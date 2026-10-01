@@ -177,7 +177,8 @@ GATE_RC=0
 REVIEWER_WAITS=$(dx_reviewer_gate "$SESSION_ID" "$REPO_DIR" "$PR_NUM") || GATE_RC=$?
 # One line per `wait: yes` reviewer: handle, adapter, state, elapsed seconds,
 # detail. GATE_RC 0: every waited reviewer is done, timed out or unavailable.
-# GATE_RC 1: at least one is still reviewing the head.
+# GATE_RC 1: at least one is still reviewing the head. GATE_RC 3: the PR head
+# could not be read; like a CI query error, that cycle is idle, not waiting.
 REVIEW_DECISION=$(gh pr view "$PR_NUM" --json reviewDecision --jq '.reviewDecision // ""')
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
 REVIEW_STATE=$(dx_maintenance_pr_review_state "$REVIEW_DECISION") || REVIEW_STATE=unknown
@@ -269,7 +270,8 @@ wait window.
 ### Case C — No CI/review progress
 
 The cycle was idle: nothing was pushed, nothing is pending, and Case A does
-not hold. Stalled CI and a failed CI query land here too; report them. Record
+not hold. Stalled CI, a failed CI query and `GATE_RC` 3 (PR head unreadable)
+land here too; report them. Record
 the cycle:
 
 ```bash

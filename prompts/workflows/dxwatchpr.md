@@ -236,7 +236,8 @@ REVIEWER_WAITS=$(dx_reviewer_gate "$SESSION_ID" "$(git rev-parse --show-toplevel
 ```
 
 `GATE_RC` 1 means a `wait: yes` reviewer has not finished reviewing the head
-yet. Its comments may still arrive, so the watcher must keep running.
+yet. Its comments may still arrive, so the watcher must keep running. `GATE_RC`
+3 means the PR head could not be read; report it and keep watching.
 
 **CI green, `GATE_RC` 0, and no actionable comments or review threads remain
 unresolved, regardless of review or approval state:**

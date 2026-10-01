@@ -363,6 +363,15 @@ out=$(dx_reviewer_gate "$SESSION" "$repo" 7) || rc=$?
 assert_eq 1 "$rc" "unknown keeps waiting"
 assert_eq unknown "$(printf '%s\n' "$out" | cut -f3)" "query failure is unknown"
 
+# An unreadable PR head is rc 3, not waiting: nothing can time out without it,
+# so Phase 6 counts that cycle as idle instead of waiting on it forever.
+reset_gh
+rm -f "$GH_FAKE_DIR/head"
+rc=0
+out=$(DEX_REVIEWER_WAIT_MINUTES=0 dx_reviewer_gate "$SESSION" "$repo" 7 2>/dev/null) || rc=$?
+assert_eq 3 "$rc" "unreadable head is a query error"
+text_has "$out" "head unavailable"
+
 # A Copilot request GitHub does not keep is unavailable and does not hold Phase 6.
 reset_gh
 copilot_pull no
@@ -459,6 +468,24 @@ greptile_run queued null
 ledger_set reviewer greptileai "$HEAD_SHA" "$(( $(date +%s) - 1500 ))" "$(( $(date +%s) - 1500 ))" waiting
 out=$(dx_reviewer_gate "$SESSION" "$repo" 7)
 assert_eq timeout "$(printf '%s\n' "$out" | cut -f3)" "greptile times out"
+# Asking again on the same head reaches Greptile but does not reopen the wait.
+no_greptile_run
+dx_reviewer_trigger "$SESSION" "$repo" 7 @greptileai greptile "the lock"
+text_has "$(cat "$(dx_complete_wait_file "$SESSION")")" "$(printf '\ttimeout')"
+rc=0
+out=$(dx_reviewer_gate "$SESSION" "$repo" 7) || rc=$?
+assert_eq 0 "$rc" "re-trigger keeps the timeout"
+assert_eq timeout "$(printf '%s\n' "$out" | cut -f3)" "timeout sticks through a re-trigger"
+
+# A re-trigger before the timeout does not restart the head's clock either.
+reset_gh
+greptile_run queued null
+ledger_set reviewer greptileai "$HEAD_SHA" "$(( $(date +%s) - 1500 ))" "$(( $(date +%s) - 1500 ))" waiting
+no_greptile_run
+dx_reviewer_trigger "$SESSION" "$repo" 7 @greptileai greptile "the lock"
+greptile_run queued null
+out=$(dx_reviewer_gate "$SESSION" "$repo" 7)
+assert_eq timeout "$(printf '%s\n' "$out" | cut -f3)" "the clock runs from the first trigger"
 
 # Both adapters: the gate waits for the slower one.
 write_reviewers <<'EOF'
