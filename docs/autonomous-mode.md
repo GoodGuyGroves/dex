@@ -421,6 +421,7 @@ The built-in operational gates are:
 | `review.pass-timeout`, `review.recheck-seconds` | Review provider and quiet Phase 3 recheck budgets; `0` disables the provider deadline |
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
+| `complete.reviewer-wait-minutes`, `complete.pending-minutes` | Phase 6 per-reviewer wait and pending-CI cap |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |
 | `maintain.budget-minutes`, `maintain.respond-budget-minutes` | Maintenance provider budgets |
@@ -976,6 +977,8 @@ use an override-bound lower target; other assurance gates use
 | `DEX_WATCH_PAUSE_TTL_SECONDS` | `3600` (1h 0m) | Seconds scheduled Phase 6 watchers stay paused after a direct user prompt; set to 0 for no automatic expiry |
 | `DEX_COMPLETE_MAX_CYCLES` | `3` | Max idle cycles before Phase 6 pauses for manual follow-up |
 | `DEX_COMPLETE_WAIT_MINUTES` | `5` | Minimum wait window per Phase 6 cycle (minutes) |
+| `DEX_REVIEWER_WAIT_MINUTES` | `20` | Per-reviewer wait for `wait: yes` reviewers on the current head (minutes) |
+| `DEX_COMPLETE_PENDING_MINUTES` | `120` | How long CI may stay pending on one head before the cycle counts as idle (minutes) |
 | `DX_ARTIFACT_DIR` | `~/.claude/.dex-artifacts` | Screenshots, videos, traces, and logs produced by Dex |
 | `DX_TOOL_DIR` | `~/.claude/.dex-tools` | Dex-managed external tooling cache |
 | `DX_RUN_ROOT` | `~/.dex/runs` | Local run directories, event journals, summaries, and run artifacts |

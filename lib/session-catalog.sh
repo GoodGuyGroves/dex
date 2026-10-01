@@ -158,6 +158,7 @@ EXACT_SUFFIXES = [
     (".review-control.json", "review-control"),
     (".review-diagnostics", "review-diagnostics"),
     (".complete-state", "complete-state"),
+    (".complete-waits", "complete-waits"),
     (".system-context", "system-context"),
     (".handoff-mode", "handoff-mode"),
     (".pause-state", "pause-state"),

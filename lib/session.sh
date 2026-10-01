@@ -1611,6 +1611,39 @@ dx_complete_wait_minutes() {
   fi
 }
 
+# dx_complete_reviewer_wait_minutes [session_id] — how long Phase 6 waits for
+# one `wait: yes` reviewer to finish on the current head before recording a
+# timeout. 0 records the timeout at once; it never means "wait forever".
+dx_complete_reviewer_wait_minutes() {
+  local session_id="${1:-${DEX_SESSION_ID:-}}"
+  local minutes="${DEX_REVIEWER_WAIT_MINUTES:-20}"
+  if dx_session_id_valid "$session_id"; then
+    minutes=$(dx_override_effective "$session_id" \
+      complete.reviewer-wait-minutes "$minutes" 6) || return 1
+  fi
+  if [[ "$minutes" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$minutes"
+  else
+    printf '%s\n' "20"
+  fi
+}
+
+# dx_complete_pending_minutes [session_id] — how long CI may stay pending on
+# one head before Phase 6 stops treating the cycle as waiting.
+dx_complete_pending_minutes() {
+  local session_id="${1:-${DEX_SESSION_ID:-}}"
+  local minutes="${DEX_COMPLETE_PENDING_MINUTES:-120}"
+  if dx_session_id_valid "$session_id"; then
+    minutes=$(dx_override_effective "$session_id" complete.pending-minutes \
+      "$minutes" 6) || return 1
+  fi
+  if [[ "$minutes" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$minutes"
+  else
+    printf '%s\n' "120"
+  fi
+}
+
 # dx_failure_attempts_per_strategy [session_id] — recovery retries before a
 # materially different approach is expected.
 dx_failure_attempts_per_strategy() {
@@ -2630,6 +2663,8 @@ dx_review_lock_release_checked() {
 # dx_complete_state_file <session_id> — Phase 6 cycle bookkeeping ("cycle_count:last_check_epoch")
 # Survives interrupts so resuming Phase 6 picks up the same cycle counter.
 dx_complete_state_file() { echo "${DX_LOOP_DIR}/${1}.complete-state"; }
+# Per-head wait ledger for Phase 6 reviewer waits and pending CI (lib/reviewers.sh).
+dx_complete_wait_file() { echo "${DX_LOOP_DIR}/${1}.complete-waits"; }
 
 # dx_provider_state_file <session_id> — resolved provider engine for hook fallback
 dx_provider_state_file() { echo "${DX_LOOP_DIR}/${1}.provider"; }
@@ -2943,7 +2978,7 @@ dx_cleanup_session() {
     command rm -f "$(dx_review_input_file "$sid")"
     dx_review_work_files_cleanup "$sid" || completion_revoke_result=1
     dx_review_ledger_reset "$sid" 2>/dev/null || true
-    rm -f "$(dx_loop_file "$sid")" "$(dx_complete_file "$sid")" "$(dx_active_file "$sid")" "$(dx_owner_file "$sid")" "$(dx_prompt_file "$sid")" "$(dx_findings_file "$sid")" "$(dx_debt_file "$sid")" "$(dx_loop_config_file "$sid")" "$(dx_handoff_mode_file "$sid")" "$(dx_paused_file "$sid")" "$(dx_pause_state_file "$sid")" "$(dx_watch_pause_file "$sid")" "${DX_LOOP_DIR}/${sid}.control" "$(dx_watch_lock_file "$sid" ci)" "$(dx_watch_lock_file "$sid" pr)" "$(dx_review_state_file "$sid")" "$(dx_review_result_file "$sid")" "$(dx_review_context_file "$sid")" "$(dx_review_baseline_file "$sid")" "$(dx_review_metrics_file "$sid")" "$(dx_review_criteria_file "$sid")" "$(dx_review_criteria_approval_file "$sid")" "$(dx_review_evidence_file "$sid")" "$(dx_review_selection_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-selection.revoked" "$(dx_review_receipt_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-receipt.revoked" "$(dx_complete_state_file "$sid")" "$(dx_provider_state_file "$sid")" 2>/dev/null
+    rm -f "$(dx_loop_file "$sid")" "$(dx_complete_file "$sid")" "$(dx_active_file "$sid")" "$(dx_owner_file "$sid")" "$(dx_prompt_file "$sid")" "$(dx_findings_file "$sid")" "$(dx_debt_file "$sid")" "$(dx_loop_config_file "$sid")" "$(dx_handoff_mode_file "$sid")" "$(dx_paused_file "$sid")" "$(dx_pause_state_file "$sid")" "$(dx_watch_pause_file "$sid")" "${DX_LOOP_DIR}/${sid}.control" "$(dx_watch_lock_file "$sid" ci)" "$(dx_watch_lock_file "$sid" pr)" "$(dx_review_state_file "$sid")" "$(dx_review_result_file "$sid")" "$(dx_review_context_file "$sid")" "$(dx_review_baseline_file "$sid")" "$(dx_review_metrics_file "$sid")" "$(dx_review_criteria_file "$sid")" "$(dx_review_criteria_approval_file "$sid")" "$(dx_review_evidence_file "$sid")" "$(dx_review_selection_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-selection.revoked" "$(dx_review_receipt_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-receipt.revoked" "$(dx_complete_state_file "$sid")" "$(dx_complete_wait_file "$sid")" "$(dx_provider_state_file "$sid")" 2>/dev/null
     rm -f "${DX_LOOP_DIR}/${sid}.control-lock/owner" 2>/dev/null || true
     rmdir "${DX_LOOP_DIR}/${sid}.control-lock" 2>/dev/null || true
     find "$DX_LOOP_DIR" -maxdepth 1 -type f \( -name "${sid}.phase-*.started" -o -name "${sid}.phase-*.ready" -o -name "${sid}.phase-*.busy" -o -name "${sid}.phase-*.busy-notice" -o -name "${sid}.phase-*.busy-cancel" -o -name "${sid}.phase-*.busy-quiesced" \) -exec rm -f {} + 2>/dev/null || true
