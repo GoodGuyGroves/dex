@@ -28,7 +28,7 @@ The first output line is the status word; `key=value` lines follow.
 | 2 | `cannot-run` | Fix the stated cause, such as uncommitted tracked changes or a detached HEAD, and run it again. A rebase left in progress is listed as conflicts; finish or abort it first. |
 | 3 | `conflict` | The rebase stopped. Apply the conflict policy below. |
 | 4 | `not-owned` | Dex did not create this branch, so it is never rewritten. Record the `behind=` count and base in the phase summary and the PR handoff, then continue on the current tree. |
-| 5 | `fetch-failed` | Retry once. In Phase 4, if it still fails, record that the base could not be checked and continue. Before ready, escalate: do not mark a PR ready without knowing where its base is. |
+| 5 | `fetch-failed` / `push-failed` | A network or remote failure. Retry once: `sync` again for `fetch-failed`, `bash "$DEX_DIR/bin/branch-sync.sh" push` for `push-failed` (the branch is already rebased locally). In Phase 4, if a fetch still fails, record that the base could not be checked and continue; a push that still fails blocks Phase 4 like any unpushed commit. Before ready, escalate: do not mark a PR ready without knowing where its base is. |
 | 6 | `limit` | The base kept moving after `pr.rebase-attempts` rebases. Escalate. Do not mark the PR ready. |
 | 7 | `remote-diverged` | Someone else pushed to this branch, or the lease was rejected. Escalate. Never retry with `--force`, and never push over it. |
 

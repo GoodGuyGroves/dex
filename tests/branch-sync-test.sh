@@ -214,6 +214,9 @@ CONTINUE_RC=0
 run_sync
 [[ "$SYNC_RC" -eq 3 ]] || assert_at $LINENO
 [[ "$SYNC_OUT" == conflict* && "$SYNC_OUT" == *"base.txt"* ]] || assert_at $LINENO
+# Syncing again while the rebase is stopped lists the conflict and changes nothing.
+run_sync
+[[ "$SYNC_RC" -eq 2 && "$SYNC_OUT" == conflict* ]] || assert_at $LINENO
 CONTINUE_RC=0
 CONTINUE_OUT=$(cd "$FIXTURE_REPO" && dx_branch_sync_continue "$FIXTURE_REPO" "kept both" 2>&1) || CONTINUE_RC=$?
 [[ "$CONTINUE_RC" -eq 3 && "$CONTINUE_OUT" == *"base.txt"* ]] || assert_at $LINENO
@@ -330,6 +333,12 @@ HEAD_BEFORE=$(git -C "$FIXTURE_REPO" rev-parse HEAD)
 run_sync
 [[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == fetch-failed* ]] || assert_at $LINENO
 [[ "$(git -C "$FIXTURE_REPO" rev-parse HEAD)" == "$HEAD_BEFORE" ]] || assert_at $LINENO
+# A lease push that cannot reach the remote is a push failure, not a divergence.
+dx_meta_write "$SESSION" "base_sync_lease_branch=${FIXTURE_BRANCH}" \
+  "base_sync_lease_oid=$(remote_oid "$FIXTURE_BRANCH")"
+PUSH_RC=0
+PUSH_OUT=$(cd "$FIXTURE_REPO" && dx_branch_lease_push "$FIXTURE_REPO" 2>&1) || PUSH_RC=$?
+[[ "$PUSH_RC" -eq 5 && "$PUSH_OUT" == push-failed* ]] || assert_at $LINENO
 
 # --- The phase prompts run the sync where it matters. ---
 # first_line <file> <fixed-string> — line number of the first match, or 0.

@@ -741,7 +741,7 @@ dx_branch_lease_push() {
   fi
   lease_oid=$(dx_meta_read "$session_id" base_sync_lease_oid)
   # An empty expected value means the remote branch must not exist yet.
-  push_output=$(dx_run_with_timeout 120 git -C "$repo_dir" push --porcelain \
+  push_output=$(__dx_ticket_branch_run 120 git -C "$repo_dir" push --porcelain \
     "--force-with-lease=refs/heads/${branch_name}:${lease_oid}" \
     origin "HEAD:refs/heads/${branch_name}" 2>&1) || push_rc=$?
   if [[ "$push_rc" -ne 0 ]]; then
@@ -789,14 +789,15 @@ dx_branch_sync_with_base() {
     printf 'disabled\nreason=.dex/dex.md § Resources sets rebase_before_ready: false\n'
     return 0
   fi
-  branch_name=$(git -C "$repo_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-  if [[ -z "$branch_name" ]]; then
-    printf 'cannot-run\nreason=HEAD is detached\n'
-    return 2
-  fi
+  # A stopped rebase leaves HEAD detached, so name the rebase first.
   if __dx_branch_rebase_in_progress "$repo_dir"; then
     __dx_branch_conflict_report "$repo_dir" \
       || printf 'cannot-run\nreason=a rebase is already in progress\n'
+    return 2
+  fi
+  branch_name=$(git -C "$repo_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [[ -z "$branch_name" ]]; then
+    printf 'cannot-run\nreason=HEAD is detached\n'
     return 2
   fi
   if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
@@ -812,7 +813,7 @@ dx_branch_sync_with_base() {
   fi
   base_remote="${base_ref%%/*}"
   base_branch="${base_ref#*/}"
-  if ! dx_run_with_timeout 60 git -C "$repo_dir" fetch --quiet "$base_remote" \
+  if ! __dx_ticket_branch_run 60 git -C "$repo_dir" fetch --quiet "$base_remote" \
     "+refs/heads/${base_branch}:refs/remotes/${base_ref}" >/dev/null 2>&1; then
     printf 'fetch-failed\nbase=%s\nreason=git fetch %s %s failed\n' "$base_ref" "$base_remote" "$base_branch"
     return 5
@@ -833,7 +834,7 @@ dx_branch_sync_with_base() {
     return 4
   fi
 
-  remote_line=$(dx_run_with_timeout 60 git -C "$repo_dir" ls-remote --heads origin \
+  remote_line=$(__dx_ticket_branch_run 60 git -C "$repo_dir" ls-remote --heads origin \
     "refs/heads/${branch_name}" 2>/dev/null) || remote_rc=$?
   if [[ "$remote_rc" -ne 0 ]]; then
     printf 'fetch-failed\nreason=could not read origin/%s\n' "$branch_name"
