@@ -364,7 +364,7 @@ for ready_doc in prompts/workflows/dxpr.md prompts/phase-audits/5-pr.md \
   READY_AT=$(first_line "$ROOT/$ready_doc" 'gh pr ready "$PR_NUM"')
   [[ "$SYNC_AT" -gt 0 && "$READY_AT" -gt "$SYNC_AT" ]] || assert_at $LINENO
 done
-grep -qF 'branch-sync.sh" sync and follow prompts/base-sync.md' "$ROOT/hooks/phase-loop.sh" \
+grep -qF 'branch-sync.sh" sync and follow $DEX_DIR/prompts/base-sync.md' "$ROOT/hooks/phase-loop.sh" \
   || assert_at $LINENO
 grep -qF 'branch-sync.sh" sync --before-ready' "$ROOT/hooks/phase-loop.sh" || assert_at $LINENO
 # Only the helper force-pushes; prompts and skills never spell a forced push.

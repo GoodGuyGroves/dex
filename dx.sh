@@ -1345,7 +1345,7 @@ Ask the human by default for:
 - Clarifying questions during planning when requirements cannot be resolved
 - Scope or acceptance-criteria changes after plan approval
 - Destructive git operations, force-push/rebase decisions, or secret handling.
-  The bounded base sync in prompts/base-sync.md (bin/branch-sync.sh on a
+  The bounded base sync in $DEX_DIR/prompts/base-sync.md (bin/branch-sync.sh on a
   branch this lifecycle created) is pre-approved and needs no question
 - Missing credentials/tooling the agent cannot configure safely
 - Repeated CI failures, architectural review disputes, or unclear reviewer

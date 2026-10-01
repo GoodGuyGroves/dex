@@ -19,7 +19,7 @@ verifies the tree that will merge:
 bash "$DEX_DIR/bin/branch-sync.sh" sync
 ```
 
-Follow `prompts/base-sync.md` for every answer. A `rebased` answer (exit 1)
+Follow `$DEX_DIR/prompts/base-sync.md` for every answer. A `rebased` answer (exit 1)
 means the tree changed and is already pushed with a lease; the gate receipt
 check below then asks for a fresh `full-gate` run, which is what this phase
 needs. A `not-owned` answer is reported in the summary, never rewritten.
@@ -94,7 +94,7 @@ create an empty commit.
 ALL of these must be true before you stop:
 - Step 0's base sync ran before the gates and answered `current`, `disabled`,
   `rebased` (gates then ran on the rebased tree), or `not-owned` (reported);
-  any other answer was handled under `prompts/base-sync.md`
+  any other answer was handled under `$DEX_DIR/prompts/base-sync.md`
 - Every required gate has a passing result for this tree: a reused `dx run-gate`
   receipt with a matching fingerprint, a fresh run, or CI under `full_gate: ci`
 - No session-owned background process in flight, per `dx ps`

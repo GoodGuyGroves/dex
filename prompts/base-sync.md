@@ -65,7 +65,7 @@ base commit in the escalation.
 ## Escalating
 
 Use the exact generation-bound escalation command supplied with the current
-launch or audit (`prompts/failure-recovery.md`). It pauses the run without
+launch or audit (`$DEX_DIR/prompts/failure-recovery.md`). It pauses the run without
 claiming completion. Report:
 
 - the status word and its `key=value` lines;

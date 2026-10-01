@@ -57,7 +57,7 @@ The state file is the canonical "setup has run" marker. Do NOT use `CYCLE -eq 0`
 
 A draft is only marked ready after the pre-ready base sync answers `0` (or
 `not-owned`, reported). Run `bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready`
-and follow `prompts/base-sync.md`: on `rebased`, re-run the full gate (or, under
+and follow `$DEX_DIR/prompts/base-sync.md`: on `rebased`, re-run the full gate (or, under
 `full_gate: ci`, wait for CI on the pushed commit) and sync again. A PR that is
 already ready is left alone.
 

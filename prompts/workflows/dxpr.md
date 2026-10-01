@@ -213,7 +213,7 @@ Before Phase 5 completes, mark the PR ready if it is still a draft, then verify
 the transition.
 
 Before marking it ready, bring the branch up to date with its base
-(`prompts/base-sync.md`):
+(`$DEX_DIR/prompts/base-sync.md`):
 
 ```bash
 SYNC_RC=0
@@ -226,7 +226,7 @@ bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready || SYNC_RC=$?
   commit and push any repair, then run the sync again. Mark the PR ready only
   after a sync answers `0`.
 - `4`: record the `behind=` count in the PR handoff, then continue.
-- Any other code: follow `prompts/base-sync.md`. Do not mark the PR ready.
+- Any other code: follow `$DEX_DIR/prompts/base-sync.md`. Do not mark the PR ready.
 
 Then mark it ready:
 

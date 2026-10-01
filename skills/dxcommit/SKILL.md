@@ -77,7 +77,7 @@ For each logical group, finish all four steps before starting the next group:
    because the remote diverged, investigate; do not force-push without user
    approval. The one exception is a rebase onto the base branch: Phase 4 and
    the pre-ready step run `bin/branch-sync.sh`, which rewrites and
-   lease-pushes only a branch this lifecycle created (`prompts/base-sync.md`).
+   lease-pushes only a branch this lifecycle created (`$DEX_DIR/prompts/base-sync.md`).
    Never run a forced push by hand.
 
 5. **Open a draft PR after the first push.** Once the branch's first
