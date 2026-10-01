@@ -2334,13 +2334,36 @@ def _copilot_body_file_mentions(path_token):
     return bool(COPILOT_MENTION.search(COPILOT_REVIEWER_ARG.sub(' ', body)))
 
 
+def _gh_api_writes(args):
+    """Whether a `gh api` call sends data rather than only reading.
+
+    gh switches to POST as soon as a field is given, so fields mean a write
+    unless the method is explicitly GET.
+    """
+    method = ''
+    has_fields = False
+    for index, arg in enumerate(args):
+        if arg in ('-X', '--method') and index + 1 < len(args):
+            method = args[index + 1].upper()
+        elif arg.startswith('--method='):
+            method = arg.split('=', 1)[1].upper()
+        elif arg.startswith('-X') and len(arg) > 2:
+            method = arg[2:].upper()
+        elif arg in ('-f', '-F', '--field', '--raw-field', '--input') or arg.startswith(
+                ('--field=', '--raw-field=', '--input=', '-f', '-F')):
+            has_fields = True
+    if method:
+        return method != 'GET'
+    return has_fields
+
+
 def _gh_posting_segments(text, depth=0):
     """Yield the argument lists of gh commands that post PR or issue text.
 
     Covers `gh pr|issue comment`, `gh pr review`, `gh pr|issue create|edit`
-    and any `gh api` call (comments, reviews and GraphQL mutations all go
-    through it), including inside heredocs, command substitutions and
-    `bash -c` payloads.
+    and `gh api` calls that send data (comments, reviews and GraphQL
+    mutations all go through it), including inside heredocs, command
+    substitutions and `bash -c` payloads.
     """
     if depth > 8 or not text.strip():
         return
@@ -2372,7 +2395,8 @@ def _gh_posting_segments(text, depth=0):
                     skip = True
                 elif not arg.startswith('-'):
                     words.append(arg)
-            if words[:1] == ['api'] or tuple(words[:2]) in GH_POSTING_SUBCOMMANDS:
+            if tuple(words[:2]) in GH_POSTING_SUBCOMMANDS or (
+                    words[:1] == ['api'] and _gh_api_writes(args)):
                 yield args
             break
         segment = []

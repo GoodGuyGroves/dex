@@ -81,6 +81,9 @@ expect_allowed "gh pr comment 7 --body \"Copilot's review flagged the retry loop
 expect_allowed 'gh pr comment 7 --body "mail someone@copilot.example"'
 expect_allowed "gh pr comment 7 --body-file $clean_file"
 expect_allowed 'gh pr view 7 --json reviews --jq ".reviews[] | select(.author.login == \"@copilot\")"'
+expect_allowed "gh api repos/o/r/pulls/7/reviews --jq '.[] | select(.body | test(\"@copilot\"))'"
+expect_allowed "gh api -X GET search/issues -f q='@copilot in:comments'"
+expect_blocked "gh api -X PATCH repos/o/r/issues/comments/5 -f body='@copilot'"
 expect_allowed 'echo "@copilot"'
 expect_allowed 'git commit -m "docs: never write @copilot in a PR comment"'
 expect_allowed 'grep -rn "@copilot" prompts/'

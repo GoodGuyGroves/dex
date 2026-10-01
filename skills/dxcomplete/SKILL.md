@@ -99,8 +99,10 @@ When setup runs:
 
 3. **Trigger adapter reviewers** (Copilot by reviewer request, Greptile by comment):
    ```bash
-   for row in "${ADAPTER_REVIEWERS[@]}"; do   # "<handle> <adapter>"
-     dx_reviewer_trigger "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$PR_NUM" ${row}
+   REPO_DIR=$(git rev-parse --show-toplevel)
+   dx_reviewers_rows "$REPO_DIR" | while IFS=$'\t' read -r handle _ _ adapter; do
+     [[ "$adapter" == "generic" ]] && continue
+     dx_reviewer_trigger "$SESSION_ID" "$REPO_DIR" "$PR_NUM" "$handle" "$adapter"
    done
    ```
 
