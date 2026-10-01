@@ -12,13 +12,30 @@ Usage: dx tools [command]
 Inspect or install Dex's Claude/Codex tooling bootstrap.
 
 Commands:
-  bootstrap    Install Dex links, RTK, official MCPs, and safe official plugins
+  bootstrap    Install RTK, official MCPs, and safe official plugins for Dex
+               launches (under $DX_TOOL_DIR, not your own config)
+  bootstrap --codex-home
+               Also link Dex's skills and RTK instructions into $CODEX_HOME,
+               and remember that choice
+  bootstrap --no-codex-home
+               Remove those links and instructions, and forget the choice
   doctor       Check tooling state without changing global configuration
   check        Alias for doctor
   -h, --help   Show this help
 USAGE
 }
 
+if [[ "${1:-}" == bootstrap && "${2:-}" == --codex-home && $# -eq 2 ]]; then
+  export DEX_CODEX_HOME_WRITES=1
+  set -- bootstrap
+elif [[ "${1:-}" == bootstrap && "${2:-}" == --no-codex-home && $# -eq 2 ]]; then
+  # Opt back out: forget the choice, then take back what it wrote.
+  rm -f "$(dx_codex_home_writes_marker)"
+  export DEX_CODEX_HOME_WRITES=0
+  dx_uninstall_codex_skills || dx_warn "Some Dex Codex skill links could not be removed"
+  dx_uninstall_rtk_codex_instructions || dx_warn "Dex's Codex RTK instructions could not be removed"
+  set -- bootstrap
+fi
 if [[ $# -gt 1 ]]; then
   dx_error "dx tools accepts one command."
   usage >&2

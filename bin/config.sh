@@ -429,74 +429,38 @@ fi
 
 if [[ "$DATADOG_STATUS" == "enabled" ]] || [[ "$HONEYBADGER_STATUS" == "enabled" ]]; then
   echo ""
-  echo "After saving the snippet to .mcp.json, rerun \`dx config\` and accept the"
-  echo "MCP-promotion prompt to mirror the server into ~/.claude/settings.json so"
-  echo "worktrees inherit it."
+  echo "After saving the snippet to .mcp.json, sessions in this repository load the"
+  echo "server. To add it to every Dex launch as well, rerun \`dx config\` and accept"
+  echo "the Dex MCP registry prompt."
 fi
-# ── Promote MCP servers to global settings ────────────────────────────
+# ── Add MCP servers to Dex's registry ─────────────────────────────────
 #
-# Project-level .mcp.json servers require per-directory OAuth. When dx
-# creates worktrees, the worktree is a different directory and won't
-# share the main repo's MCP auth. Promoting servers to ~/.claude/settings.json
-# makes auth global so all worktrees inherit it.
+# A repository's own .mcp.json already loads in that repository and in its
+# worktrees. Adding its servers to Dex's MCP registry makes them load in every
+# session Dex launches, and only those; ~/.claude/settings.json is not touched.
 
 MCP_FILE="$repo_root/.mcp.json"
-SETTINGS_FILE="$HOME/.claude/settings.json"
+REGISTRY_HELPER=(python3 "$DEX_DIR/scripts/settings-json.py")
 
-if [[ -f "$MCP_FILE" ]] && command -v jq &>/dev/null; then
-  # Find servers in .mcp.json that aren't already in global settings
-  new_servers=""
-  if [[ -f "$SETTINGS_FILE" ]]; then
-    new_servers=$(jq -rs '
-      (.[1].mcpServers // {} | keys) - (.[0].mcpServers // {} | keys)
-      | .[]
-    ' "$SETTINGS_FILE" "$MCP_FILE" 2>/dev/null || true)
-  else
-    new_servers=$(jq -r '.mcpServers // {} | keys | .[]' "$MCP_FILE" 2>/dev/null || true)
-  fi
+if [[ -f "$MCP_FILE" ]]; then
+  new_servers=$("${REGISTRY_HELPER[@]}" registry-import "$(dx_dex_mcp_registry)" "$MCP_FILE" --dry-run 2>/dev/null || true)
 
   if [[ -n "$new_servers" ]]; then
     server_count=$(echo "$new_servers" | wc -l | tr -d ' ')
     echo ""
-    echo "Found ${server_count} MCP server(s) in .mcp.json not in global settings:"
+    echo "Found ${server_count} MCP server(s) in .mcp.json not in Dex's MCP registry:"
     echo "$new_servers" | while IFS= read -r name; do
       echo "  - $name"
     done
     echo ""
-    if ask_yn "Promote to ~/.claude/settings.json for worktree compatibility?" "y"; then
-      if [[ ! -f "$SETTINGS_FILE" ]]; then
-        mkdir -p "$(dirname "$SETTINGS_FILE")"
-        TMPFILE="${SETTINGS_FILE}.tmp.$$"
-        if ! printf '%s\n' '{}' > "$TMPFILE" || ! mv "$TMPFILE" "$SETTINGS_FILE"; then
-          rm -f "$TMPFILE" 2>/dev/null || true
-          dx_warn "Failed to create settings.json — MCP promotion skipped"
-          echo ""
-          echo "To reconfigure later, run: dx config"
-          exit 0
-        fi
-      fi
-      # Merge only new .mcp.json servers into global settings.json mcpServers.
-      if merged=$(jq -s '
-        .[0] + {
-          mcpServers: (
-            (.[0].mcpServers // {}) as $global
-            | (.[1].mcpServers // {}) as $project
-            | $global + ($project | with_entries(.key as $name | select(($global | has($name)) | not)))
-          )
-        }
-      ' "$SETTINGS_FILE" "$MCP_FILE" 2>/dev/null) && [[ -n "$merged" ]]; then
-        TMPFILE="${SETTINGS_FILE}.tmp.$$"
-        if printf '%s\n' "$merged" > "$TMPFILE" && mv "$TMPFILE" "$SETTINGS_FILE"; then
-          dx_done "Promoted MCP servers to global settings"
-        else
-          rm -f "$TMPFILE" 2>/dev/null || true
-          dx_warn "Failed to merge MCP servers — settings.json left unchanged"
-        fi
+    if ask_yn "Add them to Dex's MCP registry so every Dex launch loads them?" "n"; then
+      if "${REGISTRY_HELPER[@]}" registry-import "$(dx_dex_mcp_registry)" "$MCP_FILE" >/dev/null; then
+        dx_done "Added MCP servers to Dex's registry ($(dx_dex_mcp_registry))"
       else
-        dx_warn "Failed to merge MCP servers — settings.json left unchanged"
+        dx_warn "Failed to add MCP servers to Dex's registry"
       fi
     else
-      dx_skip "Skipped MCP promotion"
+      dx_skip "Skipped adding MCP servers to Dex's registry"
     fi
   fi
 fi

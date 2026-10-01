@@ -15,6 +15,8 @@ after evidence, scope, current-code verification, and a reviewable diff.
 The caller may provide:
 
 - `--dry-run`: explain proposed changes without writing files.
+- `--bootstrap`: also install or refresh the Claude/Codex tooling; without it
+  sync only checks the tooling and reports drift.
 - `--state-dir <path>`: read raw observations and episodes from this directory.
 - `--since <ref|date>`: limit git, CI, and review-history scanning.
 - `--no-pr`: do not create or update a PR.

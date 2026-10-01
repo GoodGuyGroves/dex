@@ -99,33 +99,34 @@ dx status
 
 ### Where the browser servers are registered
 
-For Claude, `dx ui-capture install` registers `playwright` and
-`chrome-devtools` at **user** scope: once for the machine, in your own Claude
-configuration, so UI proof works in every repository. Keeping a browser out of
-a phase that needs none is the minimal-MCP launch's job (see
-[host-budget.md](host-budget.md)), not the scope's.
+By default `dx ui-capture install` adds `playwright` and `chrome-devtools` to
+Dex's MCP registry (`$DX_TOOL_DIR/mcp-registry.json`) rather than to your own
+Claude or Codex configuration. Every session Dex launches gets them, Claude
+through a per-launch `--mcp-config` and Codex through `-c mcp_servers…`
+overrides; a plain `claude` or `codex` session does not. If you already have a
+server of the same name, yours is used. Keeping a browser out of a phase that
+needs none is the minimal-MCP launch's job (see
+[host-budget.md](host-budget.md)), not the registry's.
 
-The host-efficiency plan (Item 6) called for a scope Dex controls, and project
-scope was the default briefly. It was reverted: a project-scope registration
-writes an absolute Dex path into the repository's tracked `.mcp.json` — a
-machine-specific line in version control — and a lifecycle worktree never sees
-that file, because Dex links only `.claude/` into a worktree. Both scopes stay
-available as explicit choices:
+The CLIs' own scopes stay available as explicit choices, and register with
+both the Claude and Codex CLIs as older Dex versions did:
 
-- `dx ui-capture install --project` (`DEX_UI_MCP_SCOPE=project`) registers at
-  the checkout root, whichever directory inside the repository you run it from,
-  and falls back to user scope outside a git checkout rather than leaving a
-  stray `.mcp.json` behind.
-- `--local` is the middle option: per repository, but recorded in your own
-  Claude configuration instead of the repository's tracked `.mcp.json`.
+- `dx ui-capture install --user` (`DEX_UI_MCP_SCOPE=user`): once for the
+  machine, in your own configuration, so plain sessions get the browser too.
+- `--project` (`DEX_UI_MCP_SCOPE=project`) registers at the checkout root,
+  whichever directory inside the repository you run it from, and falls back to
+  user scope outside a git checkout rather than leaving a stray `.mcp.json`
+  behind. It writes an absolute Dex path into the repository's tracked
+  `.mcp.json`, and a lifecycle worktree never sees that file, because Dex links
+  only `.claude/` into a worktree.
+- `--local` is per repository, but recorded in your own Claude configuration
+  instead of the repository's tracked `.mcp.json`.
 
-`dx init`, `dx sync` and `dx tools` reach the same installer with the same
-default. `dx install` is the machine-wide install and always uses user scope.
+`dx install`, `dx init` and `dx tools bootstrap` use the same default.
 
-An upgrade from the bare `npx` entries older Dex versions installed still
-removes them from user scope, because that is where they were written.
-
-Codex has no scopes; its registration is unchanged.
+An upgrade from the bare `npx` entries older Dex versions installed at user
+scope happens only with an explicit scope; with the default, those entries stay
+and win over the registry's.
 
 ### Browser profiles
 

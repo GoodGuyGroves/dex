@@ -4,7 +4,8 @@
 #   - the phases that do keep whatever the session inherited
 #   - a browser MCP inside a session puts its profile under DX_SESSION_TMP
 #   - outside a session the browser MCP command line is exactly what it was
-#   - dx ui-capture install registers at user scope; --project and --local are explicit
+#   - dx ui-capture install adds to Dex's MCP registry; --user, --project and --local are explicit
+#   - a launch adds the registry as a non-strict --mcp-config, minus the user's own names
 set -euo pipefail
 umask 077
 
@@ -306,14 +307,21 @@ install_claude_mcp() {
   ) >/dev/null 2>"$log.err"
 }
 
-# User scope is the default: project scope would write an absolute Dex path
-# into the repository's tracked .mcp.json, and a lifecycle worktree never sees
-# that file. The minimal-MCP launch is what keeps browsers out of the phases
-# that need none; the scope is not that lever.
+# Dex's registry is the default: the servers reach the sessions Dex launches
+# and nothing is registered with the CLI. Project scope would write an
+# absolute Dex path into the repository's tracked .mcp.json, and a lifecycle
+# worktree never sees that file. The minimal-MCP launch is what keeps browsers
+# out of the phases that need none; the scope is not that lever.
 install_claude_mcp "$TMP_DIR/mcp-default.log" "$TMP_DIR/repo"
-assert_contains "mcp add --scope user playwright -- node" "$TMP_DIR/mcp-default.log"
-assert_contains "mcp add --scope user chrome-devtools -- node" "$TMP_DIR/mcp-default.log"
-assert_not_contains "--scope project" "$TMP_DIR/mcp-default.log"
+assert_not_contains "mcp add" "$TMP_DIR/mcp-default.log"
+assert_contains '"playwright"' "$DX_TOOL_DIR/mcp-registry.json"
+assert_contains '"chrome-devtools"' "$DX_TOOL_DIR/mcp-registry.json"
+assert_contains "$DEX_DIR/scripts/browser-mcp.cjs" "$DX_TOOL_DIR/mcp-registry.json"
+
+install_claude_mcp "$TMP_DIR/mcp-user.log" "$TMP_DIR/repo" user
+assert_contains "mcp add --scope user playwright -- node" "$TMP_DIR/mcp-user.log"
+assert_contains "mcp add --scope user chrome-devtools -- node" "$TMP_DIR/mcp-user.log"
+assert_not_contains "--scope project" "$TMP_DIR/mcp-user.log"
 
 install_claude_mcp "$TMP_DIR/mcp-project.log" "$TMP_DIR/repo" project
 assert_contains "mcp add --scope project playwright -- node" "$TMP_DIR/mcp-project.log"
@@ -343,7 +351,7 @@ SCOPE_RC=0
 (
   cd "$TMP_DIR/repo" || exit 1
   unset DEX_UI_MCP_SCOPE
-  assert_eq "user" "$(dx_ui_mcp_scope)" "default scope"
+  assert_eq "dex" "$(dx_ui_mcp_scope)" "default scope"
   assert_eq "project" "$(DEX_UI_MCP_SCOPE=project dx_ui_mcp_scope)" "environment scope"
   assert_eq "local" "$(DEX_UI_MCP_SCOPE=project dx_ui_mcp_scope local)" "argument beats the environment"
 ) || SCOPE_RC=$?
@@ -393,5 +401,83 @@ CLI_RC=0
 bash "$ROOT/bin/ui-capture.sh" --help > "$TMP_DIR/cli-help.out" 2>&1 || CLI_RC=$?
 assert_eq "0" "$CLI_RC" "usage still prints"
 assert_contains "dx ui-capture install [--user|--project|--local]" "$TMP_DIR/cli-help.out"
+
+# --- a populated registry reaches the launches that keep MCP servers --------
+
+REGISTRY_TOOLS="$TMP_DIR/registry-tools"
+mkdir -p "$REGISTRY_TOOLS" "$TMP_DIR/home-repo"
+git -C "$TMP_DIR/home-repo" init --quiet >/dev/null 2>&1
+printf '%s\n' '{"mcpServers":{"playwright":{"command":"node","args":["b.cjs","playwright"]},"mine":{"command":"dex-copy"}}}' \
+  > "$REGISTRY_TOOLS/mcp-registry.json"
+# The user already has "mine" at user scope: theirs wins, so Dex leaves it out.
+# (~/.claude.json is where Claude reads it with no CLAUDE_CONFIG_DIR.)
+unset CLAUDE_CONFIG_DIR
+printf '%s\n' '{"mcpServers":{"mine":{"command":"user-copy"}}}' > "$HOME/.claude.json"
+
+# The stub keeps a copy of the MCP config it was handed; the launch removes
+# the original when it returns.
+cat > "$TMP_DIR/provider-bin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$DX_TEST_ARGV_FILE"
+previous=""
+for arg in "$@"; do
+  [[ "$previous" == --mcp-config ]] && cp "$arg" "$DX_TEST_ARGV_FILE.mcp"
+  previous="$arg"
+done
+STUB
+
+registry_launch() { # <argv-file> <phase> [claude args...]
+  local argv_file="$1" phase="$2"
+  shift 2
+  (
+    cd "$TMP_DIR/home-repo"
+    provider_fixture "$argv_file"
+    export DX_TOOL_DIR="$REGISTRY_TOOLS" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE="$phase"
+    dx_provider_claude "$@" -p "task"
+  )
+}
+
+registry_launch "$TMP_DIR/registry-2.argv" 2
+assert_not_contains "--strict-mcp-config" "$TMP_DIR/registry-2.argv"
+assert_eq "1" "$(grep -cx -- '--mcp-config' "$TMP_DIR/registry-2.argv" | tr -d '[:space:]')" "one registry config"
+assert_eq '{"mcpServers":{"playwright":{"command":"node","args":["b.cjs","playwright"]}}}' \
+  "$(cat "$TMP_DIR/registry-2.argv.mcp")" "the registry minus the user's own name"
+assert_no_file "$(mcp_config_path "$TMP_DIR/registry-2.argv")"
+
+# A routed launch names that file in DEX_MCP_LAUNCH_CONFIG, so the router can
+# fold it into its MCP scope; other engines are not told.
+for engine in ccr claude; do
+  (
+    cd "$TMP_DIR/home-repo"
+    provider_fixture "$TMP_DIR/registry-$engine.argv"
+    export DX_TOOL_DIR="$REGISTRY_TOOLS" DX_PROVIDER_ENGINE="$engine"
+    __dx_provider_claude_exec() {
+      printf '%s\n' "${DEX_MCP_LAUNCH_CONFIG:-unset}" > "$TMP_DIR/registry-$engine.env"
+      printf '%s\n' "$@" > "$DX_TEST_ARGV_FILE"
+    }
+    dx_provider_claude -p "task"
+  )
+done
+assert_eq "$(mcp_config_path "$TMP_DIR/registry-ccr.argv")" "$(cat "$TMP_DIR/registry-ccr.env")" \
+  "the router is told which --mcp-config is Dex's"
+assert_eq "unset" "$(cat "$TMP_DIR/registry-claude.env")" "a direct launch carries no marker"
+
+# A minimal phase keeps its strict empty config, and only that one.
+registry_launch "$TMP_DIR/registry-4.argv" 4
+assert_contains "--strict-mcp-config" "$TMP_DIR/registry-4.argv"
+assert_eq "1" "$(grep -cx -- '--mcp-config' "$TMP_DIR/registry-4.argv" | tr -d '[:space:]')" "phase 4 adds no registry config"
+assert_eq "$DX_LOOP_DIR/empty-mcp.json" "$(mcp_config_path "$TMP_DIR/registry-4.argv")" "phase 4 config"
+
+# A caller's own MCP configuration (a review wave, dx context scope) wins.
+printf '%s\n' '{"mcpServers":{}}' > "$TMP_DIR/caller-mcp.json"
+registry_launch "$TMP_DIR/registry-caller.argv" 2 --strict-mcp-config --mcp-config "$TMP_DIR/caller-mcp.json"
+assert_eq "1" "$(grep -cx -- '--mcp-config' "$TMP_DIR/registry-caller.argv" | tr -d '[:space:]')" "caller config only"
+assert_eq "$TMP_DIR/caller-mcp.json" "$(mcp_config_path "$TMP_DIR/registry-caller.argv")" "caller config survives"
+
+# Nothing is added once every name is the user's own.
+printf '%s\n' '{"mcpServers":{"mine":{"command":"user-copy"},"playwright":{"command":"user-copy"}}}' > "$HOME/.claude.json"
+registry_launch "$TMP_DIR/registry-none.argv" 2
+assert_not_contains "--mcp-config" "$TMP_DIR/registry-none.argv"
+rm -f "$HOME/.claude.json"
 
 printf 'phase MCP and browser profile tests passed\n'

@@ -170,8 +170,9 @@ route, override and account pin carry over.
 Setup requires Python 3.11+ and native clients that support command-based gateway
 authentication, including the Codex `model_providers.<id>.auth` configuration.
 It updates Claude's user settings and adds a managed `dex-ccr` provider to
-Codex's user configuration. Unrelated settings are retained; `dx install`, `dx init` and
-`dx sync` refresh the native configuration after you have enabled it. Explicit
+Codex's user configuration. Unrelated settings are retained; `dx install`, `dx init`,
+`dx tools bootstrap` and `dx sync --bootstrap` refresh the native configuration after you have
+enabled it (plain `dx sync` only checks the tooling). Explicit
 client flags, another Codex profile, or higher-priority settings may override
 these defaults. The client's `/model` picker can select any model from
 `dx model list`, including one with a smaller context window than the route it

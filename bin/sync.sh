@@ -59,6 +59,8 @@ Options:
   --trace-retrieval <prompt|path>   Explain which memories would load
   --phase <phase>                   Phase for retrieval tracing
   --include-working-tree            Allow uncommitted changes as promotion evidence
+  --bootstrap                       Also install or refresh Claude/Codex tooling
+                                    (otherwise sync only checks it)
   -h, --help                        Show this help
 USAGE
 }
@@ -84,6 +86,7 @@ SINCE=""
 TRACE_RETRIEVAL=""
 PHASE=""
 INCLUDE_WORKING_TREE=0
+BOOTSTRAP=0
 SYNC_BUDGET_MINUTES="${DEX_SYNC_BUDGET_MINUTES:-60}"
 SYNC_BUDGET_EXPLICIT=0
 
@@ -137,6 +140,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --include-working-tree)
       INCLUDE_WORKING_TREE=1
+      shift
+      ;;
+    --bootstrap)
+      BOOTSTRAP=1
       shift
       ;;
     -h|--help)
@@ -208,14 +215,13 @@ else
   SYNC_RUN_ID=""
 fi
 
-if [[ "$READ_ONLY" -eq 1 ]]; then
-  if ! dx_bootstrap_agent_tooling "$repo_root" "check"; then
-    dx_warn "Read-only sync found Claude/Codex tooling drift; run 'dx sync' or 'dx tools bootstrap' to reinstall it."
-  fi
-else
+# Sync checks the tooling; installing it is an explicit request.
+if [[ "$READ_ONLY" -eq 0 && "$BOOTSTRAP" -eq 1 ]]; then
   if ! dx_bootstrap_agent_tooling "$repo_root" "install"; then
     dx_warn "Continuing sync without complete Claude/Codex tooling bootstrap"
   fi
+elif ! dx_bootstrap_agent_tooling "$repo_root" "check"; then
+  dx_warn "Sync found Claude/Codex tooling drift; run 'dx sync --bootstrap' or 'dx tools bootstrap' to install it."
 fi
 
 BASELINE_ANALYSIS_RAN=0

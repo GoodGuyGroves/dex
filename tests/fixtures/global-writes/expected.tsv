@@ -26,39 +26,9 @@
 # has written it all), status-fresh, reload-fresh, plain and plain-fresh.
 # Unit 01 is done: Dex's hooks reach only the sessions Dex launches, through
 # each launch's --settings file. Unit 02 is done: Dex's skills reach them as
-# the plugin `dex`, through each launch's --plugin-dir.
-
-# ── 03: user-scope MCP servers, plugins, marketplaces, Codex config ─────────
-03	init,tools-fresh,install	added	.claude.json#mcpServers.openaiDeveloperDocs	-	lib/agent-tools.sh
-03	init,tools-fresh,install	added	.claude.json#mcpServers.playwright	-	lib/ui-capture.sh, default scope user
-03	init,tools-fresh,install	added	.claude.json#mcpServers.chrome-devtools	-	lib/ui-capture.sh, default scope user
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.openaiDeveloperDocs	-	codex mcp add
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.playwright	-	codex mcp add
-03	init,tools-fresh,install	added	.codex/config.toml#mcp_servers.chrome-devtools	-	codex mcp add
-03	init	added	.claude/settings.json#mcpServers	-	bin/config.sh promotes the repo's .mcp.json servers
-03	init	added	.claude/settings.json#mcpServers.repoServer	-
-03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins	-	claude plugin install/enable --scope user
-03	init,tools-fresh,install	added	.claude/settings.json#enabledPlugins.codex@openai-codex	-
-03	init,tools-fresh	added	.claude/settings.json#enabledPlugins.pyright-lsp@claude-plugins-official	-
-03	init,tools-fresh,install	added	.claude/plugins	-
-03	init,tools-fresh,install	added	.claude/plugins/cache	-
-03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex	-
-03	init,tools-fresh,install	added	.claude/plugins/cache/openai-codex/codex	fold
-# Language plugins need a repository to detect; dx install runs outside one.
-03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official	-
-03	init,tools-fresh	added	.claude/plugins/cache/claude-plugins-official/pyright-lsp	fold
-03	init,tools-fresh,install	added	.claude/plugins/installed_plugins.json	fold
-03	init,tools-fresh,install	added	.claude/plugins/known_marketplaces.json	fold
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces	-
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces/claude-plugins-official	fold	marketplace clone
-03	init,tools-fresh,install	added	.claude/plugins/marketplaces/codex-plugin-cc	fold	marketplace clone
-03	init,tools-fresh,install	added	.codex/skills	-	lib/codex.sh skill links
-03	init,tools-fresh,install	added	.codex/skills/{dex-skill}	-
-03	init,tools-fresh,install	added	.codex/RTK.md	-	lib/rtk.sh Codex instructions
-03	init,tools-fresh,install	added	.codex/AGENTS.md	-	lib/rtk.sh RTK.md import
-03	uninstall	removed	.codex/skills/{dex-skill}	-
-03	uninstall	removed	.codex/RTK.md	-
-03	uninstall	removed	.codex/AGENTS.md	-
+# the plugin `dex`, through each launch's --plugin-dir. Unit 03 is done: the
+# MCP servers and plugins the bootstrap adds live in Dex's registry and plugin
+# directory under DX_TOOL_DIR (the 05 rows below), and reach Dex launches only.
 
 # ── 04: shell rc and worktree project-data links ────────────────────────────
 04	install	modified	.zshrc	-	bin/install.sh appends the DEX_DIR export and source line
@@ -113,6 +83,11 @@
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture	-
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/package.json	fold
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/node_modules	fold	npm package tree
+05	init,tools-fresh,install	added	.claude/.dex-tools/mcp-registry.json	fold	Dex's MCP registry (unit 03)
+05	init,tools-fresh,install	added	.claude/.dex-tools/plugins	fold	marketplace clones and resolved plugins (unit 03)
+# Resolved plugins are links into the clones, which a fold row never absorbs.
+05	init,tools-fresh,install	added	.claude/.dex-tools/plugins/resolved/*	-
+05	init,tools-fresh,install	added	.claude/.dex-tools/plugins/resolved/*/*	-
 05	init,tools-fresh,install	added	.local/bin/rtk	-	~/.local/bin/rtk link
 05	uninstall	removed	.local/bin/rtk	-
 05	init,tools-fresh,install	added	.npm/_cacache	fold	npm cache

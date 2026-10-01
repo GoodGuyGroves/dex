@@ -132,6 +132,42 @@ with open("checksums.txt", "w") as out:
     for name in sorted(glob.glob("*.tar.gz")):
         out.write("%s  %s\n" % (hashlib.sha256(open(name, "rb").read()).hexdigest(), name))')
 
+# The two plugin marketplaces the bootstrap clones, as local repositories it
+# reaches over file:// (a plain-path clone would hard-link their objects), with
+# an entry for every plugin Dex may select. Pinned to their own HEADs.
+MARKETS="$TMP_DIR/marketplaces"
+make_marketplace() { # <dir> <name> <plugin-json-entries>
+  local dir="$MARKETS/$1" plugin
+  mkdir -p "$dir/.claude-plugin"
+  printf '{"name":"%s","plugins":[%s]}\n' "$2" "$3" > "$dir/.claude-plugin/marketplace.json"
+  for plugin in $(python3 -c 'import json,sys; print(" ".join(p["name"] for p in json.load(open(sys.argv[1]))["plugins"]))' \
+      "$dir/.claude-plugin/marketplace.json"); do
+    mkdir -p "$dir/plugins/$plugin"
+    printf 'license\n' > "$dir/plugins/$plugin/LICENSE"
+  done
+  git -C "$dir" init -q
+  git -C "$dir" add -A
+  git -C "$dir" -c user.email=dex@example.test -c user.name="Dex Test" commit -q -m marketplace
+}
+lsp() { printf '{"name":"%s","source":"./plugins/%s","strict":false,"lspServers":{"%s":{"command":"%s"}}}' "$1" "$1" "$1" "$1"; }
+make_marketplace official claude-plugins-official \
+  "{\"name\":\"frontend-design\",\"source\":\"./plugins/frontend-design\"},$(lsp typescript-lsp),$(lsp pyright-lsp),$(lsp rust-analyzer-lsp),$(lsp gopls-lsp)"
+mkdir -p "$MARKETS/official/plugins/frontend-design/.claude-plugin"
+printf '{"name":"frontend-design"}\n' > "$MARKETS/official/plugins/frontend-design/.claude-plugin/plugin.json"
+git -C "$MARKETS/official" add -A
+git -C "$MARKETS/official" -c user.email=dex@example.test -c user.name="Dex Test" commit -q -m manifest
+make_marketplace codex openai-codex '{"name":"codex","source":"./plugins/codex"}'
+mkdir -p "$MARKETS/codex/plugins/codex/.claude-plugin"
+printf '{"name":"codex"}\n' > "$MARKETS/codex/plugins/codex/.claude-plugin/plugin.json"
+git -C "$MARKETS/codex" add -A
+git -C "$MARKETS/codex" -c user.email=dex@example.test -c user.name="Dex Test" commit -q -m manifest
+MARKETPLACE_ENV=(
+  DX_CLAUDE_OFFICIAL_MARKETPLACE_URL="file://$MARKETS/official"
+  DX_CLAUDE_OFFICIAL_MARKETPLACE_REF="$(git -C "$MARKETS/official" rev-parse HEAD)"
+  DX_OPENAI_CODEX_MARKETPLACE_URL="file://$MARKETS/codex"
+  DX_OPENAI_CODEX_MARKETPLACE_REF="$(git -C "$MARKETS/codex" rev-parse HEAD)"
+)
+
 ALL_OBSERVED="$TMP_DIR/observed.tsv"
 : > "$ALL_OBSERVED"
 
@@ -241,7 +277,7 @@ step() {
       CODEX_HOME="$SB_HOME/.codex" ZDOTDIR="$SB_HOME" GIT_CONFIG_NOSYSTEM=1 \
       XDG_CONFIG_HOME="$SB_HOME/.config" XDG_CACHE_HOME="$SB_HOME/.cache" \
       XDG_DATA_HOME="$SB_HOME/.local/share" XDG_STATE_HOME="$SB_HOME/.local/state" \
-      ${TOOLCHAIN_ENV[@]+"${TOOLCHAIN_ENV[@]}"} ${dex_env[@]+"${dex_env[@]}"} \
+      ${TOOLCHAIN_ENV[@]+"${TOOLCHAIN_ENV[@]}"} ${dex_env[@]+"${dex_env[@]}"} "${MARKETPLACE_ENV[@]}" \
       DEXCODE_SYNC=0 DEXCODE_CONTEXT_SYNC=0 PYTHONDONTWRITEBYTECODE=1 \
       GW_STEP="$label" GW_STUB_DIR="$SB_STUB" GW_FIXTURES="$RTK_FIXTURES" GW_DEX_DIR="$ROOT" \
       GW_REAL_NODE="$REAL_NODE" GW_FIRE_HOOKS="${GW_PLAIN:-0}" \
@@ -315,8 +351,19 @@ cat "$TMP_DIR/isolated/observed.tsv" >> "$ALL_OBSERVED"
 ISOLATED_STUB="$TMP_DIR/isolated/stub"
 
 # Coverage: a step that failed early writes nothing and would pass for clean.
-grep -Eq '"argv": \["mcp", "add".*"tool": "claude"' "$ISOLATED_STUB/calls.jsonl" \
-  || fail "init never ran claude mcp add"
+# The bootstrap's MCP servers and plugins go to Dex's own directories, and
+# never through the CLIs' registration commands.
+ISOLATED_TOOLS="$TMP_DIR/isolated/home/.claude/.dex-tools"
+grep -q '"playwright"' "$ISOLATED_TOOLS/mcp-registry.json" \
+  || fail "the bootstrap never wrote Dex's MCP registry"
+[[ -d "$ISOLATED_TOOLS/plugins/resolved/pyright-lsp" ]] || fail "the bootstrap never resolved a plugin"
+if grep -Eq '"argv": \["(mcp", "add|plugin", "(install|enable|marketplace))' "$ISOLATED_STUB/calls.jsonl"; then
+  fail "the bootstrap registered an MCP server or plugin with the CLI"
+fi
+grep -q '"plugins": \[[^]]*dir:pyright-lsp' "$ISOLATED_STUB/launches.jsonl" \
+  || fail "no Dex launch carried the repository's language plugin"
+grep -q '"mcp": \[[^]]*flag:playwright' "$ISOLATED_STUB/launches.jsonl" \
+  || fail "no Dex launch carried Dex's MCP registry"
 for label in session phase plain; do
   grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/launches.jsonl" \
     || fail "no stub claude launch recorded for step $label"

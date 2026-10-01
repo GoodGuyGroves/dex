@@ -20,17 +20,17 @@ workflow context.
 
 ## Contract
 
-Before starting the memory refresh, run the same conservative tooling bootstrap
-as `dx sync` unless the user requested `--dry-run` or `--trace-retrieval`:
+Before starting the memory refresh, run the same tooling check as `dx sync`
+and report any drift without changing tooling:
 
 ```bash
 repo_root=$(git rev-parse --show-toplevel)
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
-dx_bootstrap_agent_tooling "$repo_root" "install"
+dx_bootstrap_agent_tooling "$repo_root" "check"
 ```
 
-For `--dry-run` or `--trace-retrieval`, use mode `"check"` instead and report
-any drift without changing tooling.
+Use mode `"install"` instead only when the user asked for `--bootstrap`, and
+never with `--dry-run` or `--trace-retrieval`.
 
 Read and follow `$DEX_DIR/prompts/sync-memory.md`. That prompt is the source of truth for:
 
@@ -49,6 +49,7 @@ repo memory until this skill promotes them through a reviewable `.dex/` diff.
 Forward any user-provided arguments to the prompt contract:
 
 - `--dry-run`
+- `--bootstrap`
 - `--state-dir <path>`
 - `--since <ref|date>`
 - `--no-pr`

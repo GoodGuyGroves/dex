@@ -2,12 +2,21 @@
 # Dex helpers for conservative Claude/Codex tooling bootstrap.
 #
 # This module intentionally installs only Dex-owned links, official MCP
-# servers, and a narrow allowlist of official Claude Code plugins.
+# servers, and a narrow allowlist of official Claude Code plugins. The MCP
+# servers and plugins live under $DX_TOOL_DIR and reach the sessions Dex
+# launches only: nothing is registered in the user's Claude or Codex config.
 
 DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME="claude-plugins-official"
 DX_CLAUDE_OFFICIAL_MARKETPLACE_SOURCE="anthropics/claude-plugins-official"
 DX_OPENAI_CODEX_MARKETPLACE_NAME="openai-codex"
 DX_OPENAI_CODEX_MARKETPLACE_SOURCE="openai/codex-plugin-cc"
+# Where the marketplaces are cloned from, and the commit each is pinned to. A
+# Dex release bumps a pin to take that marketplace's updates. The environment
+# can point both at a local fixture (the tests do).
+DX_CLAUDE_OFFICIAL_MARKETPLACE_URL="${DX_CLAUDE_OFFICIAL_MARKETPLACE_URL:-https://github.com/${DX_CLAUDE_OFFICIAL_MARKETPLACE_SOURCE}.git}"
+DX_CLAUDE_OFFICIAL_MARKETPLACE_REF="${DX_CLAUDE_OFFICIAL_MARKETPLACE_REF:-3b600518a637492d37c9877aeb49c2a55d939c04}"
+DX_OPENAI_CODEX_MARKETPLACE_URL="${DX_OPENAI_CODEX_MARKETPLACE_URL:-https://github.com/${DX_OPENAI_CODEX_MARKETPLACE_SOURCE}.git}"
+DX_OPENAI_CODEX_MARKETPLACE_REF="${DX_OPENAI_CODEX_MARKETPLACE_REF:-db52e28f4d9ded852ab3942cea316258ae4ef346}"
 DX_OPENAI_DOCS_MCP_NAME="openaiDeveloperDocs"
 DX_OPENAI_DOCS_MCP_URL="https://developers.openai.com/mcp"
 
@@ -393,61 +402,203 @@ dx_session_messaging_launch_value() {
   printf 'accept\n'
 }
 
-dx_claude_plugin_marketplace_configured() {
-  local name="$1"
-  command -v claude >/dev/null 2>&1 || return 1
-  # Match the marketplace name as a whole field. A substring match reports an
-  # unrelated entry that merely contains the name (a fork, say) as configured,
-  # and the add step is then skipped so the later plugin install fails with a
-  # confusing error.
-  claude plugin marketplace list 2>/dev/null |
-    awk -v want="$name" '{ for (i = 1; i <= NF; i++) if ($i == want) found = 1 }
-                         END { exit found ? 0 : 1 }'
+# ── Dex's MCP registry ──────────────────────────────────────────────────────
+# The MCP servers Dex adds to the sessions it launches, in Claude's
+# --mcp-config shape. dx_provider_claude passes it per launch (without
+# --strict-mcp-config, so the user's own servers still load) and bin/dxcodex.sh
+# turns it into `-c mcp_servers…` overrides. A name the user configured
+# themselves is left out of the launch, so theirs wins.
+
+dx_dex_mcp_registry() {
+  printf '%s/mcp-registry.json\n' "$DX_TOOL_DIR"
 }
 
-dx_ensure_official_claude_marketplace() {
-  local name="$1" source="$2"
+dx_dex_plugins_dir() {
+  printf '%s/plugins\n' "$DX_TOOL_DIR"
+}
 
-  case "${name}:${source}" in
-    "${DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME}:${DX_CLAUDE_OFFICIAL_MARKETPLACE_SOURCE}"|\
-    "${DX_OPENAI_CODEX_MARKETPLACE_NAME}:${DX_OPENAI_CODEX_MARKETPLACE_SOURCE}") ;;
-    *)
-      dx_warn "Refusing non-official Claude plugin marketplace: ${source}"
+# dx_mcp_registry_set [--env NAME=VALUE]... <name> <url | command [args...]>
+dx_mcp_registry_set() {
+  local name result
+  name="$1"
+  [[ "$name" != --env ]] || name="$3"
+  [[ "$name" != --env ]] || name="$5"
+  if ! result=$(python3 "$DEX_DIR/scripts/settings-json.py" registry-set "$(dx_dex_mcp_registry)" "$@"); then
+    dx_warn "Could not add MCP server '${name}' to Dex's registry"
+    return 1
+  fi
+  if [[ "$result" == unchanged ]]; then
+    dx_ok "MCP server '${name}' is in Dex's registry"
+  else
+    dx_done "Added MCP server '${name}' to Dex's registry (loads in Dex launches)"
+  fi
+}
+
+dx_mcp_registry_has() {
+  [[ -f "$(dx_dex_mcp_registry)" ]] || return 1
+  python3 "$DEX_DIR/scripts/settings-json.py" registry-names "$(dx_dex_mcp_registry)" 2>/dev/null \
+    | grep -Fxq -- "$1"
+}
+
+# __dx_check_mcp_server <name> — the registry, or else the user's own
+# registration with each agent CLI installed here.
+__dx_check_mcp_server() {
+  local name="$1" cli label failed=0
+  if dx_mcp_registry_has "$name"; then
+    dx_ok "MCP server '${name}' loads in Dex launches (Dex registry)"
+    return 0
+  fi
+  for cli in claude codex; do
+    command -v "$cli" >/dev/null 2>&1 || continue
+    label=Claude
+    [[ "$cli" == codex ]] && label=Codex
+    if __dx_mcp_server_exists "$cli" "$name"; then
+      dx_ok "${label} MCP server '${name}' configured in your own settings"
+    else
+      dx_warn "${label} MCP server '${name}' is not configured; run 'dx tools bootstrap'"
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+# The per-launch --mcp-config document for the current repository, or nothing.
+dx_dex_launch_mcp_config() {
+  local registry root
+  registry=$(dx_dex_mcp_registry)
+  [[ -f "$registry" ]] || return 0
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
+  python3 "$DEX_DIR/scripts/settings-json.py" launch-mcp "$registry" "$root"
+}
+
+# The registry as Codex `-c` values, one per line.
+dx_dex_codex_mcp_overrides() {
+  local registry
+  registry=$(dx_dex_mcp_registry)
+  [[ -f "$registry" ]] || return 0
+  python3 "$DEX_DIR/scripts/settings-json.py" codex-mcp-overrides "$registry" \
+    "${CODEX_HOME:-$HOME/.codex}/config.toml"
+}
+
+# ── Per-launch plugins ──────────────────────────────────────────────────────
+# The allowlisted marketplaces are cloned under $DX_TOOL_DIR/plugins at a
+# pinned commit, every allowlisted plugin is resolved into plugins/resolved,
+# and each launch passes one --plugin-dir per plugin the repository selects.
+# No `claude plugin marketplace add`, `install` or `enable`.
+
+DX_DEX_PLUGIN_REFS=(
+  codex@openai-codex
+  frontend-design@claude-plugins-official
+  typescript-lsp@claude-plugins-official
+  pyright-lsp@claude-plugins-official
+  rust-analyzer-lsp@claude-plugins-official
+  gopls-lsp@claude-plugins-official
+)
+
+# dx_install_dex_marketplace <name> <url> <ref> — clone the marketplace, or
+# bring an existing clone back to its pinned commit: the origin URL reset,
+# local edits and untracked files discarded. A directory that is not a git
+# clone is replaced. Git is always told the clone's own .git, so nothing
+# planted in the directory can point it at another repository.
+dx_install_dex_marketplace() {
+  local name="$1" url="$2" ref="$3" dir tmp old git_dir=() cloned=0
+  dir="$(dx_dex_plugins_dir)/marketplaces/$name"
+  git_dir=(git -C "$dir" --git-dir="$dir/.git" --work-tree="$dir")
+  # An empty or broken .git counts as no clone at all: re-cloned and swapped.
+  if [[ -d "$dir/.git" ]] && git --git-dir="$dir/.git" rev-parse --git-dir >/dev/null 2>&1; then
+    cloned=1
+  fi
+  if [[ "$cloned" == 1 && "$("${git_dir[@]}" rev-parse HEAD 2>/dev/null)" == "$ref" \
+    && -z "$("${git_dir[@]}" status --porcelain --ignored 2>/dev/null)" ]] \
+    && [[ "$("${git_dir[@]}" remote get-url origin 2>/dev/null)" == "$url" ]]; then
+    dx_ok "Claude plugin marketplace '${name}' is at its pinned commit"
+    return 0
+  fi
+  dx_info "Fetching Claude plugin marketplace '${name}' at ${ref}"
+  if [[ "$cloned" != 1 ]]; then
+    tmp="${dir}.tmp.$$" old="${dir}.old.$$"
+    mkdir -p "${dir%/*}"
+    rm -rf "${tmp:?}"
+    if ! dx_run_with_timeout 300 git clone --quiet --no-checkout "$url" "$tmp" >/dev/null 2>&1; then
+      rm -rf "${tmp:?}"
+      dx_warn "Could not clone Claude plugin marketplace '${name}' from ${url}"
       return 1
-      ;;
-  esac
-
-  if ! command -v claude >/dev/null 2>&1; then
-    dx_skip "Claude Code CLI not found; skipping Claude plugin marketplace ${name}"
-    return 0
+    fi
+    if [[ -e "$dir" || -L "$dir" ]] && ! mv "$dir" "$old"; then
+      rm -rf "${tmp:?}"
+      dx_warn "Could not replace ${dir}, which is not a git clone"
+      return 1
+    fi
+    mv "$tmp" "$dir" || { dx_warn "Could not move the new clone into ${dir}"; return 1; }
+    rm -rf "${old:?}"
   fi
-
-  if dx_claude_plugin_marketplace_configured "$name"; then
-    dx_ok "Claude plugin marketplace '${name}' already configured"
-    return 0
+  "${git_dir[@]}" remote set-url origin "$url" >/dev/null 2>&1 || true
+  if ! "${git_dir[@]}" cat-file -e "${ref}^{commit}" 2>/dev/null; then
+    dx_run_with_timeout 300 "${git_dir[@]}" fetch --quiet origin >/dev/null 2>&1 \
+      || dx_run_with_timeout 300 "${git_dir[@]}" fetch --quiet origin "$ref" >/dev/null 2>&1 || true
   fi
-
-  dx_info "Adding Claude plugin marketplace '${name}'"
-  if dx_run_with_timeout 120 claude plugin marketplace add --scope user "$source" >/dev/null; then
-    dx_done "Added Claude plugin marketplace '${name}'"
-    return 0
+  if ! "${git_dir[@]}" -c advice.detachedHead=false checkout --quiet -f --detach "$ref" >/dev/null 2>&1 \
+    || ! "${git_dir[@]}" clean -fdxq >/dev/null 2>&1; then
+    dx_warn "Could not check out Claude plugin marketplace '${name}' at pinned commit ${ref}"
+    return 1
   fi
-
-  dx_warn "Could not add Claude plugin marketplace '${name}'"
-  return 1
+  dx_done "Claude plugin marketplace '${name}' at ${ref}"
 }
 
-dx_safe_official_claude_plugin_allowed() {
-  local plugin_ref="$1"
-  case "$plugin_ref" in
-    codex@openai-codex|\
-    frontend-design@claude-plugins-official|\
-    typescript-lsp@claude-plugins-official|\
-    pyright-lsp@claude-plugins-official|\
-    rust-analyzer-lsp@claude-plugins-official|\
-    gopls-lsp@claude-plugins-official) return 0 ;;
-    *) return 1 ;;
-  esac
+dx_install_safe_official_claude_plugins() {
+  local failed=0 plugins line ready=""
+  if ! command -v claude >/dev/null 2>&1; then
+    dx_skip "Claude Code CLI not found; skipping Claude plugins"
+    return 0
+  fi
+  dx_install_dex_marketplace "$DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME" \
+    "$DX_CLAUDE_OFFICIAL_MARKETPLACE_URL" "$DX_CLAUDE_OFFICIAL_MARKETPLACE_REF" || failed=1
+  if command -v codex >/dev/null 2>&1; then
+    dx_install_dex_marketplace "$DX_OPENAI_CODEX_MARKETPLACE_NAME" \
+      "$DX_OPENAI_CODEX_MARKETPLACE_URL" "$DX_OPENAI_CODEX_MARKETPLACE_REF" || failed=1
+  fi
+  plugins=$(dx_dex_plugins_dir)
+  while IFS= read -r line; do
+    case "$line" in
+      "ok "*) ready="${ready:+$ready, }${line#ok }" ;;
+      "refused "*)
+        line="${line#refused }"
+        dx_warn "Refusing Claude plugin ${line%% *}: ${line#* }"
+        failed=1
+        ;;
+      "missing "*) dx_warn "Claude plugin ${line#missing } is not in its marketplace"; failed=1 ;;
+    esac
+  done < <(python3 "$DEX_DIR/scripts/settings-json.py" resolve-plugins \
+    "$plugins/marketplaces" "$plugins/resolved" "${DX_DEX_PLUGIN_REFS[@]}" || printf 'error\n')
+  if [[ -n "$ready" ]]; then
+    dx_done "Claude plugins ready to load in Dex launches: ${ready}"
+  else
+    dx_warn "No Claude plugin could be prepared under ${plugins}"
+    failed=1
+  fi
+  return "$failed"
+}
+
+# dx_claude_plugin_available <ref> — resolved for Dex launches, or enabled in
+# the user's own Claude settings.
+dx_claude_plugin_available() {
+  [[ -d "$(dx_dex_plugins_dir)/resolved/${1%@*}" ]] && return 0
+  [[ "$(dx_claude_plugin_status "$1")" == enabled ]]
+}
+
+# The --plugin-dir values for the current repository, one per line: the
+# plugins it selects that are resolved, minus any the user enabled or disabled
+# themselves.
+dx_dex_launch_plugin_dirs() {
+  local resolved root ref reason refs=()
+  resolved="$(dx_dex_plugins_dir)/resolved"
+  [[ -d "$resolved" ]] || return 0
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || root=""
+  while IFS=$'\t' read -r ref reason; do
+    [[ -n "$ref" ]] && refs+=("$ref")
+  done < <(dx_safe_official_claude_plugins_for_project "$root")
+  [[ ${#refs[@]} -gt 0 ]] || return 0
+  python3 "$DEX_DIR/scripts/settings-json.py" launch-plugin-dirs "$resolved" "${root:-$PWD}" "${refs[@]}"
 }
 
 dx_claude_plugin_status() {
@@ -490,65 +641,6 @@ print("missing")
   else
     printf '%s\n' "missing"
   fi
-}
-
-dx_install_safe_official_claude_plugin() {
-  local plugin_ref="$1" reason="${2:-official Dex tooling}"
-  local plugin_status marketplace
-
-  if ! dx_safe_official_claude_plugin_allowed "$plugin_ref"; then
-    dx_warn "Refusing non-allowlisted Claude plugin: ${plugin_ref}"
-    return 1
-  fi
-
-  if ! command -v claude >/dev/null 2>&1; then
-    dx_skip "Claude Code CLI not found; skipping Claude plugin ${plugin_ref}"
-    return 0
-  fi
-
-  plugin_status=$(dx_claude_plugin_status "$plugin_ref")
-  case "$plugin_status" in
-    enabled)
-      dx_ok "Claude plugin '${plugin_ref}' already enabled"
-      return 0
-      ;;
-    disabled)
-      dx_info "Enabling Claude plugin '${plugin_ref}' (${reason})"
-      if dx_run_with_timeout 120 claude plugin enable --scope user "$plugin_ref" >/dev/null; then
-        dx_done "Enabled Claude plugin '${plugin_ref}'"
-        return 0
-      fi
-      dx_warn "Could not enable Claude plugin '${plugin_ref}'"
-      return 1
-      ;;
-    missing|unknown) ;;
-  esac
-
-  marketplace="${plugin_ref##*@}"
-  if [[ "$marketplace" == "$DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME" ]]; then
-    dx_ensure_official_claude_marketplace "$DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME" "$DX_CLAUDE_OFFICIAL_MARKETPLACE_SOURCE" || return 1
-  elif [[ "$marketplace" == "$DX_OPENAI_CODEX_MARKETPLACE_NAME" ]]; then
-    dx_ensure_official_claude_marketplace "$DX_OPENAI_CODEX_MARKETPLACE_NAME" "$DX_OPENAI_CODEX_MARKETPLACE_SOURCE" || return 1
-  else
-    dx_warn "Refusing plugin from non-official marketplace: ${plugin_ref}"
-    return 1
-  fi
-
-  dx_info "Installing Claude plugin '${plugin_ref}' (${reason})"
-  if dx_run_with_timeout 180 claude plugin install --scope user "$plugin_ref" >/dev/null; then
-    dx_done "Installed Claude plugin '${plugin_ref}'"
-    return 0
-  fi
-
-  dx_info "Updating Claude plugin marketplace '${marketplace}' and retrying '${plugin_ref}'"
-  dx_run_with_timeout 180 claude plugin marketplace update "$marketplace" >/dev/null 2>&1 || true
-  if dx_run_with_timeout 180 claude plugin install --scope user "$plugin_ref" >/dev/null; then
-    dx_done "Installed Claude plugin '${plugin_ref}'"
-    return 0
-  fi
-
-  dx_warn "Could not install Claude plugin '${plugin_ref}'"
-  return 1
 }
 
 # `find -name` treats exact names and glob patterns identically, so one finder
@@ -652,7 +744,7 @@ dx_safe_official_claude_plugins_for_project() {
 }
 
 dx_check_safe_official_claude_plugins() {
-  local root="${1:-}" failed=0 plugin_ref reason plugin_status
+  local root="${1:-}" failed=0 plugin_ref reason
 
   if ! command -v claude >/dev/null 2>&1; then
     dx_skip "Claude Code CLI not found; skipping Claude plugin check"
@@ -661,112 +753,23 @@ dx_check_safe_official_claude_plugins() {
 
   while IFS=$'\t' read -r plugin_ref reason; do
     [[ -n "$plugin_ref" ]] || continue
-    plugin_status=$(dx_claude_plugin_status "$plugin_ref")
-    if [[ "$plugin_status" == "enabled" ]]; then
-      dx_ok "Claude plugin '${plugin_ref}' enabled"
+    if dx_claude_plugin_available "$plugin_ref"; then
+      dx_ok "Claude plugin '${plugin_ref}' available"
     else
-      dx_warn "Claude plugin '${plugin_ref}' is ${plugin_status}; needed for ${reason}"
+      dx_warn "Claude plugin '${plugin_ref}' is not prepared; needed for ${reason}. Run 'dx tools bootstrap'"
       failed=1
     fi
   done < <(dx_safe_official_claude_plugins_for_project "$root")
 
   return "$failed"
-}
-
-dx_install_safe_official_claude_plugins() {
-  local root="${1:-}" failed=0 plugin_ref reason
-
-  if ! command -v claude >/dev/null 2>&1; then
-    dx_skip "Claude Code CLI not found; skipping Claude plugins"
-    return 0
-  fi
-
-  dx_ensure_official_claude_marketplace "$DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME" "$DX_CLAUDE_OFFICIAL_MARKETPLACE_SOURCE" || failed=1
-  if command -v codex >/dev/null 2>&1; then
-    dx_ensure_official_claude_marketplace "$DX_OPENAI_CODEX_MARKETPLACE_NAME" "$DX_OPENAI_CODEX_MARKETPLACE_SOURCE" || failed=1
-  fi
-
-  while IFS=$'\t' read -r plugin_ref reason; do
-    [[ -n "$plugin_ref" ]] || continue
-    dx_install_safe_official_claude_plugin "$plugin_ref" "$reason" || failed=1
-  done < <(dx_safe_official_claude_plugins_for_project "$root")
-
-  return "$failed"
-}
-
-dx_install_claude_openai_docs_mcp_server() {
-  if ! command -v claude >/dev/null 2>&1; then
-    dx_skip "Claude Code CLI not found; skipping Claude OpenAI docs MCP"
-    return 0
-  fi
-
-  if dx_claude_mcp_server_exists "$DX_OPENAI_DOCS_MCP_NAME"; then
-    dx_ok "Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}' already configured"
-    return 0
-  fi
-
-  dx_info "Installing Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-  if dx_run_with_timeout 120 claude mcp add --transport http --scope user "$DX_OPENAI_DOCS_MCP_NAME" "$DX_OPENAI_DOCS_MCP_URL" >/dev/null; then
-    dx_done "Installed Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-    return 0
-  fi
-
-  dx_warn "Could not install Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-  return 1
-}
-
-dx_install_codex_openai_docs_mcp_server() {
-  if ! command -v codex >/dev/null 2>&1; then
-    dx_skip "Codex CLI not found; skipping Codex OpenAI docs MCP"
-    return 0
-  fi
-
-  if dx_codex_mcp_server_exists "$DX_OPENAI_DOCS_MCP_NAME"; then
-    dx_ok "Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}' already configured"
-    return 0
-  fi
-
-  dx_info "Installing Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-  if dx_run_with_timeout 120 codex mcp add "$DX_OPENAI_DOCS_MCP_NAME" --url "$DX_OPENAI_DOCS_MCP_URL" >/dev/null; then
-    dx_done "Installed Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-    return 0
-  fi
-
-  dx_warn "Could not install Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}'"
-  return 1
 }
 
 dx_install_openai_docs_mcp_servers() {
-  local failed=0
-
-  dx_install_claude_openai_docs_mcp_server || failed=1
-  dx_install_codex_openai_docs_mcp_server || failed=1
-
-  return "$failed"
+  dx_mcp_registry_set "$DX_OPENAI_DOCS_MCP_NAME" "$DX_OPENAI_DOCS_MCP_URL"
 }
 
 dx_check_openai_docs_mcp_servers() {
-  local failed=0
-
-  if command -v claude >/dev/null 2>&1; then
-    if dx_claude_mcp_server_exists "$DX_OPENAI_DOCS_MCP_NAME"; then
-      dx_ok "Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}' configured"
-    else
-      dx_warn "Claude MCP server '${DX_OPENAI_DOCS_MCP_NAME}' is not configured"
-      failed=1
-    fi
-  fi
-
-  if command -v codex >/dev/null 2>&1; then
-    if dx_codex_mcp_server_exists "$DX_OPENAI_DOCS_MCP_NAME"; then
-      dx_ok "Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}' configured"
-    else
-      dx_warn "Codex MCP server '${DX_OPENAI_DOCS_MCP_NAME}' is not configured"
-      failed=1
-    fi
-  fi
-
-  return "$failed"
+  __dx_check_mcp_server "$DX_OPENAI_DOCS_MCP_NAME"
 }
 
 dx_check_ui_capture_tooling() {
@@ -778,36 +781,8 @@ dx_check_ui_capture_tooling() {
     dx_warn "UI capture browser, media, or local narration tooling is incomplete"
     failed=1
   fi
-
-  if command -v claude >/dev/null 2>&1; then
-    if dx_claude_mcp_server_exists "playwright"; then
-      dx_ok "Claude MCP server 'playwright' configured"
-    else
-      dx_warn "Claude MCP server 'playwright' is not configured"
-      failed=1
-    fi
-    if dx_claude_mcp_server_exists "chrome-devtools"; then
-      dx_ok "Claude MCP server 'chrome-devtools' configured"
-    else
-      dx_warn "Claude MCP server 'chrome-devtools' is not configured"
-      failed=1
-    fi
-  fi
-
-  if command -v codex >/dev/null 2>&1; then
-    if dx_codex_mcp_server_exists "playwright"; then
-      dx_ok "Codex MCP server 'playwright' configured"
-    else
-      dx_warn "Codex MCP server 'playwright' is not configured"
-      failed=1
-    fi
-    if dx_codex_mcp_server_exists "chrome-devtools"; then
-      dx_ok "Codex MCP server 'chrome-devtools' configured"
-    else
-      dx_warn "Codex MCP server 'chrome-devtools' is not configured"
-      failed=1
-    fi
-  fi
+  __dx_check_mcp_server playwright || failed=1
+  __dx_check_mcp_server chrome-devtools || failed=1
 
   return "$failed"
 }
@@ -817,6 +792,10 @@ dx_check_codex_skill_links() {
 
   if ! command -v codex >/dev/null 2>&1; then
     dx_skip "Codex CLI not found; skipping Codex skill check"
+    return 0
+  fi
+  if ! dx_codex_home_writes_enabled; then
+    dx_skip "Codex skill links are opt-in ('dx tools bootstrap --codex-home')"
     return 0
   fi
 
@@ -831,6 +810,9 @@ dx_check_codex_skill_links() {
   return 1
 }
 
+# DEX_SKIP_TOOL_BOOTSTRAP=1 turns every install off, whoever calls; checks
+# still run. Writes into $CODEX_HOME (skill links, RTK instructions) happen
+# only with DEX_CODEX_HOME_WRITES=1 (`dx tools bootstrap --codex-home`).
 dx_bootstrap_agent_tooling() {
   local root="${1:-}" mode="${2:-install}" failed=0
 
@@ -846,26 +828,30 @@ dx_bootstrap_agent_tooling() {
     return "$failed"
   fi
 
+  if [[ "${DEX_SKIP_TOOL_BOOTSTRAP:-0}" == 1 ]]; then
+    dx_skip "Skipping Claude/Codex tooling bootstrap (DEX_SKIP_TOOL_BOOTSTRAP=1)"
+    return 0
+  fi
+
   dx_info "Installing Claude/Codex tooling bootstrap"
 
-  if command -v codex >/dev/null 2>&1; then
+  # Only an explicit opt-in is recorded; a marker alone never re-records itself.
+  if [[ "${DEX_CODEX_HOME_WRITES:-}" == 1 ]] \
+    && ! { mkdir -p "$(dirname "$(dx_codex_home_writes_marker)")" && : > "$(dx_codex_home_writes_marker)"; }; then
+    dx_warn "Could not record the Codex home opt-in in $(dx_codex_home_writes_marker)"
+  fi
+  if ! command -v codex >/dev/null 2>&1; then
+    dx_skip "Codex CLI not found; skipping Codex skills"
+  elif dx_codex_home_writes_enabled; then
     dx_install_codex_skills || failed=1
   else
-    dx_skip "Codex CLI not found; skipping Codex skills"
+    dx_skip "Codex skill links and RTK instructions are opt-in ('dx tools bootstrap --codex-home')"
   fi
 
-  # `dx install` is the machine-wide install and runs wherever the user
-  # happens to be standing, so its browser MCP servers go to user scope rather
-  # than into that directory's `.mcp.json`. A caller that names a repository
-  # — `dx init`, `dx sync`, `dx tools` — takes the project-scope default.
-  if [[ -n "$root" ]]; then
-    dx_install_ui_capture_tooling || failed=1
-  else
-    dx_install_ui_capture_tooling --user || failed=1
-  fi
+  dx_install_ui_capture_tooling || failed=1
   dx_install_rtk_tooling || failed=1
   dx_install_openai_docs_mcp_servers || failed=1
-  dx_install_safe_official_claude_plugins "$root" || failed=1
+  dx_install_safe_official_claude_plugins || failed=1
   dx_refresh_global_claude_hooks || failed=1
 
   if [[ -f "${DEX_ROUTER_HOME:-$HOME/.dex/router}/config.json" ]] && command -v node >/dev/null 2>&1; then

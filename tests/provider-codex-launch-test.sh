@@ -195,12 +195,36 @@ grep -q -- "shell_environment_policy.set.DEX_SESSION_ID=\\\"provider-codex-inter
   "$DEX_TEST_CODEX_LAST_ARGS"
 grep -q -- "shell_environment_policy.set.DEX_LOOP_MAX_ITERATIONS=\\\"9\\\"" \
   "$DEX_TEST_CODEX_LAST_ARGS"
+# No MCP registry yet: no server overrides.
+if grep -q -- "mcp_servers\." "$DEX_TEST_CODEX_LAST_ARGS"; then
+  printf '%s\n' "Codex session got MCP overrides without a Dex registry" >&2
+  exit 1
+fi
+
 if grep -q -- "factory-secret\|factory-run-secret\|run-secret" \
   "$DEX_TEST_CODEX_LAST_ARGS"; then
   printf '%s\n' "secret runtime values leaked into Codex hook configuration" >&2
   exit 1
 fi
 grep -q -- "Work through the interactive lifecycle." "$DEX_TEST_CODEX_PROMPT"
+
+# Dex's MCP registry reaches an interactive Codex session as -c overrides,
+# minus a server the user's own config.toml already names.
+export CODEX_HOME="$TMP_DIR/codex-home"
+mkdir -p "$DX_TOOL_DIR" "$CODEX_HOME"
+printf '%s\n' '{"mcpServers":{"playwright":{"command":"node","args":["b.cjs","playwright"]},"mine":{"command":"dex-copy"}}}' \
+  > "$DX_TOOL_DIR/mcp-registry.json"
+printf '%s\n' '[mcp_servers.mine]' 'command = "user-copy"' > "$CODEX_HOME/config.toml"
+: > "$DEX_TEST_CODEX_LAST_ARGS"
+DEX_SESSION_ID=provider-codex-registry \
+  bash "$ROOT/bin/dxcodex.sh" session -- "Use the registry."
+grep -qF -- 'mcp_servers.playwright.command="node"' "$DEX_TEST_CODEX_LAST_ARGS"
+grep -qF -- 'mcp_servers.playwright.args=["b.cjs", "playwright"]' "$DEX_TEST_CODEX_LAST_ARGS"
+if grep -q -- "mcp_servers\.mine\." "$DEX_TEST_CODEX_LAST_ARGS"; then
+  printf '%s\n' "a registry server shadowed the user's own Codex server" >&2
+  exit 1
+fi
+rm -f "$DX_TOOL_DIR/mcp-registry.json"
 
 : > "$DEX_TEST_CODEX_LAST_ARGS"
 bash "$ROOT/bin/dxcodex.sh" session --resume \
