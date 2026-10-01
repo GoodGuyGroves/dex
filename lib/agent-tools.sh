@@ -122,7 +122,7 @@ __dx_claude_hook_settings_files() {
   [[ "$current" == "$HOME/.claude/settings.json" ]] || printf '%s\n' "$HOME/.claude/settings.json"
 }
 
-DX_LEGACY_GLOBAL_HOOKS_WARNING="Dex hooks in your Claude settings predate launch-scoped hooks and may run twice in Dex sessions. Run 'dx install --global-hooks' to keep them for other sessions, or 'dx install --no-global-hooks' to remove them."
+DX_LEGACY_GLOBAL_HOOKS_WARNING="Dex hooks in your Claude settings predate launch-scoped hooks, so they run in every Claude session, including ones Dex did not launch, and run twice in Dex sessions if they point at another Dex checkout. Run 'dx install --global-hooks' to keep them for other sessions, or 'dx install --no-global-hooks' to remove them."
 
 DX_STALE_GLOBAL_HOOKS_WARNING="Old Dex hooks in ~/.claude/settings.json are leftovers Claude does not read while CLAUDE_CONFIG_DIR is set. Run 'dx install --no-global-hooks' to remove them."
 
