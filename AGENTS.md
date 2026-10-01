@@ -332,7 +332,12 @@ merged file under `${DEX_HOME:-$DX_LOOP_DIR}/launch-settings/` built by
 line (lifecycle phases only, requested with `DX_LAUNCH_STATUS_LINE=1`) and
 `crossSessionInbound`, the caller's `--settings` in argv order, then
 `DEX_EXTRA_SETTINGS` (a file). Hook arrays add up and Dex's groups are always
-present (the file sets `disableAllHooks: false`); a second `--settings` hidden in
+present (the file sets `disableAllHooks: false`). The file also defaults
+`promptSuggestionEnabled` to false and always sets `plansDirectory` to
+`.dex/plans` (`DX_CLAUDE_PLANS_SUBDIR`, relative because Claude Code refuses a
+directory outside its working directory); the Phase 1 gate and `dx_wt_remove`
+copy the plan to the run's `artifacts/plan.md` (`dx_run_archive_plans`,
+`dx_run_plan_file`). A second `--settings` hidden in
 argv is refused; RTK's hook is dropped unless RTK is
 enabled and installed. Never add a per-caller `--settings`. Nothing is written
 to `~/.claude/settings.json` unless the user runs `dx install --global-hooks`,

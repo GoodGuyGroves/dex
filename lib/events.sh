@@ -1027,3 +1027,130 @@ dx_run_write_summary_for_session() {
   [[ -n "$run_id" ]] || return 0
   dx_run_write_summary_safe "$run_id" "$@"
 }
+
+# ── Claude Code plan files ────────────────────────────────────────────────
+# Every Dex launch sets Claude Code's plansDirectory to this path, relative to
+# the launch directory (scripts/settings-json.py PLANS_DIRECTORY). Claude
+# rejects a plansDirectory outside its working directory and then writes to
+# ~/.claude/plans, so the plans stay in the checkout and the run keeps a copy.
+DX_CLAUDE_PLANS_SUBDIR=".dex/plans"
+
+# dx_claude_plans_ignore [dir] — make git ignore plan files in the checkout
+# <dir> belongs to, a Dex worktree or the user's own checkout. `dx init`
+# ignores only .dex/worktrees/, so a repository that does not ignore the plans
+# itself gets the pattern in its info/exclude, which no commit carries. Called
+# when a lifecycle starts, not on every launch: a session-only launch leaves
+# the user's checkout, .git included, as it found it.
+dx_claude_plans_ignore() {
+  local dir="${1:-$PWD}"
+  git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  git -C "$dir" check-ignore -q --no-index -- "$DX_CLAUDE_PLANS_SUBDIR/plan.md" 2>/dev/null \
+    && return 0
+  # --git-path answers relative to the directory git ran in. A pattern with a
+  # slash in it is anchored to the top, and a launch can start in a
+  # subdirectory, hence the **/.
+  (cd "$dir" && __dx_exclude_worktree_path . "**/$DX_CLAUDE_PLANS_SUBDIR/") || true
+}
+
+# dx_run_plan_file <session-id> — the run's copy of the approved plan, which
+# the lifecycle prompts read instead of Claude's own plan file.
+dx_run_plan_file() {
+  local run_id
+  run_id=$(dx_run_read_for_session "$1" 2>/dev/null) || return 1
+  printf '%s/plan.md\n' "$(dx_run_artifacts_dir "$run_id")"
+}
+
+# dx_run_archive_plans <session-id> <project-dir> — copy the run's plan files
+# from <project-dir>/.dex/plans into its artifacts: the newest plan becomes
+# plan.md, and every plan file, a planning subagent's `-agent-<id>` ones
+# included, goes under plans/. Only files written since the run began count,
+# so an in-place checkout's older plans stay out. A Claude Code that ignores
+# plansDirectory (before 2.1.9) writes to ~/.claude/plans instead; Dex then
+# copies the newest plan from there and warns. It never moves or deletes a
+# plan file. Called at the Phase 1 gate and before a worktree is removed.
+dx_run_archive_plans() {
+  local session_id="$1" project_dir="${2:-$PWD}" run_id result target
+  run_id=$(dx_run_read_for_session "$session_id" 2>/dev/null) || return 0
+  target=$(dx_run_artifacts_dir "$run_id") || return 0
+  result=$(DX_PLANS_SOURCE="$project_dir/$DX_CLAUDE_PLANS_SUBDIR" \
+    DX_PLANS_FALLBACK="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plans" \
+    DX_PLANS_SINCE="$(dx_run_spec_file "$run_id")" \
+    DX_PLANS_TARGET="$target" python3 - <<'PY'
+import os
+import re
+import shutil
+import tempfile
+
+AGENT = re.compile(r"-agent-[A-Za-z0-9]+\.md$")
+try:
+    since = os.stat(os.environ["DX_PLANS_SINCE"]).st_mtime
+except OSError:
+    since = 0
+
+
+def plans(directory):
+    found = []
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return found
+    for name in names:
+        path = os.path.join(directory, name)
+        if name.endswith(".md") and os.path.isfile(path) and not os.path.islink(path):
+            mtime = os.stat(path).st_mtime
+            if mtime >= since:
+                found.append((mtime, name, path))
+    return sorted(found)
+
+
+def newest_main(found):
+    mains = [entry for entry in found if not AGENT.search(entry[1])]
+    return mains[-1] if mains else None
+
+
+found, source = plans(os.environ["DX_PLANS_SOURCE"]), "project"
+if newest_main(found) is None:
+    # Only the newest plan and its own subagents' files: other sessions on this
+    # machine write to the same directory.
+    fallback = plans(os.environ["DX_PLANS_FALLBACK"])
+    main = newest_main(fallback)
+    if main is None:
+        print("none")
+        raise SystemExit(0)
+    slug = main[1][:-len(".md")]
+    found = [entry for entry in fallback
+             if entry[1] == main[1] or entry[1].startswith(slug + "-agent-")]
+    source = "fallback"
+
+os.umask(0o077)
+target = os.environ["DX_PLANS_TARGET"]
+os.makedirs(os.path.join(target, "plans"), exist_ok=True)
+
+
+def copy(path, destination):
+    handle, temporary = tempfile.mkstemp(dir=os.path.dirname(destination))
+    os.close(handle)
+    try:
+        shutil.copyfile(path, temporary)
+        os.replace(temporary, destination)
+    except OSError:
+        os.unlink(temporary)
+        raise
+
+
+for _, name, path in found:
+    copy(path, os.path.join(target, "plans", name))
+copy(newest_main(found)[2], os.path.join(target, "plan.md"))
+print(source)
+PY
+  ) || {
+    dx_warn "Dex could not copy this run's plan into ${target}."
+    return 0
+  }
+  if [[ "$result" == fallback ]]; then
+    dx_warn "Claude Code wrote this run's plan to ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plans: it does not support plansDirectory (Claude Code 2.1.9 or newer does). Dex copied it to ${target}/plan.md; update Claude Code to keep plan files out of ~/.claude."
+    dx_run_log_append_safe "$run_id" "warn" "plans" \
+      "Claude Code ignored plansDirectory; the plan was copied from ~/.claude/plans" 2>/dev/null || true
+  fi
+  return 0
+}

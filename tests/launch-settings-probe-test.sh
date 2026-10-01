@@ -8,10 +8,11 @@
 # - disableAllHooks false in --settings beats true in user or local settings;
 # - --setting-sources drops the excluded layer but never the --settings file;
 # - whether a byte-identical command in two layers runs once or twice
-#   (reported; a legacy ungated install relies on the answer).
+#   (reported; a legacy ungated install relies on the answer);
+# - plansDirectory keeps a plan-mode run's plan out of ~/.claude/plans.
 #
 # It runs only with DEX_PROBE_REAL_CLAUDE=1, needs a real `claude` and an
-# ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, and makes four short model
+# ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, and makes five short model
 # calls. HOME and CLAUDE_CONFIG_DIR point into a sandbox; the real ones are
 # not read. The FINDINGS block at the end is the result to record.
 set -euo pipefail
@@ -129,6 +130,25 @@ finding launch-hook-runs-under-setting-sources-project "$(yes_no "$(count launch
 finding excluded-user-hook-runs-under-setting-sources-project "$(yes_no "$(count user)")"
 [[ "$(count launch)" -ge 1 ]] || FAILED+=('--setting-sources project dropped the --settings hooks')
 [[ "$(count user)" -eq 0 ]] || FAILED+=('--setting-sources project still ran the user hook')
+
+# 5. plansDirectory: a plan-mode run writes its plan under the launch
+#    directory, never ~/.claude/plans. A -p run may finish without writing a
+#    plan at all; that is reported, not failed.
+rm -f "$PROJECT_SETTINGS" "$LOCAL_SETTINGS"
+printf '%s\n' '{}' > "$USER_SETTINGS"
+printf '%s\n' '{"plansDirectory":".dex/plans","promptSuggestionEnabled":false}' > "$LAUNCH"
+(
+  cd "$REPO"
+  env HOME="$SANDBOX_HOME" CLAUDE_CONFIG_DIR="$SANDBOX_HOME/.claude" DEX_LAUNCHED=1 \
+    python3 "$ROOT/tests/test-timeout.py" 300 claude -p \
+      'Plan, in two short steps, how to add the line "probe" to README.md. Write the plan to your plan file, then call ExitPlanMode.' \
+      --settings "$LAUNCH" --permission-mode plan < /dev/null
+) > "$TMP_DIR/plan.out" 2>&1 || true
+plans_here=$(find "$REPO/.dex/plans" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+plans_global=$(find "$SANDBOX_HOME/.claude/plans" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+finding plan-file-under-launch-dir "$(yes_no "$plans_here")"
+finding plan-file-under-claude-plans "$(yes_no "$plans_global")"
+[[ "$plans_global" -eq 0 ]] || FAILED+=('a plan file landed in ~/.claude/plans despite plansDirectory')
 
 printf '%s\n' 'FINDINGS'
 printf '  %s\n' "${FINDINGS[@]}"

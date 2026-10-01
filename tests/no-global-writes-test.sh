@@ -17,6 +17,11 @@
 # status, phase, reload) also run alone in a fresh sandbox, so their own
 # writes show.
 #
+# Claude's own session content is different: a plan file under ~/.claude/plans
+# fails outright (global_writes.py forbidden), whatever expected.tsv says. The
+# stub writes one in every launch Dex makes, honouring plansDirectory as the
+# real CLI does, so the check sees where Dex sends them.
+#
 # Expected failures: tests/fixtures/global-writes/expected.tsv lists today's
 # known writes, each keyed to the unit (01-05) that removes it. A write missing
 # from the list fails, and so does a row nothing matches any more: each unit
@@ -331,6 +336,12 @@ plain_hooks_ok() { # <hooks.jsonl> <step>
 plain_hooks_ok "$ISOLATED_STUB/hooks.jsonl" plain
 grep -q '"hooks": \[[^]]*phase-loop' "$ISOLATED_STUB/launches.jsonl" \
   || fail "no Dex launch carried Dex's hooks in its --settings"
+# The stub writes a plan wherever the launch's settings send Claude's plan
+# files, so a quiet run means Dex sent them somewhere, not that nothing planned.
+for label in session phase; do
+  grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/plans.jsonl" \
+    || fail "the stub wrote no plan for step $label"
+done
 
 # fresh <label> <rc> <zsh code> [--no-skills] — one entry point alone.
 fresh() {
@@ -358,10 +369,18 @@ run_scenario installed 1
 # own are install and uninstall.
 grep -E '^(install|uninstall)	' "$TMP_DIR/installed/observed.tsv" >> "$ALL_OBSERVED"
 
+python3 "$HELPER" forbidden "$ALL_OBSERVED" "$TMP_DIR/installed/observed.tsv" >&2 \
+  || fail "a Dex launch left Claude session content under HOME (above)"
 python3 "$HELPER" check "$ALL_OBSERVED" "$FIXTURES/expected.tsv" "$ROOT" >&2 \
   || fail "global writes differ from tests/fixtures/global-writes/expected.tsv (above)"
 python3 "$HELPER" parity "$TMP_DIR/installed/stub/launches.jsonl" \
   "$ISOLATED_STUB/launches.jsonl" "$FIXTURES/parity-allow.tsv" >&2 \
   || fail "installed and isolated launches differ outside parity-allow.tsv (above)"
+# No Dex session pre-fills its input with a guessed next prompt.
+for label in session phase; do
+  # The stub logs with sorted keys, so these two are adjacent.
+  ! grep -q "\"prompt_suggestions\": true, \"step\": \"$label\"" "$ISOLATED_STUB/launches.jsonl" \
+    || fail "a $label launch left Claude's prompt suggestions on"
+done
 
 printf 'no-global-writes tests passed\n'

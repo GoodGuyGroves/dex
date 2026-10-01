@@ -44,6 +44,16 @@ contract's exact `Issue/PR work:` line.
 
 Before starting, read the implementation guardrails from `prompts/guardrails.md`. Apply them throughout.
 
+In a `dx` lifecycle, Dex copies the approved plan into the run's artifacts at
+the Phase 1 gate. Re-read that copy whenever you need the plan again, for
+example after a compaction or a resume. Plan files under `.dex/plans/` are
+scratch, and Dex launches never write to `~/.claude/plans`.
+
+```bash
+source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
+dx_run_plan_file "${DEX_SESSION_ID:-$(dx_session_id)}"
+```
+
 If `.dex/memory/index.md` exists, read it and load only the memory entries
 whose scope matches the approved plan, changed files, or current phase. Treat
 memory as useful context, not proof: re-check current code before relying on an

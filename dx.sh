@@ -3002,6 +3002,9 @@ __dx_run_phases_inline() {
     return 1
   fi
   dx_dexcode_prepare_run_sync "$run_id" "$wt_dir" "$workspace_mode" "$wt_name" "$raw_input" "dx" || return 1
+  # The launch settings send plan files to .dex/plans in this workspace, a
+  # worktree or the user's own checkout; keep them out of git status.
+  dx_claude_plans_ignore "$wt_dir" || true
   dx_run_maybe_emit_started "$run_id" "Dex lifecycle started" "{\"command\":\"dx\",\"start_phase\":${step},\"workspace_mode\":\"${workspace_mode}\",\"workspace_name\":\"${wt_name}\"}"
   dx_event_maybe_emit_phase_started "$run_id" "$step" "$(__dx_phase_name "$step")" "launcher"
   dx_run_log_append_safe "$run_id" "info" "dx" "Lifecycle started at Phase ${step}: $(__dx_phase_name "$step")"
