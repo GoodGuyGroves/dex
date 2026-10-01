@@ -379,13 +379,19 @@ PY
 
 # Prints "state<TAB>detail" for Greptile on this head. Greptile's check run on
 # the head commit is the signal; without one, its summary comment counts once it
-# carries a score and was updated after the head commit.
+# carries a score and was updated after the head commit. A check run that
+# completed without reviewing (skipped, cancelled, timed out, stale) is
+# `failed`: the gate keeps waiting so the agent can re-trigger, and the wait
+# timeout still bounds it.
 __dx_reviewers_greptile_state() {
   local gs_session="$1" gs_pr="$2" gs_head="$3" gs_triggered="$4" check comments commit
   check=$(__dx_reviewers_greptile_check "$gs_session" "$gs_head") || return 1
   case "${check%%	*}" in
     completed)
-      printf 'done\t%s\n' "${check#*	}"
+      case "${check#*	}" in
+        skipped|cancelled|timed_out|stale) printf 'failed\t%s\n' "${check#*	}" ;;
+        *) printf 'done\t%s\n' "${check#*	}" ;;
+      esac
       return 0
       ;;
     "") ;;
@@ -440,7 +446,8 @@ PY
 # Whether every `wait: yes` adapter reviewer has finished on the PR's head.
 # Prints one line per waited reviewer:
 #   handle<TAB>adapter<TAB>state<TAB>elapsed_seconds<TAB>detail
-# state: done | in-progress | not-started | timeout | unavailable | unknown.
+# state: done | in-progress | not-started | failed | timeout | unavailable |
+# unknown. Only done, timeout and unavailable stop the wait.
 # Each reviewer's clock starts at its recorded trigger, else at the first time
 # the gate saw it on this head, and runs for dx_complete_reviewer_wait_minutes.
 # A timeout is final for that head and is a reported gap, never a clean review.

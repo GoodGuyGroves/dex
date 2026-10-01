@@ -418,6 +418,14 @@ out=$(dx_reviewer_gate "$SESSION" "$repo" 7)
 assert_eq "done" "$(printf '%s\n' "$out" | cut -f3)" "greptile check run completed"
 assert_eq success "$(printf '%s\n' "$out" | cut -f5)" "conclusion in detail"
 
+# A check run that finished without reviewing is a failure, not a review.
+reset_gh
+greptile_run completed '"skipped"'
+rc=0
+out=$(dx_reviewer_gate "$SESSION" "$repo" 7) || rc=$?
+assert_eq 1 "$rc" "skipped greptile run keeps waiting"
+assert_eq failed "$(printf '%s\n' "$out" | cut -f3)" "skipped greptile run is failed"
+
 # No check run: a scored summary updated after the head commit counts.
 reset_gh
 no_greptile_run

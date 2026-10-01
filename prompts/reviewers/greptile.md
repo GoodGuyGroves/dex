@@ -48,7 +48,9 @@ behaviour. Do not put review feedback or other untrusted text into it.
 
 `dx_reviewer_gate` decides; do not judge it from the comments yourself.
 Greptile is done on the head when its check run on the head commit (a check
-whose name contains "greptile") has completed. Without a check run, its summary
+whose name contains "greptile") has completed. A run that completed as
+skipped, cancelled, timed out or stale reviewed nothing: the gate reports it
+as `failed` and keeps waiting, so trigger it once more. Without a check run, its summary
 comment counts once it carries a confidence score (`N/5`) or a review counter
 (`Reviews (N)`) and was updated after the head commit.
 
