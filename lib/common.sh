@@ -4,7 +4,9 @@
 # Source this from any script:
 #   source "$DEX_DIR/lib/common.sh"
 #
-# Provides: DEX_DIR, DX_STATE_DIR, DX_LOOP_DIR, DX_ARTIFACT_DIR, DX_TOOL_DIR, DX_RUN_ROOT, dx_repo_root()
+# Provides: DEX_DIR, the Dex state paths resolved from DEX_HOME (DX_STATE_DIR,
+# DX_LOOP_DIR, DX_ARTIFACT_DIR, DX_TOOL_DIR, DX_RUN_ROOT and the rest, below),
+# dx_repo_root()
 # Also sources: lib/lock.sh, lib/git.sh, lib/session.sh, lib/session-process.sh,
 # lib/override.sh, lib/completion.sh,
 # lib/session-runtime.sh, lib/session-catalog.sh, lib/output.sh,
@@ -25,17 +27,100 @@ if [[ -z "${DEX_DIR:-}" ]]; then
   export DEX_DIR
   unset _dx_self
 fi
-# State dirs are exported so child processes that cannot source this file
-# (python hooks, spawned CLI sessions, per-pass review waves) resolve the same
-# paths as the launching shell — including any user override of these vars.
-export DX_STATE_DIR="${DX_STATE_DIR:-$HOME/.claude/.dex-phases}"
-export DX_LOOP_DIR="${DX_LOOP_DIR:-$HOME/.claude/.dex-loops}"
-# Used by UI capture helpers
-export DX_ARTIFACT_DIR="${DX_ARTIFACT_DIR:-$HOME/.claude/.dex-artifacts}"
-# Used by Dex-managed tools
-export DX_TOOL_DIR="${DX_TOOL_DIR:-$HOME/.claude/.dex-tools}"
-# Used by run event helpers
-export DX_RUN_ROOT="${DX_RUN_ROOT:-$HOME/.dex/runs}"
+# Dex state paths. DEX_HOME, when set to an absolute path, is the one root for
+# all Dex state and every path below defaults beneath it; unset, each keeps
+# its legacy location. An explicit value of any one of them still wins, and
+# empty counts as unset. A trailing / is dropped; a relative or `~` DEX_HOME
+# is ignored with a warning.
+# hooks/dex_paths.py and scripts/dex-paths.cjs mirror this table for readers
+# that run without this file; tests/dex-home-paths-test.sh keeps them in step.
+#
+# Export: with DEX_HOME set, every path is exported so hooks, spawned CLI
+# sessions and review waves agree. Unset, only the original five are, as
+# before; the rest stay shell variables and each child resolves its own.
+#
+# DX_PATHS_FROM records the DEX_HOME and HOME the exported values came from. A
+# child that changed either one recomputes each path still equal to the old
+# default, so `HOME=B bin/setup.sh` from a shell resolved for A writes under B.
+# A value that differs from the old default is a real override and stays.
+
+# __dx_path_default <name> <dex_home> <home> — sets __dx_default (the
+# caller's local); empty when
+# the name has no default in that mode (DEXCODE_CONFIG_DIR without DEX_HOME
+# keeps lib/dexcode.sh's call-time XDG default).
+__dx_path_default() {
+  local sub legacy
+  case "$1" in
+    DX_STATE_DIR) sub=state legacy=.claude/.dex-phases ;;
+    DX_LOOP_DIR) sub=loops legacy=.claude/.dex-loops ;;
+    DX_ARTIFACT_DIR) sub=artifacts legacy=.claude/.dex-artifacts ;;
+    DX_TOOL_DIR) sub=tools legacy=.claude/.dex-tools ;;
+    DX_RUN_ROOT) sub=runs legacy=.dex/runs ;;
+    DX_MAINTENANCE_DIR) sub=maintenance legacy=.claude/.dex-maintenance ;;
+    DX_LOG_DIR) sub=logs legacy=.dex/logs ;;
+    DEX_ROUTER_HOME) sub=router legacy=.dex/router ;;
+    DEXCODE_CONFIG_DIR) sub=dexcode legacy= ;;
+    DX_PROVIDER_GLOBAL_CONFIG) sub=providers.json legacy=.dex/providers.json ;;
+    DX_SETUP_FILE) sub=setup.json legacy=.dex/setup.json ;;
+    DX_INSTALL_STATE_FILE) sub=install-state.json legacy=.claude/.dex-install-state.json ;;
+  esac
+  if [[ -n "$2" ]]; then
+    __dx_default="$2/$sub"
+  elif [[ -n "$legacy" ]]; then
+    __dx_default="$3/$legacy"
+  else
+    __dx_default=""
+  fi
+}
+
+# dx_resolve_state_paths — apply the rules above to the current DEX_HOME and
+# HOME. Runs when this file is sourced, and again at the top of dx.sh's public
+# commands so an `export DEX_HOME=...` in an interactive shell takes effect
+# without `dx reload`. No forks; with an unchanged marker it only fills gaps.
+#
+# ponytail: provenance is value-based. An override set to exactly the old
+# default cannot be told from an inherited default, so it is recomputed when
+# HOME or DEX_HOME changes; pick a path that differs from the default to keep
+# it. hooks/dex_paths.py and scripts/dex-paths.cjs do not read DX_PATHS_FROM,
+# so a reader started directly with another HOME uses the values it inherited.
+# Upgrade path: export an explicit list of overridden names alongside it.
+dx_resolve_state_paths() {
+  local __dx_home="${DEX_HOME:-}" __dx_old __dx_n __dx_v __dx_default
+  while [[ "$__dx_home" == ?*/ ]]; do __dx_home="${__dx_home%/}"; done
+  if [[ -n "$__dx_home" && "$__dx_home" != /* ]]; then
+    command -v dx_warn >/dev/null 2>&1 || source "$DEX_DIR/lib/output.sh"
+    dx_warn "Ignoring DEX_HOME=$__dx_home: it must be an absolute path. Using the default state locations."
+    __dx_home=""
+  fi
+  # Empty, relative and `~` all end up unset, so children agree.
+  if [[ -n "$__dx_home" ]]; then export DEX_HOME="$__dx_home"; else unset DEX_HOME; fi
+  __dx_old="${DX_PATHS_FROM:-}"
+  [[ "$__dx_old" != "$__dx_home|$HOME" ]] || __dx_old=""
+  for __dx_n in DX_STATE_DIR DX_LOOP_DIR DX_ARTIFACT_DIR DX_TOOL_DIR DX_RUN_ROOT \
+      DX_MAINTENANCE_DIR DX_LOG_DIR DEX_ROUTER_HOME DEXCODE_CONFIG_DIR \
+      DX_PROVIDER_GLOBAL_CONFIG DX_SETUP_FILE DX_INSTALL_STATE_FILE; do
+    eval "__dx_v=\${$__dx_n:-}"
+    if [[ -n "$__dx_v" && -n "$__dx_old" ]]; then
+      __dx_path_default "$__dx_n" "${__dx_old%%|*}" "${__dx_old#*|}"
+      [[ "$__dx_v" != "$__dx_default" ]] || __dx_v=""
+    fi
+    if [[ -z "$__dx_v" ]]; then
+      __dx_path_default "$__dx_n" "$__dx_home" "$HOME"
+      __dx_v="$__dx_default"
+    fi
+    if [[ -z "$__dx_v" ]]; then
+      unset "$__dx_n"
+      continue
+    fi
+    case "$__dx_home:$__dx_n" in
+      ?*:*|*:DX_STATE_DIR|*:DX_LOOP_DIR|*:DX_ARTIFACT_DIR|*:DX_TOOL_DIR|*:DX_RUN_ROOT)
+        export "$__dx_n=$__dx_v" ;;
+      *) eval "$__dx_n=\$__dx_v" ;;
+    esac
+  done
+  export DX_PATHS_FROM="$__dx_home|$HOME"
+}
+dx_resolve_state_paths
 
 # Matches a ~/.zshrc line that loads Dex: the current install layout, the
 # legacy dex-cli checkout name, and DEX_DIR-based source lines. Shared by

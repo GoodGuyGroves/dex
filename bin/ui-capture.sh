@@ -5,6 +5,8 @@ set -euo pipefail
 umask 077
 
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
+# Its own process, so the cache variables reach only the Playwright it runs.
+__dx_ui_capture_export_caches
 
 usage() {
   cat <<'USAGE'
@@ -35,7 +37,8 @@ Capture options:
 Legacy form is supported: ui-capture.sh --url URL [...]
 
 Artifacts are temporary and are written to:
-  ${DX_ARTIFACT_DIR:-~/.claude/.dex-artifacts}/ui/<session>/
+  $DX_ARTIFACT_DIR/ui/<session>/
+  ($DEX_HOME/artifacts when DEX_HOME is set, otherwise ~/.claude/.dex-artifacts)
 USAGE
 }
 

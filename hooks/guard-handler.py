@@ -43,6 +43,7 @@ import time
 # PYTHONSAFEPATH, so name the directory rather than depend on the default.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shell_parse import *  # noqa: E402,F403  shared shell-command parsing
+from dex_paths import dex_path  # noqa: E402  state paths, as lib/common.sh resolves them
 
 
 def parse_frontmatter(text):
@@ -335,7 +336,7 @@ def provider_repo_config_path():
 
 
 def provider_global_config_path():
-    return os.path.expanduser('~/.dex/providers.json')
+    return dex_path('DX_PROVIDER_GLOBAL_CONFIG')
 
 
 def provider_repo_session_key():
@@ -433,8 +434,7 @@ def provider_session_engine():
     session_id = provider_session_id()
     if not session_id:
         return ''
-    loop_dir = os.environ.get('DX_LOOP_DIR') or os.path.expanduser('~/.claude/.dex-loops')
-    state_file = os.path.join(loop_dir, f'{session_id}.provider')
+    state_file = os.path.join(dex_path('DX_LOOP_DIR'), f'{session_id}.provider')
     engine = ''
     state_session = ''
     try:
@@ -2343,10 +2343,7 @@ def _project_contract_reader():
 
 
 def _heavy_command_cache_file():
-    state_dir = os.environ.get(
-        'DX_STATE_DIR', os.path.join(os.path.expanduser('~'), '.claude', '.dex-phases')
-    )
-    return os.path.join(state_dir, 'guard-heavy-commands.json')
+    return os.path.join(dex_path('DX_STATE_DIR'), 'guard-heavy-commands.json')
 
 
 def _heavy_command_cache_read(contract, stamp):
@@ -2784,10 +2781,7 @@ def _trusted_private_text(session_id, suffix, max_bytes):
         return None
     if suffix not in {'overrides', 'phase'}:
         return None
-    state_dir = os.environ.get(
-        'DX_STATE_DIR', os.path.join(os.path.expanduser('~'), '.claude', '.dex-phases')
-    )
-    target = os.path.join(state_dir, f'{session_id}.{suffix}')
+    target = os.path.join(dex_path('DX_STATE_DIR'), f'{session_id}.{suffix}')
     try:
         before = os.lstat(target)
     except FileNotFoundError:

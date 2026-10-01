@@ -10,11 +10,23 @@ DX_UI_CAPTURE_FFMPEG_STATIC_VERSION="5.3.0"
 DX_UI_CAPTURE_KOKORO_VERSION="1.2.1"
 
 dx_tools_dir() {
-  printf '%s\n' "${DX_TOOL_DIR:-$HOME/.claude/.dex-tools}"
+  printf '%s\n' "$DX_TOOL_DIR"
 }
 
 dx_artifacts_dir() {
-  printf '%s\n' "${DX_ARTIFACT_DIR:-$HOME/.claude/.dex-artifacts}"
+  printf '%s\n' "$DX_ARTIFACT_DIR"
+}
+
+# __dx_ui_capture_export_caches — point the npm cache and Playwright's browser
+# download at DX_TOOL_DIR when DEX_HOME is set, unless the user already chose
+# them (a Nix-provided browser bundle, say). Call it only inside a subshell or
+# a bin/ script: dx.sh is sourced into interactive shells, and exporting there
+# would move the user's own npm cache too. scripts/browser-mcp.cjs applies the
+# same rule.
+__dx_ui_capture_export_caches() {
+  [[ -n "${DEX_HOME:-}" ]] || return 0
+  export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$DX_TOOL_DIR/ms-playwright}"
+  export npm_config_cache="${npm_config_cache:-$DX_TOOL_DIR/npm-cache}"
 }
 
 dx_ui_capture_tools_dir() {
@@ -365,6 +377,7 @@ dx_install_ui_capture_playwright() {
     dx_info "Installing Playwright UI capture tooling into $(dx_ui_capture_tools_dir)"
     if ! (
       cd "$tools_dir" || exit 1
+      __dx_ui_capture_export_caches
       npm install --no-audit --no-fund --save-exact \
         "playwright@${DX_UI_CAPTURE_PLAYWRIGHT_VERSION}" \
         "@playwright/test@${DX_UI_CAPTURE_PLAYWRIGHT_VERSION}" \
@@ -380,6 +393,7 @@ dx_install_ui_capture_playwright() {
   dx_info "Ensuring Playwright Chromium browser is installed"
   if ! (
     cd "$tools_dir" || exit 1
+    __dx_ui_capture_export_caches
     npx playwright install chromium
   ); then
     dx_warn "Playwright Chromium download failed; UI capture will be unavailable"
@@ -411,7 +425,10 @@ chrome-devtools chrome-devtools-mcp@latest'
 # scope is for a CLI that has none (Codex).
 __dx_install_ui_mcp_servers() {
   local label="$1" cli="$2" scope="${3:-}"
-  local scope_args=() legacy_scope_args=()
+  local scope_args=() legacy_scope_args=() env_args=()
+  # A user-scope server also starts in sessions Dex did not launch; DEX_HOME
+  # is how browser-mcp.cjs finds the tool directory there.
+  [[ -z "${DEX_HOME:-}" ]] || env_args=(--env "DEX_HOME=$DEX_HOME")
   if [[ -n "$scope" ]]; then
     scope_args=(--scope "$scope")
     # browser-mcp-legacy.py only reads the user-scope registrations, so a
@@ -442,7 +459,7 @@ __dx_install_ui_mcp_servers() {
       upgrading=1
     fi
     dx_info "Installing ${label} MCP server '${name}'"
-    if "$cli" mcp add ${scope_args[@]+"${scope_args[@]}"} "$name" -- node "$DEX_DIR/scripts/browser-mcp.cjs" "$name" >/dev/null; then
+    if "$cli" mcp add ${scope_args[@]+"${scope_args[@]}"} "$name" ${env_args[@]+"${env_args[@]}"} -- node "$DEX_DIR/scripts/browser-mcp.cjs" "$name" >/dev/null; then
       dx_done "Installed ${label} MCP server '${name}'"
     else
       dx_warn "Could not install ${label} MCP server '${name}'"

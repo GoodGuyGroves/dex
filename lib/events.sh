@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Dex shared library - local run IDs and structured event journals.
 
-dx_run_root() { printf '%s\n' "${DX_RUN_ROOT:-$HOME/.dex/runs}"; }
+dx_run_root() { printf '%s\n' "$DX_RUN_ROOT"; }
 
 dx_run_validate_id() {
   local run_id="$1"

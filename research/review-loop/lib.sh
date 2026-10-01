@@ -6,7 +6,8 @@ REVIEW_EVAL_DIR="$(cd "$(dirname "$_REVIEW_EVAL_SOURCE")" && pwd)"
 # shellcheck disable=SC2034  # consumed by run.sh after sourcing this library
 REVIEW_EVAL_REPO_ROOT="$(cd "$REVIEW_EVAL_DIR/../.." && pwd)"
 REVIEW_EVAL_SCENARIOS_DIR="${REVIEW_EVAL_SCENARIOS_DIR:-$REVIEW_EVAL_DIR/scenarios}"
-REVIEW_EVAL_RESULTS_DIR="${REVIEW_EVAL_RESULTS_DIR:-${DX_RUN_ROOT:-$HOME/.dex/runs}/review-evaluations}"
+# DX_RUN_ROOT as lib/common.sh resolves it (DEX_HOME aware), without loading it.
+REVIEW_EVAL_RESULTS_DIR="${REVIEW_EVAL_RESULTS_DIR:-$(python3 "$REVIEW_EVAL_REPO_ROOT/hooks/dex_paths.py" DX_RUN_ROOT)/review-evaluations}"
 REVIEW_EVAL_MAX_REPLICAS=20
 # shellcheck disable=SC2034  # enforced by run.sh after sourcing this library
 REVIEW_EVAL_MAX_JOBS=16

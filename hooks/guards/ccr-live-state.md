@@ -7,7 +7,8 @@ action: warn
 ---
 
 An ad-hoc interpreter call is touching CCR router internals or the live
-router state under `~/.dex/router/`.
+router state under `$DEX_ROUTER_HOME` (`~/.dex/router/`, or
+`$DEX_HOME/router/` when `DEX_HOME` is set).
 
 That state decides whether the user can run claude and codex at all, so
 writing to it outside the CLI has locked users out of their own agents: a

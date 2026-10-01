@@ -3981,6 +3981,7 @@ __dx_choose_prompt_mode() {
 
 { unalias dx; unfunction dx; } 2>/dev/null || true
 dx() {
+  dx_resolve_state_paths  # pick up a DEX_HOME exported since dx.sh was sourced
   if [[ $# -eq 0 ]]; then
     echo "Usage: dx <NUMBER>        (e.g. dx 999, dx ENG-999)"
     echo "       dx \"<description>\" (e.g. dx \"fix login bug\")"
@@ -4364,6 +4365,7 @@ __dx_finalize_standalone_pause() {
 
 { unalias dxloop; unfunction dxloop; } 2>/dev/null || true
 dxloop() {
+  dx_resolve_state_paths
   if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
     echo "Usage: dxloop [prompt]"
     echo "Run a prompt through an audited implementation loop. Without a prompt, use the default codebase-improvement task."
@@ -4635,6 +4637,7 @@ $(__dx_provider_prompt)"
 
 { unalias dxtriage; unfunction dxtriage; } 2>/dev/null || true
 dxtriage() {
+  dx_resolve_state_paths
   dx_triage_run "$@"
 }
 
@@ -4647,6 +4650,7 @@ dxrefine() {
 
 { unalias dxcomplete; unfunction dxcomplete; } 2>/dev/null || true
 dxcomplete() {
+  dx_resolve_state_paths
   if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
     echo "Usage: dxcomplete"
     echo "Complete the pull request for the current branch."
@@ -4984,6 +4988,7 @@ Use the $(dx_skill_ref humanizer) skill before posting user-facing PR or ticket 
 { unalias dxreviewloop; unfunction dxreviewloop; } 2>/dev/null || true
 # Public command: the implementation lives in lib/review-loop.sh.
 dxreviewloop() {
+  dx_resolve_state_paths
   dx_review_loop_run "$@"
 }
 
@@ -4991,6 +4996,7 @@ dxreviewloop() {
 
 { unalias dxrm; unfunction dxrm; } 2>/dev/null || true
 dxrm() {
+  dx_resolve_state_paths
   if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
     echo "Usage: dxrm <NUMBER|name>"
     echo "       dxrm --all"
@@ -5239,6 +5245,7 @@ dxrm() {
 
 { unalias dxls; unfunction dxls; } 2>/dev/null || true
 dxls() {
+  dx_resolve_state_paths
   if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
     echo "Usage: dxls"
     echo "List Dex worktrees for the current repository."
@@ -5307,6 +5314,7 @@ dxls() {
 
 { unalias dxcd; unfunction dxcd; } 2>/dev/null || true
 dxcd() {
+  dx_resolve_state_paths
   if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
     echo "Usage: dxcd [NUMBER|name]"
     echo "Open a Dex worktree, or return to the repository root without an argument."
@@ -5407,6 +5415,7 @@ dxcd() {
 
 { unalias dxclean; unfunction dxclean; } 2>/dev/null || true
 dxclean() {
+  dx_resolve_state_paths
   local clean_apply=0 clean_help=0 clean_arg=""
   for clean_arg in "$@"; do
     case "$clean_arg" in

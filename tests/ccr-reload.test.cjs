@@ -14,8 +14,9 @@ const checkout = path.join(directory, 'checkout');
 const copy = path.join(checkout, 'scripts', 'ccr');
 fs.mkdirSync(copy, { recursive: true });
 fs.mkdirSync(path.join(checkout, '.git'));
-// Process identity and journal events run bin/router-runtime.sh from the checkout.
-for (const name of ['bin', 'lib', 'scripts/dex_redact.py']) fs.symlinkSync(path.join(__dirname, '..', name), path.join(checkout, name));
+// Process identity and journal events run bin/router-runtime.sh from the
+// checkout; state.cjs resolves its root through scripts/dex-paths.cjs.
+for (const name of ['bin', 'lib', 'hooks', 'scripts/dex_redact.py', 'scripts/dex-paths.cjs']) fs.symlinkSync(path.join(__dirname, '..', name), path.join(checkout, name));
 for (const name of fs.readdirSync(path.join(__dirname, '..', 'scripts', 'ccr'))) {
   if (/\.(cjs|py)$/.test(name)) fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'ccr', name), path.join(copy, name));
 }

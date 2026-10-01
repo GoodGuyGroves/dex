@@ -358,11 +358,11 @@ dx_claude_inbound_setting() {
 # on, off, or unset.
 dx_session_messaging_preference() {
   python3 "$DEX_DIR/scripts/settings-json.py" session-messaging \
-    "$HOME/.claude/.dex-install-state.json"
+    "$DX_INSTALL_STATE_FILE"
 }
 
 dx_set_session_messaging_preference() {
-  local state="$1" file="$HOME/.claude/.dex-install-state.json" tmp
+  local state="$1" file="$DX_INSTALL_STATE_FILE" tmp
   tmp="${file}.tmp.$$"
   mkdir -p "$(dirname "$file")"
   if python3 "$DEX_DIR/scripts/settings-json.py" \
@@ -371,7 +371,7 @@ dx_set_session_messaging_preference() {
     return 0
   fi
   rm -f "$tmp"
-  dx_warn "Could not update ~/.claude/.dex-install-state.json"
+  dx_warn "Could not update $file"
   return 1
 }
 
@@ -868,7 +868,7 @@ dx_bootstrap_agent_tooling() {
   dx_install_safe_official_claude_plugins "$root" || failed=1
   dx_refresh_global_claude_hooks || failed=1
 
-  if [[ -f "${DEX_ROUTER_HOME:-$HOME/.dex/router}/config.json" ]] && command -v node >/dev/null 2>&1; then
+  if [[ -f "$DEX_ROUTER_HOME/config.json" ]] && command -v node >/dev/null 2>&1; then
     local native_router_output
     if native_router_output=$(node "$DEX_DIR/scripts/ccr/native.cjs" sync 2>&1); then
       [[ -z "$native_router_output" ]] || dx_ok "$native_router_output"

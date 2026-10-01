@@ -4,12 +4,12 @@ set -euo pipefail
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
 
 usage() {
-  cat <<'USAGE'
+  cat <<USAGE
 Usage: dx review stats [--json] [--root <dir>]
        dx review -h | --help
 
 Report what the review loop actually did, per risk tier, from the telemetry
-Dex already writes under ~/.dex/runs/*/events.jsonl.
+Dex already writes under $DX_RUN_ROOT/*/events.jsonl.
 
 Per tier: loops recorded, median passes and minutes per loop, how many loops
 reached the clean gate and how many never did, how many passes ran after clean
@@ -22,7 +22,7 @@ in the pull request that changes it.
 
 Options:
   --json         Emit the rows as JSON instead of a table
-  --root <dir>   Read telemetry from this directory instead of ~/.dex/runs
+  --root <dir>   Read telemetry from this directory instead of $DX_RUN_ROOT
   -h, --help     Show this help
 USAGE
 }

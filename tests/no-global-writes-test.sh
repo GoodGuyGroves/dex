@@ -10,9 +10,9 @@
 # and never touch the network. The Dex checkout itself is watched too: its
 # `git status` must not change.
 #
-# The isolated run unsets every DX_* state override and CLAUDE_CONFIG_DIR, so
-# the ~/.claude/.dex-* and ~/.dex defaults fire. Those are what unit 05 exists
-# to remove; setting the overrides here would hide them. Entry points that
+# Every step starts from a clean environment: no DX_* state override and no
+# CLAUDE_CONFIG_DIR, only DEX_HOME, so a state path that ignores DEX_HOME lands
+# in ~/.claude or ~/.dex where the snapshot sees it. Entry points that
 # would only repeat writes an earlier step already made (session, tools,
 # status, phase, reload) also run alone in a fresh sandbox, so their own
 # writes show.
@@ -23,7 +23,7 @@
 # deletes its own rows, and after unit 05 the file is empty.
 #
 # Parity: the same scenario runs once after a sandboxed `dx install` and once
-# isolated, at the same path so path-derived session keys agree, and the
+# without it, at the same path so path-derived session keys agree, and the
 # configuration every stub `claude` launch received is compared: hooks,
 # skills, plugins, MCP servers, settings and DEX_/DX_/CLAUDE_ environment
 # values. Intended differences live in parity-allow.tsv.
@@ -279,12 +279,12 @@ code = os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:]))
 sys.exit(code if code >= 0 else 128 - code)')
 
 # run_scenario <name> <installed:0|1> — the installed run is someone who used
-# `dx install` and has no DEX_HOME; the isolated run launches with one. Both
-# run at the same path and are moved aside afterwards.
+# `dx install` first; the isolated run never installs. Both launch with
+# DEX_HOME, run at the same path and are moved aside afterwards. Unset
+# DEX_HOME paths are covered by tests/dex-home-paths-test.sh.
 run_scenario() {
   new_sandbox "$TMP_DIR/box"
   if [[ "$2" == 1 ]]; then
-    SB_DEX_HOME_ENV=()
     dx_step install "$NO_INPUT" 0 'dx install'
   fi
   dx_step init "$DEFAULTS" 0 'dx init'

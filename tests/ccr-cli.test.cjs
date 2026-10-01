@@ -156,7 +156,8 @@ test('public router setup and enable select one global CCR default only after ac
   const root = path.resolve(__dirname, '..');
   const bin = path.join(directory, 'bin'); fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'node'), '#!/bin/sh\nif [ "$1" = -e ]; then exit 0; fi\nif [ "${FAIL_ACTIVATION:-}" = 1 ]; then exit 7; fi\nprintf \'"activated"\\n\'\n', { mode: 0o700 });
-  const env = { ...process.env, HOME: directory, DEX_DIR: root, PATH: `${bin}:${process.env.PATH}` };
+  // The legacy layout under this HOME; an empty DEX_HOME counts as unset.
+  const env = { ...process.env, HOME: directory, DEX_HOME: '', DEX_DIR: root, PATH: `${bin}:${process.env.PATH}` };
   const file = path.join(directory, '.dex/providers.json');
   const original = { default: 'codex-subscription', profiles: { personal: { engine: 'claude', auth: 'subscription', model: 'opus' } } };
   const run = (action, extra = {}) => spawnSync('bash', [path.join(root, 'bin/router.sh'), 'router', action, '--json'], { cwd: directory, env: { ...env, ...extra }, encoding: 'utf8' });

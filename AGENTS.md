@@ -134,7 +134,7 @@ When writing shared files (e.g., `~/.claude/settings.json`), use temp files + at
 
 ### State files
 
-All ephemeral state goes under `~/.claude/.dex-phases/` or `~/.claude/.dex-loops/`, keyed by session ID. Persistent init and attribution provenance may live in the repository's Git directory so `dx uninit` can restore user configuration safely. Never store state in tracked project files (except `.dex/worktrees/`, which is gitignored).
+All ephemeral state goes under `$DX_STATE_DIR` or `$DX_LOOP_DIR` (`~/.claude/.dex-phases/` and `~/.claude/.dex-loops/`, or beneath `DEX_HOME` when it is set), keyed by session ID. Resolve state paths through `lib/common.sh`, `hooks/dex_paths.py` or `scripts/dex-paths.cjs`; never hardcode a default. Persistent init and attribution provenance may live in the repository's Git directory so `dx uninit` can restore user configuration safely. Never store state in tracked project files (except `.dex/worktrees/`, which is gitignored).
 
 ## Skill Conventions
 

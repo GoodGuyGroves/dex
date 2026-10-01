@@ -19,7 +19,7 @@ for arg in "$@"; do
 done
 
 SETTINGS_FILE=$(dx_claude_settings_file)
-INSTALL_STATE_FILE="$HOME/.claude/.dex-install-state.json"
+INSTALL_STATE_FILE="$DX_INSTALL_STATE_FILE"
 SETTINGS_JSON_HELPER="$DEX_DIR/scripts/settings-json.py"
 mkdir -p "${SETTINGS_FILE%/*}" "${INSTALL_STATE_FILE%/*}"
 
