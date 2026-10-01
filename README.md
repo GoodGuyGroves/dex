@@ -57,6 +57,23 @@ Ticket IDs (`dx 1234`, `dx ENG-123`), resume commands, and explicit workspace
 flags such as `--no-worktree` select the workflow directly. Without a terminal,
 free-form prompts require `--session` or `--workflow`; Dex will not guess.
 
+By default Dex keys a ticket on its number, so `ENG-123` and `OPS-123` share
+one workspace. If your tracker has team prefixes, list them under `## Tickets`
+in `.dex/dex.md`:
+
+````markdown
+## Tickets
+
+```yaml
+ticket_prefixes: [ENG, OPS]
+```
+````
+
+Each listed prefix then gets its own workspace (`ticket-eng-123`) and branch,
+and Dex detects lowercase tracker branches such as `user/eng-123-title`.
+Workspaces created before you added the list still resume. Avoid listing a
+prefix that is also a common word in branch names, such as `ADD`.
+
 To prepare tickets before starting implementation, run `dx triage 1234` or
 `dx triage --project "Project name"`. It clarifies requirements, estimates effort,
 checks related work, and organises tickets in your tracker. `dx refine` is an

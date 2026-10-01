@@ -472,6 +472,14 @@ A project declares its own resource facts in a fenced YAML block under
 `targeted_tests`). Read it only through `dx_project_contract_values`; an absent
 section means "Dex decides" and must change nothing.
 
+A project whose tracker uses team prefixes lists them in a fenced YAML block
+under `## Tickets` (`ticket_prefixes: [ENG, OPS]`). It is a separate section
+because `dx config` rewrites `## Integrations` whole. Parse tickets only through
+`lib/ticket.sh`: `dx_ticket_parse` is the one place digits are stripped. A
+listed prefix becomes part of the ticket ID (`ENG-1234`), the workspace
+(`ticket-eng-1234`), the branch and the `ticket_id=` metadata. Without the list,
+every name stays number-only, exactly as before.
+
 ### Session IDs
 
 Derived from a stable repo key plus worktree names (`worktree-<name>`) or branch names (fallback). Used to key all state files. Path-based derivation makes worktree sessions stable across branch renames while the repo key prevents cross-repo collisions in the global state directories.

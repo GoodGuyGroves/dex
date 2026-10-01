@@ -110,6 +110,17 @@ on_session_end: [exact command]    # release what the session alone held
 orphan_resources: [exact command]  # names `dx worktree audit` and `dxclean` hand back
 ```
 
+## Tickets
+
+Optional. Include it only when the tracker's ticket IDs carry team prefixes.
+
+```yaml
+# Listed prefixes become part of the ticket ID: ENG-1234 and OPS-1234 get
+# separate workspaces, and lowercase tracker branches (user/eng-1234-title)
+# are detected. Without this, every ticket is its number.
+ticket_prefixes: [ENG, OPS]
+```
+
 ## Project Structure
 [Brief description of directory layout and what each area contains]
 

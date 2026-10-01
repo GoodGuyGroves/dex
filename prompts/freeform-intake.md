@@ -33,6 +33,8 @@ issue. Session-only launches do not run this intake.
 
    Use `existing` or `created` only after reading the selected issue, and also
    save `tracker_key=<KEY-OR-URL>` and `ticket_number=<NUMBER-IF-GITHUB>`.
+   When `## Tickets` in `.dex/dex.md` lists the key's prefix, also save
+   `ticket_id=<PREFIX-N>` in upper case (for example `ticket_id=ENG-123`).
    Use `declined` only when the user chose to continue without an issue;
    `unavailable` means no configured tracker or a headless spec without issue
    creation authorization. Explain the decision in the setup summary.
