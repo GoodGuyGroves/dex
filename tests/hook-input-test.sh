@@ -87,4 +87,79 @@ if grep -q '^34$' "$TMP_DIR/ticket.out"; then
   exit 1
 fi
 
+# Ticket detection with and without `## Tickets` prefixes. The hook renders
+# a stand-in instructions template so both placeholders are visible.
+FAKE_DEX="$TMP_DIR/fake-dex"
+mkdir -p "$FAKE_DEX/prompts"
+ln -s "$ROOT/lib" "$FAKE_DEX/lib"
+ln -s "$ROOT/scripts" "$FAKE_DEX/scripts"
+printf 'Render: num={{TICKET_NUM}} id={{TICKET_ID}} branch={{BRANCH}}\n' \
+  > "$FAKE_DEX/prompts/ticket-instructions.md"
+
+PREFIXED_REPO="$TMP_DIR/prefixed-repo"
+git init -q "$PREFIXED_REPO"
+git -C "$PREFIXED_REPO" config user.email test@example.com
+git -C "$PREFIXED_REPO" config user.name Test
+mkdir -p "$PREFIXED_REPO/.dex"
+printf '# Dex\n\n## Tickets\n\n```yaml\nticket_prefixes: [ENG, OPS]\n```\n' \
+  > "$PREFIXED_REPO/.dex/dex.md"
+git -C "$PREFIXED_REPO" add .dex/dex.md
+git -C "$PREFIXED_REPO" commit -qm init
+
+ticket_hook() {
+  local repo="$1" branch="$2" out="$3"
+  git -C "$repo" checkout -qB "$branch"
+  (
+    cd "$repo"
+    DEX_DIR="$FAKE_DEX" DEX_SESSION_ID="ticket-hook-test" \
+      bash "$ROOT/hooks/load-ticket-context.sh"
+  ) > "$out"
+}
+
+# Configured: lowercase tracker branches and Dex's own prefixed branches.
+ticket_hook "$PREFIXED_REPO" user/eng-1234-short-title "$TMP_DIR/lower.out"
+grep -qx 'Ticket number: 1234' "$TMP_DIR/lower.out"
+grep -qx 'Ticket ID: ENG-1234' "$TMP_DIR/lower.out"
+grep -qx 'Render: num=1234 id=ENG-1234 branch=user/eng-1234-short-title' "$TMP_DIR/lower.out"
+ticket_hook "$PREFIXED_REPO" worktree-ticket-ops-77 "$TMP_DIR/dex-branch.out"
+grep -qx 'Render: num=77 id=OPS-77 branch=worktree-ticket-ops-77' "$TMP_DIR/dex-branch.out"
+ticket_hook "$PREFIXED_REPO" feature/OPS-9 "$TMP_DIR/upper.out"
+grep -qx 'Ticket ID: OPS-9' "$TMP_DIR/upper.out"
+# A number-only Dex branch keeps its plain output.
+ticket_hook "$PREFIXED_REPO" worktree-ticket-1234 "$TMP_DIR/bare.out"
+grep -qx 'Ticket number: 1234' "$TMP_DIR/bare.out"
+if grep -q '^Ticket ID:' "$TMP_DIR/bare.out"; then
+  printf 'ticket hook printed a prefixed ID for a bare ticket\n' >&2
+  exit 1
+fi
+grep -qx 'Render: num=1234 id=1234 branch=worktree-ticket-1234' "$TMP_DIR/bare.out"
+# Only the configured prefixes count, and only as a whole word.
+for not_ticket_branch in feature/add-3-things fix/reeng-12 FOO-12-thing v-2; do
+  ticket_hook "$PREFIXED_REPO" "$not_ticket_branch" "$TMP_DIR/not-ticket.out"
+  grep -q 'No ticket number detected' "$TMP_DIR/not-ticket.out" || {
+    printf 'ticket hook detected a ticket in %s\n' "$not_ticket_branch" >&2
+    exit 1
+  }
+done
+
+# Unconfigured: lowercase is still not a ticket, uppercase still is, and the
+# output has no Ticket ID line.
+git -C "$REPO" checkout -qb user/eng-1234-short-title
+(
+  cd "$REPO"
+  DEX_DIR="$FAKE_DEX" DEX_SESSION_ID="ticket-hook-test" bash "$ROOT/hooks/load-ticket-context.sh"
+) > "$TMP_DIR/plain-lower.out"
+grep -q 'No ticket number detected' "$TMP_DIR/plain-lower.out"
+git -C "$REPO" checkout -qb feature/ENG-123
+(
+  cd "$REPO"
+  DEX_DIR="$FAKE_DEX" DEX_SESSION_ID="ticket-hook-test" bash "$ROOT/hooks/load-ticket-context.sh"
+) > "$TMP_DIR/plain-upper.out"
+grep -qx 'Ticket number: 123' "$TMP_DIR/plain-upper.out"
+grep -qx 'Render: num=123 id=123 branch=feature/ENG-123' "$TMP_DIR/plain-upper.out"
+if grep -q '^Ticket ID:' "$TMP_DIR/plain-upper.out"; then
+  printf 'unconfigured ticket hook printed a Ticket ID line\n' >&2
+  exit 1
+fi
+
 printf 'hook input tests passed\n'

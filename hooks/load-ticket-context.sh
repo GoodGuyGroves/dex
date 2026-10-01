@@ -23,25 +23,46 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 # to prevent unexpected behaviour in bash ${var//pattern/replacement}.
 BRANCH="${BRANCH//[^A-Za-z0-9._\/\-]/_}"
 
+REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+
 # Skip ticket extraction for task worktrees (e.g., worktree-task-fix-bug-123)
 TICKET_NUM=""
+TICKET_ID=""
 if [[ "$BRANCH" != worktree-task-* ]]; then
-  # Extract ticket number from branch name (handles: ticket-999, ENG-999, feature/ENG-999, etc.)
-  TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
-  if [[ -z "$TICKET_NUM" ]]; then
-    # Fallback: look for UPPERCASE project prefixes (e.g., ENG-123, PROJ-456).
-    # Requires uppercase to avoid false positives on common branch name segments
-    # like "add-3", "feat-1", "v-2" which aren't ticket references.
-    TICKET_NUM=$(echo "$BRANCH" | grep -oE '[A-Z]{2,}-[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+  # The prefixes a project lists under `## Tickets` in .dex/dex.md. Read from
+  # the main checkout, as dx does, so a worktree sees the same list.
+  TICKET_PREFIXES=$(dx_ticket_prefixes "$(dx_repo_root 2>/dev/null || printf '%s' "$REPO_TOP")")
+  if [[ -n "$TICKET_PREFIXES" ]]; then
+    # Only the listed prefixes, in any case, as a whole word: tracker branches
+    # like user/eng-1234-title are lowercase, and "add-3" or "v-2" must not
+    # count. The list is validated letters and digits, so it is safe in a regex.
+    TICKET_PREFIX_PATTERN=$(printf '%s\n' "$TICKET_PREFIXES" | paste -sd '|' -)
+    TICKET_ID=$(grep -ioE "(^|[^A-Za-z0-9])(${TICKET_PREFIX_PATTERN})-[0-9]+" <<< "${BRANCH}" \
+      | head -1 | sed -E 's/^[^A-Za-z0-9]//' | tr '[:lower:]' '[:upper:]' || true)
+    if [[ -n "$TICKET_ID" ]]; then
+      TICKET_NUM="${TICKET_ID##*-}"
+    else
+      TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
+    fi
+  else
+    # Extract ticket number from branch name (handles: ticket-999, ENG-999, feature/ENG-999, etc.)
+    TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
+    if [[ -z "$TICKET_NUM" ]]; then
+      # Fallback: look for UPPERCASE project prefixes (e.g., ENG-123, PROJ-456).
+      # Requires uppercase to avoid false positives on common branch name segments
+      # like "add-3", "feat-1", "v-2" which aren't ticket references.
+      TICKET_NUM=$(echo "$BRANCH" | grep -oE '[A-Z]{2,}-[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+    fi
   fi
+  [[ -n "$TICKET_ID" ]] || TICKET_ID="$TICKET_NUM"
 fi
 
-REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
 SESSION_ID="${DEX_SESSION_ID:-$(dx_session_id)}"
 TASK_PROMPT_FILE=$(dx_prompt_file "$SESSION_ID")
 
 if [[ -n "$TICKET_NUM" ]]; then
   echo "Ticket number: ${TICKET_NUM}"
+  [[ "$TICKET_ID" == "$TICKET_NUM" ]] || echo "Ticket ID: ${TICKET_ID}"
   echo "Branch: ${BRANCH}"
   echo ""
 
@@ -52,6 +73,7 @@ if [[ -n "$TICKET_NUM" ]]; then
     # in branch names (& and | break sed replacement/delimiter)
     TEMPLATE=$(<"$INSTRUCTIONS_FILE")
     TEMPLATE="${TEMPLATE//\{\{TICKET_NUM\}\}/$TICKET_NUM}"
+    TEMPLATE="${TEMPLATE//\{\{TICKET_ID\}\}/$TICKET_ID}"
     TEMPLATE="${TEMPLATE//\{\{BRANCH\}\}/$BRANCH}"
     printf '%s\n' "$TEMPLATE"
   fi
