@@ -32,6 +32,25 @@ __dx_reviewers_is_greptile() {
   return 1
 }
 
+# dx_reviewer_default_adapter <handle> <wait>
+# The adapter for a row that names none: `copilot` or `greptile` when a
+# `wait: yes` row's handle is that bot, else `generic`. dx_reviewers_rows and
+# `dx config` share it, so a written row and a blank cell resolve the same way.
+dx_reviewer_default_adapter() {
+  [[ $# -eq 2 ]] || return 2
+  if [[ "$2" == "yes" ]]; then
+    if __dx_reviewers_is_copilot "$1"; then
+      printf '%s\n' copilot
+      return 0
+    fi
+    if __dx_reviewers_is_greptile "$1"; then
+      printf '%s\n' greptile
+      return 0
+    fi
+  fi
+  printf '%s\n' generic
+}
+
 # dx_reviewers_rows <repo_dir>
 # Print one TSV line per usable `## Reviewers` row:
 #   handle<TAB>type<TAB>wait<TAB>adapter
@@ -100,16 +119,7 @@ dx_reviewers_rows() {
     esac
     case "$adapter" in
       greptile|copilot|generic) ;;
-      "")
-        adapter=generic
-        if [[ "$wait_value" == "yes" ]]; then
-          if __dx_reviewers_is_copilot "$handle"; then
-            adapter=copilot
-          elif __dx_reviewers_is_greptile "$handle"; then
-            adapter=greptile
-          fi
-        fi
-        ;;
+      "") adapter=$(dx_reviewer_default_adapter "$handle" "$wait_value") ;;
       *)
         printf 'dex: reviewer %s: unknown adapter "%s"; using generic\n' \
           "$handle" "$adapter" >&2

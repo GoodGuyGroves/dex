@@ -27,6 +27,8 @@ printf '%s\n' '# Dex project' '## Workflow' 'Keep this section.' > "$TMP_DIR/rep
     'octocat request wait=maybe' \
     'valid-user request' \
     '@greptileai mention wait=yes adapter=greptile' \
+    'greptile-apps mention wait=yes' \
+    'github-copilot request wait=yes' \
     '@example/team-name mention' \
     '' \
     | PATH=/usr/bin:/bin bash "$ROOT/bin/config.sh"
@@ -38,6 +40,9 @@ grep -q '^| Handle | Type | Wait | Adapter | Notes |$' "$TMP_DIR/repo/.dex/dex.m
 grep -q '^| valid-user | request | no | generic | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
 grep -q '^| @example/team-name | mention | no | generic | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
 grep -q '^| @greptileai | mention | yes | greptile | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
+# wait=yes with no adapter infers the bot's adapter instead of writing generic.
+grep -q '^| greptile-apps | mention | yes | greptile | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
+grep -q '^| github-copilot | request | yes | copilot | Added via dx config |$' "$TMP_DIR/repo/.dex/dex.md"
 if grep -q 'bad|handle\|octocat' "$TMP_DIR/repo/.dex/dex.md"; then
   printf 'invalid reviewer input reached dex.md\n' >&2
   exit 1

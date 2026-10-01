@@ -222,6 +222,11 @@ reviewer_row() {
   if [[ -z "$explicit_adapter" && -n "$prior" && "${prior#*$'\t'}" != "generic" ]]; then
     explicit_adapter="${prior#*$'\t'}"
   fi
+  # A waited Greptile or Copilot row with no adapter gets the bot's adapter, as
+  # a blank Adapter cell would; writing `generic` would switch its wait off.
+  if [[ -z "$explicit_adapter" && "$row_adapter" == "generic" ]]; then
+    row_adapter=$(dx_reviewer_default_adapter "$row_handle" "${row_wait:-no}")
+  fi
   printf '| %s | %s | %s | %s | %s |\n' "$row_handle" "$row_type" \
     "${row_wait:-no}" "${explicit_adapter:-$row_adapter}" "$row_notes"
 }

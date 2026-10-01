@@ -159,6 +159,11 @@ EOF
 rows=$(dx_reviewers_rows "$repo")
 assert_eq "$(printf 'greptile\tmention\tyes\tgreptile\ngreptile\tmention\tno\tgeneric')" \
   "$rows" "adapter inference needs wait: yes"
+# `dx config` writes rows through the same default.
+assert_eq "copilot" "$(dx_reviewer_default_adapter @GitHub-Copilot yes)" "default adapter: copilot"
+assert_eq "greptile" "$(dx_reviewer_default_adapter greptile-apps yes)" "default adapter: greptile"
+assert_eq "generic" "$(dx_reviewer_default_adapter greptile-apps no)" "default adapter: no wait"
+assert_eq "generic" "$(dx_reviewer_default_adapter octocat yes)" "default adapter: other handle"
 
 # A Copilot row is always a request row, whatever it says: a mention would post
 # @copilot in a comment and summon the coding agent.
