@@ -21,6 +21,9 @@ In Dex, `dx_reviewer_trigger <session> <repo> <pr> Copilot copilot` does this,
 and `dx_reviewer_comment` posts reviewer comments with the same check. When a
 reply has to name Copilot, write "Copilot" without the `@`.
 
+This guard reads the command as written. It is a backstop for a mention
+written by mistake, not a reason to look for a spelling it does not read.
+
 If a human really wants the coding agent summoned, they can post the comment
 themselves, or allow it for this lifecycle with
 `dx control override guard.block-copilot-mention allow`.

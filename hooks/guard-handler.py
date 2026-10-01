@@ -2484,6 +2484,15 @@ def has_copilot_mention_comment(text):
     in the raw text, so a body that quotes `--add-reviewer @copilot` is still a
     mention. The mention may sit in the command line, a heredoc, a variable
     assigned in the same command, or a literal body file that already exists.
+
+    This is a best-effort backstop against an agent writing the mention by
+    mistake, not a boundary against deliberate obfuscation. Text assembled at
+    run time is out of scope: values from earlier commands or the environment,
+    `$(...)` output, `eval`, encoded text, files written after the check, and
+    tools other than `gh`. The guarantee is that Dex itself never posts the
+    mention: dx_reviewer_comment refuses it, Copilot rows are always review
+    requests, and tests/reviewer-adapter-contract-test.sh scans the shipped
+    commands. See docs/guards.md.
     """
     segments = list(_gh_posting_segments(text))
     if not segments:
