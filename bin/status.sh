@@ -69,13 +69,18 @@ else
   echo "  Skills:     NOT INSTALLED"
 fi
 
-if dx_claude_settings_complete; then
-  echo "  Hooks:      installed in ~/.claude/settings.json"
-elif [[ -f "$CLAUDE_DIR/settings.json" ]]; then
-  echo "  Hooks:      INCOMPLETE — run 'dx tools bootstrap'"
-else
-  echo "  Hooks:      NOT INSTALLED"
-fi
+case "$(dx_claude_global_hooks_state)" in
+  none) echo "  Hooks:      launch-scoped (Dex sessions only)" ;;
+  stale) echo "  Hooks:      launch-scoped; stale Dex hooks in ~/.claude/settings.json, unread under CLAUDE_CONFIG_DIR — run 'dx install --no-global-hooks'" ;;
+  legacy) echo "  Hooks:      LEGACY global install runs twice in Dex sessions — run 'dx install --global-hooks' or 'dx install --no-global-hooks'" ;;
+  *)
+    if dx_claude_settings_complete; then
+      echo "  Hooks:      launch-scoped, plus global in $(dx_claude_settings_file)"
+    else
+      echo "  Hooks:      INCOMPLETE global install — run 'dx install --global-hooks'"
+    fi
+    ;;
+esac
 
 if command -v codex &>/dev/null; then
   codex_skill_count=$(dx_count_codex_dex_skills)

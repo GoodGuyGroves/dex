@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import re
+import shlex
 import sys
 
 
@@ -54,8 +55,26 @@ def replace_strings(value, old, new):
     return value
 
 
+# A global install (`dx install --global-hooks`) prefixes every command with
+# this gate, so a session Dex launched, which carries the same hooks in its
+# launch settings, does not run them twice.
+LAUNCH_GATE = '[ -z "${DEX_LAUNCHED:-}" ] || exit 0; '
+GATED = False
+
+
+def gate_commands(template):
+    for groups in (template.get("hooks") or {}).values():
+        for group in groups if isinstance(groups, list) else []:
+            for hook in group.get("hooks") or [] if isinstance(group, dict) else []:
+                command = hook.get("command") if isinstance(hook, dict) else None
+                if isinstance(command, str) and not command.startswith(LAUNCH_GATE):
+                    hook["command"] = LAUNCH_GATE + command
+    return template
+
+
 def customized_template(path, dex_dir):
-    return replace_strings(load_object(path), DEFAULT_DEX_DIR, dex_dir)
+    template = replace_strings(load_object(path), DEFAULT_DEX_DIR, dex_dir)
+    return gate_commands(template) if GATED else template
 
 
 def worktree_dirs(settings):
@@ -334,6 +353,104 @@ def command_remove_dirs(settings_path, directories_json):
     emit(settings)
 
 
+def command_legacy_hooks(settings_path, dex_dir, home):
+    """0 when a Dex hook in these settings lacks the launch gate: an install
+    from before hooks became launch-scoped, which runs twice in Dex launches."""
+    settings = load_object(settings_path)
+    for groups in (settings.get("hooks") or {}).values():
+        for group in groups if isinstance(groups, list) else []:
+            for hook in group.get("hooks") or [] if isinstance(group, dict) else []:
+                command = hook.get("command") if isinstance(hook, dict) else None
+                if (isinstance(command, str) and is_dex_command(command, dex_dir, home)
+                        and not command.startswith(LAUNCH_GATE)):
+                    return 0
+    return 1
+
+
+def command_clear_install_worktree(state_path):
+    state = load_object(state_path) if os.path.isfile(state_path) else {}
+    state.pop("worktree", None)
+    emit(state)
+
+
+def settings_layer(value, label):
+    """A --settings value: inline JSON or a path, as Claude Code accepts it."""
+    try:
+        if value.strip().startswith("{"):
+            layer = json.loads(value)
+        else:
+            with open(value, encoding="utf-8") as handle:
+                layer = json.load(handle)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"cannot read {label} {value}: {error}")
+    if not isinstance(layer, dict):
+        raise ValueError(f"{label} {value} must contain a JSON object")
+    hooks = layer.get("hooks", {})
+    shape_ok = isinstance(hooks, dict) and all(
+        isinstance(groups, list) and all(
+            isinstance(group, dict) and isinstance(group.get("hooks", []), list)
+            and all(isinstance(hook, dict) for hook in group.get("hooks", []))
+            for group in groups)
+        for groups in hooks.values())
+    if not shape_ok:
+        raise ValueError(f"{label} {value}: hooks must map each event to a list of "
+                         "groups, each with a list of hook objects")
+    return layer
+
+
+def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
+    """One settings document for a Dex launch. Lowest to highest: Dex's
+    defaults, each caller layer in order, then DEX_EXTRA_SETTINGS. Hook
+    arrays add up, symlinkDirectories is a union, and Dex's own hook groups
+    are always present because disableAllHooks is Dex's to decide."""
+    if not rtk:
+        for groups in template.get("hooks", {}).values():
+            for group in groups:
+                group["hooks"] = [hook for hook in group.get("hooks", [])
+                                  if "rtk-claude-hook.sh" not in hook.get("command", "")]
+            groups[:] = [group for group in groups if group["hooks"]]
+    result = {}
+    if statusline:
+        result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline)}
+    if inbound:
+        result["crossSessionInbound"] = inbound
+    hooks, directories = {}, []
+    for layer in layers:
+        layer = copy.deepcopy(layer)
+        layer.pop("disableAllHooks", None)
+        for event, groups in (layer.pop("hooks", None) or {}).items():
+            if isinstance(groups, list):
+                hooks.setdefault(event, []).extend(groups)
+        directories = append_unique(directories, worktree_dirs(layer))
+        result = deep_merge(result, layer)
+    if hooks:
+        result["hooks"] = hooks
+    if directories:
+        result.setdefault("worktree", {})["symlinkDirectories"] = directories
+    result = merge_settings(result, template, dex_dir, home)
+    # --settings outranks user and project settings, so this also overrides a
+    # disableAllHooks there that would otherwise silence Dex's hooks.
+    result["disableAllHooks"] = False
+    return result
+
+
+def command_launch_settings(*arguments):
+    if len(arguments) < 5:
+        raise ValueError("launch-settings expects <template> <dex-dir> <statusline> "
+                         "<inbound> <rtk 0|1> [--settings value ...]")
+    template_path, dex_dir, statusline, inbound, rtk = arguments[:5]
+    caller = arguments[5:]
+    layers =[settings_layer(value, "--settings") for value in caller]
+    extra = os.environ.get("DEX_EXTRA_SETTINGS", "")
+    if extra:
+        if extra.strip().startswith("{") or not os.path.isfile(extra):
+            raise ValueError(f"DEX_EXTRA_SETTINGS must name a settings file: {extra}")
+        layers.append(settings_layer(extra, "DEX_EXTRA_SETTINGS"))
+    template = customized_template(template_path, dex_dir)
+    emit(launch_settings(template, statusline, inbound, rtk == "1", layers,
+                         dex_dir, os.environ.get("HOME", "")))
+
+
 def command_inbound_value(settings_path):
     """Print the user-scope crossSessionInbound value; nothing when unset."""
     settings = load_object(settings_path) if os.path.isfile(settings_path) else {}
@@ -371,23 +488,37 @@ COMMANDS = {
     "inbound-value": (1, command_inbound_value),
     "session-messaging": (1, command_session_messaging),
     "set-session-messaging": (2, command_set_session_messaging),
+    "legacy-dex-hooks": (3, command_legacy_hooks),
+    "clear-install-worktree": (1, command_clear_install_worktree),
+    "launch-settings": (None, command_launch_settings),
 }
+# The commands that render or check the global install, the only ones --gated
+# applies to.
+GATED_COMMANDS = ("render-template", "managed-dirs-added", "merge-settings", "settings-complete")
 
 
 def main(arguments):
+    global GATED
+    # --gated: render the template the way a global install writes it.
+    if arguments and arguments[-1] == "--gated":
+        GATED, arguments = True, arguments[:-1]
     if not arguments or arguments[0] not in COMMANDS:
-        print("usage: settings-json.py <command> [arguments ...]", file=sys.stderr)
+        print("usage: settings-json.py <command> [arguments ...] [--gated]", file=sys.stderr)
         print("commands: " + ", ".join(COMMANDS), file=sys.stderr)
         return 2
     command, command_arguments = arguments[0], arguments[1:]
+    if GATED and command not in GATED_COMMANDS:
+        print(f"settings-json: --gated applies only to {', '.join(GATED_COMMANDS)}", file=sys.stderr)
+        return 2
     expected, handler = COMMANDS[command]
-    if len(command_arguments) != expected:
+    # None: the handler checks its own arguments.
+    if expected is not None and len(command_arguments) != expected:
         print(f"settings-json: {command} expects {expected} arguments", file=sys.stderr)
         return 2
     try:
         status = handler(*command_arguments)
         return status if status is not None else 0
-    except (OSError, TypeError, ValueError) as error:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError) as error:
         print(f"settings-json: {error}", file=sys.stderr)
         return 2
 

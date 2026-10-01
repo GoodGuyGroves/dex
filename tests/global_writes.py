@@ -387,9 +387,12 @@ def parity(installed_file, isolated_file, allow_file):
 # ── The representative user, seeded and checked from one place ──────────
 
 USER_HOOK = {"matcher": "", "hooks": [{"type": "command", "command": "echo user-pre-compact"}]}
+# A hook the stub fires in a plain session, so "no Dex hook fired" cannot pass
+# just because nothing fired at all.
+USER_STOP_HOOK = {"matcher": "", "hooks": [{"type": "command", "command": "echo user-stop"}]}
 USER_FILES = {
     ".claude/settings.json": {"model": "opus", "permissions": {"allow": ["Bash(ls:*)"]},
-                              "hooks": {"PreCompact": [USER_HOOK]}},
+                              "hooks": {"PreCompact": [USER_HOOK], "Stop": [USER_STOP_HOOK]}},
     ".claude.json": {"numStartups": 3, "mcpServers": {"userServer": {"command": "user-mcp"}}},
 }
 USER_TEXT = {
@@ -421,6 +424,8 @@ def seeded(home, skills):
             problems.append("~/.claude/settings.json %s changed: %r" % (key, settings.get(key)))
     if USER_HOOK not in ((settings.get("hooks") or {}).get("PreCompact") or []):
         problems.append("~/.claude/settings.json lost the user's PreCompact hook")
+    if USER_STOP_HOOK not in ((settings.get("hooks") or {}).get("Stop") or []):
+        problems.append("~/.claude/settings.json lost the user's Stop hook")
     state = _load_json(os.path.join(home, ".claude.json"))
     if (state.get("mcpServers") or {}).get("userServer") != {"command": "user-mcp"}:
         problems.append("~/.claude.json lost mcpServers.userServer")
@@ -461,7 +466,7 @@ def dex_hooks(home, dex_dir, step):
     """expected.tsv folds the hook events Dex adds whole, so their content is
     checked here: every hook in ~/.claude/settings.json is the user's own or
     runs something from $DEX_DIR."""
-    user = {hook["command"] for hook in USER_HOOK["hooks"]}
+    user = {hook["command"] for group in (USER_HOOK, USER_STOP_HOOK) for hook in group["hooks"]}
     settings = _load_json(os.path.join(home, ".claude/settings.json"))
     bad = 0
     for event, groups in (settings.get("hooks") or {}).items():

@@ -23,7 +23,7 @@ done
 run_without_jq() {
   local test_home="$1"
   shift
-  env \
+  env -u CLAUDE_CONFIG_DIR \
     PATH="$NO_JQ_BIN" \
     HOME="$test_home" \
     CODEX_HOME="$test_home/.codex" \

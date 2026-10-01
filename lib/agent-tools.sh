@@ -103,6 +103,53 @@ dx_check_claude_dex_links() {
   return "$failed"
 }
 
+# Dex's hooks reach Claude through each launch's --settings file
+# (dx_provider_claude), never through the user's own settings. Installing them
+# there too, for sessions Dex did not launch, is opt-in: `dx install
+# --global-hooks` writes commands gated on DEX_LAUNCHED, so a Dex launch does
+# not run them twice.
+dx_claude_settings_file() {
+  printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+}
+
+# The files a Dex install may have written hooks into: where Claude reads
+# (CLAUDE_CONFIG_DIR), and ~/.claude/settings.json, where older Dex always
+# wrote whatever CLAUDE_CONFIG_DIR said.
+__dx_claude_hook_settings_files() {
+  local current
+  current=$(dx_claude_settings_file)
+  printf '%s\n' "$current"
+  [[ "$current" == "$HOME/.claude/settings.json" ]] || printf '%s\n' "$HOME/.claude/settings.json"
+}
+
+DX_LEGACY_GLOBAL_HOOKS_WARNING="Dex hooks in your Claude settings predate launch-scoped hooks and may run twice in Dex sessions. Run 'dx install --global-hooks' to keep them for other sessions, or 'dx install --no-global-hooks' to remove them."
+
+DX_STALE_GLOBAL_HOOKS_WARNING="Old Dex hooks in ~/.claude/settings.json are leftovers Claude does not read while CLAUDE_CONFIG_DIR is set. Run 'dx install --no-global-hooks' to remove them."
+
+# none, global (the opt-in, gated install), legacy (ungated hooks from an
+# install that predates launch-scoped hooks, in the file Claude reads) or
+# stale (such hooks only in ~/.claude/settings.json while CLAUDE_CONFIG_DIR
+# points Claude elsewhere).
+dx_claude_global_hooks_state() {
+  local settings_file current helper="$DEX_DIR/scripts/settings-json.py" state=none
+  current=$(dx_claude_settings_file)
+  while IFS= read -r settings_file; do
+    [[ -f "$settings_file" ]] || continue
+    python3 "$helper" has-dex-hooks "$settings_file" "$DEX_DIR" "$HOME" >/dev/null 2>&1 || continue
+    if python3 "$helper" legacy-dex-hooks "$settings_file" "$DEX_DIR" "$HOME" >/dev/null 2>&1; then
+      if [[ "$settings_file" == "$current" ]]; then
+        printf 'legacy\n'
+        return 0
+      fi
+      state=stale
+    elif [[ "$state" == none ]]; then
+      state=global
+    fi
+  done < <(__dx_claude_hook_settings_files)
+  printf '%s\n' "$state"
+}
+
+# Install or refresh the gated global hooks.
 dx_refresh_claude_settings() {
   local quiet="${1:-1}"
 
@@ -114,29 +161,125 @@ dx_refresh_claude_settings() {
 }
 
 dx_claude_settings_complete() {
-  local settings_file="$HOME/.claude/settings.json"
-  local template_file="$DEX_DIR/settings.json"
+  local settings_file template_file="$DEX_DIR/settings.json"
   local helper="$DEX_DIR/scripts/settings-json.py"
+  settings_file=$(dx_claude_settings_file)
 
   command -v python3 >/dev/null 2>&1 || return 1
   [[ -f "$settings_file" && -f "$template_file" && -f "$helper" ]] || return 1
 
   python3 "$helper" settings-complete \
-    "$settings_file" "$template_file" "$DEX_DIR" "$HOME" >/dev/null 2>&1
+    "$settings_file" "$template_file" "$DEX_DIR" "$HOME" --gated >/dev/null 2>&1
 }
 
 dx_check_claude_settings() {
+  case "$(dx_claude_global_hooks_state)" in
+    none)
+      dx_ok "Claude hooks are launch-scoped (no global install)"
+      return 0
+      ;;
+    legacy)
+      dx_warn "$DX_LEGACY_GLOBAL_HOOKS_WARNING"
+      return 1
+      ;;
+    stale)
+      dx_warn "$DX_STALE_GLOBAL_HOOKS_WARNING"
+      return 1
+      ;;
+  esac
   if dx_claude_settings_complete; then
-    dx_ok "Claude hooks and worktree settings are complete"
+    dx_ok "Global Claude hooks and worktree settings are complete"
     return 0
   fi
-
-  if [[ -f "$HOME/.claude/settings.json" ]]; then
-    dx_warn "Claude settings are incomplete; run 'dx tools bootstrap' to repair Dex-managed entries"
-  else
-    dx_warn "Claude settings are not installed; run 'dx tools bootstrap'"
-  fi
+  dx_warn "Global Claude hooks are incomplete; run 'dx install --global-hooks' to repair them"
   return 1
+}
+
+# Keep an opted-in global install current; warn about a legacy one.
+dx_refresh_global_claude_hooks() {
+  case "$(dx_claude_global_hooks_state)" in
+    none) return 0 ;;
+    legacy)
+      dx_warn "$DX_LEGACY_GLOBAL_HOOKS_WARNING"
+      return 0
+      ;;
+    stale)
+      dx_warn "$DX_STALE_GLOBAL_HOOKS_WARNING"
+      return 0
+      ;;
+  esac
+  if dx_refresh_claude_settings 1 && dx_claude_settings_complete; then
+    return 0
+  fi
+  dx_warn "Global Claude hooks remain incomplete after repair"
+  return 1
+}
+
+# Take back what a global install added to the user's Claude settings: Dex's
+# hook commands, and the worktree directories the install state says Dex
+# added. The user's own hooks and directories stay. Shared by `dx uninstall`
+# and `dx install --no-global-hooks`. Covers both files an install may have
+# written (__dx_claude_hook_settings_files).
+dx_remove_claude_global_hooks() {
+  local settings_file state_file="$HOME/.claude/.dex-install-state.json"
+  local helper="$DEX_DIR/scripts/settings-json.py" tmp dirs="[]" failed=0 hook_status
+  local files=()
+  while IFS= read -r settings_file; do
+    files+=("$settings_file")
+  done < <(__dx_claude_hook_settings_files)
+
+  for settings_file in "${files[@]}"; do
+    [[ -f "$settings_file" ]] || continue
+    tmp="${settings_file}.tmp.$$"
+    hook_status=0
+    python3 "$helper" has-dex-hooks "$settings_file" "$DEX_DIR" "$HOME" || hook_status=$?
+    case "$hook_status" in
+      0)
+        if python3 "$helper" remove-dex-hooks "$settings_file" "$DEX_DIR" "$HOME" > "$tmp" \
+          && [[ -s "$tmp" ]] && mv "$tmp" "$settings_file"; then
+          dx_done "Removed Dex hooks from ${settings_file}"
+        else
+          rm -f "$tmp"
+          dx_error "Failed to remove Dex hooks from ${settings_file}. Install Python 3, then try again."
+          failed=1
+        fi
+        ;;
+      1) dx_skip "No Dex hooks in ${settings_file}" ;;
+      *)
+        dx_error "Failed to inspect ${settings_file}. Install Python 3, then try again."
+        failed=1
+        ;;
+    esac
+  done
+
+  if [[ -f "$state_file" ]] && ! dirs=$(python3 "$helper" state-dirs "$state_file"); then
+    dx_error "Failed to read Dex install state; keeping $state_file for a later uninstall attempt"
+    return 1
+  fi
+  if [[ "$dirs" == "[]" ]]; then
+    dx_skip "No Dex-managed worktree settings in settings"
+    return "$failed"
+  fi
+  for settings_file in "${files[@]}"; do
+    [[ -f "$settings_file" ]] || continue
+    tmp="${settings_file}.tmp.$$"
+    if python3 "$helper" remove-worktree-dirs "$settings_file" "$dirs" > "$tmp" \
+      && [[ -s "$tmp" ]] && mv "$tmp" "$settings_file"; then
+      dx_done "Removed Dex worktree settings from ${settings_file}"
+    else
+      rm -f "$tmp"
+      dx_error "Failed to remove Dex worktree settings from ${settings_file}"
+      return 1
+    fi
+  done
+  tmp="${state_file}.tmp.$$"
+  if ! { python3 "$helper" clear-install-worktree "$state_file" > "$tmp" \
+    && [[ -s "$tmp" ]] && mv "$tmp" "$state_file"; }; then
+    rm -f "$tmp"
+    dx_error "Failed to update $state_file"
+    return 1
+  fi
+  return "$failed"
 }
 
 # Cross-session messaging. Claude Code holds a message for approval when it
@@ -188,26 +331,6 @@ dx_session_messaging_launch_value() {
     hold|refuse) return 0 ;;
   esac
   printf 'accept\n'
-}
-
-# dx_claude_launch_settings [statusline_script] — the --settings JSON for a
-# Dex-launched Claude session, or nothing when there is nothing to set.
-# The script path needs shell quoting inside the command string and JSON
-# encoding around it, so Python builds the value rather than interpolation.
-dx_claude_launch_settings() {
-  local statusline="${1:-}" inbound
-  inbound=$(dx_session_messaging_launch_value)
-  [[ -n "$statusline" || -n "$inbound" ]] || return 0
-  python3 - "$statusline" "$inbound" <<'PY'
-import json, shlex, sys
-
-settings = {}
-if sys.argv[1]:
-    settings["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(sys.argv[1])}
-if sys.argv[2]:
-    settings["crossSessionInbound"] = sys.argv[2]
-print(json.dumps(settings))
-PY
 }
 
 dx_claude_plugin_marketplace_configured() {
@@ -684,14 +807,7 @@ dx_bootstrap_agent_tooling() {
   dx_install_rtk_tooling || failed=1
   dx_install_openai_docs_mcp_servers || failed=1
   dx_install_safe_official_claude_plugins "$root" || failed=1
-  if dx_refresh_claude_settings 1; then
-    if ! dx_claude_settings_complete; then
-      dx_warn "Claude settings remain incomplete after repair"
-      failed=1
-    fi
-  else
-    failed=1
-  fi
+  dx_refresh_global_claude_hooks || failed=1
 
   if [[ -f "${DEX_ROUTER_HOME:-$HOME/.dex/router}/config.json" ]] && command -v node >/dev/null 2>&1; then
     local native_router_output

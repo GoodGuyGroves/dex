@@ -25,8 +25,6 @@
 
 # Isolated mode must not reach sessions Dex did not launch: a plain `claude`
 # keeps the user's own configuration and loses only Dex's.
-plain	hooks	installed-only	*$DEX_DIR/hooks/*	unit 01: Dex hooks only in Dex launches
-plain	settings	installed-only	worktree=*	unit 01
 plain	skills	installed-only	dx*	unit 02: Dex skills only in Dex launches
 plain	skills	installed-only	dex	unit 02
 plain	skills	installed-only	humanizer	unit 02

@@ -321,7 +321,16 @@ for label in session phase plain; do
   grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/launches.jsonl" \
     || fail "no stub claude launch recorded for step $label"
 done
-grep -q '"event": "Stop"' "$ISOLATED_STUB/hooks.jsonl" || fail "the plain session fired no Stop hook"
+# Dex's hooks live in each launch's --settings file, so a session the user
+# started runs none of them, and still runs the user's own.
+plain_hooks_ok() { # <hooks.jsonl> <step>
+  grep -q "\"command\": \"echo user-stop\".*\"step\": \"$2\"" "$1" \
+    || fail "the $2 session did not fire the user's Stop hook"
+  ! grep -q '/hooks/' "$1" || fail "the $2 session fired a Dex hook"
+}
+plain_hooks_ok "$ISOLATED_STUB/hooks.jsonl" plain
+grep -q '"hooks": \[[^]]*phase-loop' "$ISOLATED_STUB/launches.jsonl" \
+  || fail "no Dex launch carried Dex's hooks in its --settings"
 
 # fresh <label> <rc> <zsh code> [--no-skills] — one entry point alone.
 fresh() {
@@ -335,12 +344,13 @@ fresh session-fresh 0 'dx --session "list the files"'
 fresh tools-fresh 0 'dx tools bootstrap' --no-skills
 fresh status-fresh 0 'dx status'
 fresh phase-fresh 1 'dxcomplete'
-# The Stop hook's mkdir of DX_LOOP_DIR only shows on a machine where no Dex
-# command has created that directory yet: hooks installed, then a plain session.
+# A machine where no Dex command has created DX_LOOP_DIR yet: reload, then a
+# plain session, which must write nothing (it once ran the Stop hook's mkdir).
 new_sandbox "$TMP_DIR/reload-fresh"
 dx_step reload-fresh "$NO_INPUT" 0 'dx reload'
 plain_step plain-fresh
 finish_sandbox
+plain_hooks_ok "$SB_STUB/hooks.jsonl" plain-fresh
 cat "$SB_OBSERVED" >> "$ALL_OBSERVED"
 
 run_scenario installed 1

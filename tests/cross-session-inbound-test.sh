@@ -86,22 +86,23 @@ printf '%s\n' '{not json' > "$STATE"
 assert_eq '' "$(dx_session_messaging_launch_value)" 'malformed state passes nothing'
 rm -f "$STATE"
 
-# The --settings value carries the status line and, when enabled, the inbound
-# setting; a script path with a quote survives both encodings.
-dx_set_session_messaging_preference on
+# The launch settings file carries the status line and, when enabled, the
+# inbound setting; a script path with a quote survives both encodings.
 mkdir -p "$TMP_DIR/it's here"
-launch_settings=$(dx_claude_launch_settings "$TMP_DIR/it's here/status-line.sh")
+launch_settings=$(python3 "$HELPER" launch-settings "$ROOT/settings.json" "$ROOT" \
+  "$TMP_DIR/it's here/status-line.sh" accept 0)
 python3 - "$launch_settings" "$TMP_DIR/it's here/status-line.sh" <<'PY'
 import json, shlex, sys
 settings = json.loads(sys.argv[1])
 assert settings["crossSessionInbound"] == "accept", settings
 assert settings["statusLine"] == {"type": "command", "command": "bash " + shlex.quote(sys.argv[2])}, settings
 PY
-assert_eq '{"crossSessionInbound": "accept"}' "$(dx_claude_launch_settings)" 'inbound alone'
-dx_set_session_messaging_preference off
-assert_eq '' "$(dx_claude_launch_settings)" 'nothing to set prints nothing'
-assert_eq '{"statusLine": {"type": "command", "command": "bash status.sh"}}' \
-  "$(dx_claude_launch_settings status.sh)" 'status line alone'
+launch_settings=$(python3 "$HELPER" launch-settings "$ROOT/settings.json" "$ROOT" '' '' 0)
+python3 - "$launch_settings" <<'PY'
+import json, sys
+settings = json.loads(sys.argv[1])
+assert "crossSessionInbound" not in settings and "statusLine" not in settings, settings
+PY
 
 # Claude sessions learn their name and what delivery to expect; Codex has no
 # peer messaging and gets nothing.

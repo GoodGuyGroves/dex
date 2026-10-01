@@ -60,6 +60,9 @@ the gate map.
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `DEX_DIR` | Installation directory | `$HOME/work/dex` |
+| `DEX_HOME` | State root for Dex's launch settings (`$DEX_HOME/launch-settings/`) | unset (`$DX_LOOP_DIR`) |
+| `DEX_EXTRA_SETTINGS` | A Claude settings file layered last into every Dex launch's `--settings` file; an unreadable one stops the launch | unset |
+| `DEX_LAUNCHED` | Set to `1` in every Claude session Dex launches; the opt-in global hooks (`dx install --global-hooks`) do nothing when it is set | unset |
 | `DX_STATE_DIR` | Phase state directory | `~/.claude/.dex-phases` |
 | `DX_LOOP_DIR` | Loop state directory | `~/.claude/.dex-loops` |
 | `DX_ARTIFACT_DIR` | Dex-generated screenshots, videos, traces, and logs | `~/.claude/.dex-artifacts` |

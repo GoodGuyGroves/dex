@@ -2,6 +2,8 @@
 
 Dex uses markdown-based guard rules to warn about risky patterns before they happen. Every built-in guard advises rather than denies: the message reaches the agent as context and the tool call proceeds. `action: block` still exists for anyone who wants a hard stop. Guards are evaluated by `hooks/guard-handler.py` on PreToolUse (before Bash/Edit/Write). Post-commit validation (after git commit) is handled by `hooks/post-commit-guard.sh`, which checks conventional commit format and then delegates to `guard-handler.py` for markdown-based guard evaluation of committed files.
 
+Guards run in the Claude sessions Dex launches. A plain `claude` session gets them only after `dx install --global-hooks`.
+
 These are Claude Code hooks — see [Claude Code hooks documentation](https://docs.anthropic.com/en/docs/claude-code/hooks) for how hooks integrate with the tool lifecycle.
 
 ## How It Works

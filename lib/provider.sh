@@ -903,6 +903,126 @@ dx_provider_claude() {
     fi
   fi
 
+  # DX_LAUNCH_STATUS_LINE=1 is how a lifecycle phase asks for Dex's status
+  # line; every other launch keeps the user's own. It is consumed here, before
+  # any engine runs, so no session or launch nested in one inherits it.
+  local _dx_status_line="${DX_LAUNCH_STATUS_LINE:-0}"
+  local -x DX_LAUNCH_STATUS_LINE=0
+
+  # Codex takes no Claude settings; its translator drops --settings.
+  if [[ "$DX_PROVIDER_ENGINE" == "codex-plugin" ]]; then
+    __dx_provider_claude_exec "$@"
+    return
+  fi
+
+  # Dex's hooks, status line and settings reach Claude only through this one
+  # --settings file, never through ~/.claude/settings.json. DEX_LAUNCHED keeps
+  # an opt-in global install (dx install --global-hooks) from running the
+  # same hooks a second time. No trap removes the file: dx.sh is sourced into
+  # the user's shell, so the next launch's sweep collects what a kill leaves.
+  local _dx_launch_file="" _dx_launch_args=() _dx_launch_rc=0
+  __dx_provider_launch_settings "$@" || return 1
+  local -x DEX_LAUNCHED=1
+  __dx_provider_claude_exec "${_dx_launch_args[@]}" || _dx_launch_rc=$?
+  rm -f "$_dx_launch_file"
+  return "$_dx_launch_rc"
+}
+
+# Launch settings files older than this are left over from killed launches.
+# ponytail: a fixed age; a lifecycle session alive longer than a week keeps
+# running, but a relaunch writes itself a fresh file anyway.
+DX_LAUNCH_SETTINGS_MAX_AGE_DAYS=7
+
+__dx_provider_launch_settings_dir() {
+  printf '%s/launch-settings\n' "${DEX_HOME:-$DX_LOOP_DIR}"
+}
+
+# __dx_provider_launch_settings <claude-args...> — write this launch's one
+# settings file and set, in the caller's scope, _dx_launch_file and
+# _dx_launch_args: the arguments with every --settings the caller passed
+# folded into that file, in order, and a single --settings in front.
+__dx_provider_launch_settings() {
+  local arg statusline="" inbound="" rtk=0 dir caller_settings=() after_delimiter=0
+  _dx_launch_args=()
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    shift
+    case "$arg" in
+      --)
+        _dx_launch_args+=("$arg" "$@")
+        break
+        ;;
+      --settings)
+        if [[ $# -eq 0 ]]; then
+          dx_error "--settings requires a value."
+          return 1
+        fi
+        caller_settings+=("$1")
+        shift
+        ;;
+      --settings=*) caller_settings+=("${arg#--settings=}") ;;
+      -r|--resume)
+        # The value is optional: dxloop passes a bare --resume before -n.
+        _dx_launch_args+=("$arg")
+        if [[ $# -gt 0 && "$1" != -* ]]; then
+          _dx_launch_args+=("$1")
+          shift
+        fi
+        ;;
+      # Options that take a value (from `claude --help`), so a value spelled
+      # like --settings is never read as one.
+      -n|--name|--model|--effort|--permission-mode|--output-format|--input-format|--max-turns|--fallback-model|--mcp-config|--session-id|--append-system-prompt|--system-prompt|--append-system-prompt-file|--system-prompt-file|--plugin-dir|--plugin-url|--add-dir|--allowedTools|--allowed-tools|--disallowedTools|--disallowed-tools|--tools|--agent|--agents|--json-schema|--setting-sources|--betas|--permission-prompt-tool|--permission-prompts|--debug-file|--environment|--file|--max-budget-usd|--autocompact|--system-prompt-snapshot|--remote-control-session-name-prefix)
+        _dx_launch_args+=("$arg")
+        if [[ $# -gt 0 ]]; then
+          _dx_launch_args+=("$1")
+          shift
+        fi
+        ;;
+      *) _dx_launch_args+=("$arg") ;;
+    esac
+  done
+
+  # A --settings token still in the options is one a flag/value pair hid
+  # (`--append-system-prompt --settings x`). Claude would read a second
+  # settings layer from it, so refuse it, as the router launcher does.
+  for arg in ${_dx_launch_args[@]+"${_dx_launch_args[@]}"}; do
+    [[ "$arg" == "--" ]] && after_delimiter=1
+    if [[ "$after_delimiter" -eq 0 && ( "$arg" == "--settings" || "$arg" == --settings=* ) ]]; then
+      dx_error "Pass --settings once, as its own option; Dex merges every settings layer into one launch file."
+      return 1
+    fi
+  done
+
+  [[ "${_dx_status_line:-0}" != 1 ]] || statusline="$DEX_DIR/bin/status-line.sh"
+  inbound=$(dx_session_messaging_launch_value 2>/dev/null || true)
+  if dx_rtk_enabled && dx_rtk_resolved_binary >/dev/null 2>&1; then
+    rtk=1
+  fi
+
+  dir=$(__dx_provider_launch_settings_dir)
+  if ! (umask 077 && mkdir -p "$dir"); then
+    dx_error "Dex could not create ${dir} for this launch's Claude settings."
+    return 1
+  fi
+  find "$dir" -type f -name 'launch.*' -mtime +"$DX_LAUNCH_SETTINGS_MAX_AGE_DAYS" \
+    -exec rm -f {} + 2>/dev/null || true
+  if ! _dx_launch_file=$(umask 077 && mktemp "$dir/launch.XXXXXX"); then
+    dx_error "Dex could not create this launch's Claude settings file in ${dir}."
+    return 1
+  fi
+  if ! python3 "$DEX_DIR/scripts/settings-json.py" launch-settings \
+      "$DEX_DIR/settings.json" "$DEX_DIR" "$statusline" "$inbound" "$rtk" \
+      ${caller_settings[@]+"${caller_settings[@]}"} > "$_dx_launch_file"; then
+    rm -f "$_dx_launch_file"
+    dx_error "Dex could not build this launch's Claude settings (above)."
+    return 1
+  fi
+  _dx_launch_args=(--settings "$_dx_launch_file" ${_dx_launch_args[@]+"${_dx_launch_args[@]}"})
+}
+
+# The engine dispatch behind dx_provider_claude. env_args comes from the
+# caller's scope.
+__dx_provider_claude_exec() {
   case "$DX_PROVIDER_ENGINE" in
     ccr)
       # shellcheck disable=SC1091

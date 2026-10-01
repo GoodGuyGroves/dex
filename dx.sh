@@ -132,7 +132,7 @@ __dx_cli() {
       if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
         echo "Usage: dx reload"
         echo ""
-        echo "Reload Dex shell functions and refresh Claude hook settings."
+        echo "Reload Dex shell functions and refresh Dex's global Claude hooks if you installed them."
         return 0
       fi
       if [[ $# -gt 0 ]]; then
@@ -144,12 +144,12 @@ __dx_cli() {
         dx_error "Could not reload Dex shell functions."
         return 1
       fi
-      if ! dx_refresh_claude_settings 1 || ! dx_claude_settings_complete; then
-        dx_error "Reloaded Dex shell functions, but Claude hook settings could not be refreshed."
-        dx_info "Run 'dx tools bootstrap' after resolving the settings error."
+      if ! dx_refresh_global_claude_hooks; then
+        dx_error "Reloaded Dex shell functions, but the global Claude hooks could not be refreshed."
+        dx_info "Run 'dx install --global-hooks' after resolving the settings error."
         return 1
       fi
-      dx_done "Reloaded Dex shell functions and refreshed Claude hook settings."
+      dx_done "Reloaded Dex shell functions."
       ;;
     status)    bash "$DEX_DIR/bin/status.sh" "$@" ;;
     help|--help|-h)
@@ -163,7 +163,7 @@ __dx_cli() {
       echo "  Free-form prompts ask which mode to use; Enter selects session only."
       echo ""
       echo "Commands:"
-      echo "  dx install          Global install (skills, hooks, zshrc)"
+      echo "  dx install          Global install (skills, tools, zshrc)"
       echo "  dx uninstall        Global uninstall"
       echo "  dx init             Bootstrap current repo for Dex"
       echo "  dx sync             Refresh repo memory/rules from verified observations"
@@ -3123,14 +3123,6 @@ __dx_run_phases_inline() {
 
   local claude_args=("${DX_CLAUDE_FLAGS[@]}")
   claude_args+=(--append-system-prompt-file "$ctx_file")
-  # Status line plus, when the user opted in, unattended delivery of messages
-  # from their other sessions. A build failure skips both rather than passing
-  # Claude malformed settings.
-  local launch_settings
-  if launch_settings=$(dx_claude_launch_settings "$DEX_DIR/bin/status-line.sh") \
-     && [[ -n "$launch_settings" ]]; then
-    claude_args+=(--settings "$launch_settings")
-  fi
 
   local message
   message=$(__dx_phase_message "$step" "$raw_input" "$workspace_mode" "$wt_dir")
@@ -3219,6 +3211,7 @@ __dx_run_phases_inline() {
     DEX_COMPLETE_WAIT_MINUTES="${DEX_COMPLETE_WAIT_MINUTES:-$DX_COMPLETE_WAIT_MINUTES}" \
     DEX_DIR="$DEX_DIR" \
     DX_RUN_ROOT="$DX_RUN_ROOT" \
+    DX_LAUNCH_STATUS_LINE=1 \
     dx_provider_run_session "$claude_session_name" "$had_times_file" \
       "$provider_session_handle" "${claude_args[@]}" "$message"
   )
@@ -4473,10 +4466,6 @@ __dxloop_run() {
   fi
   local plan_args=("${DX_PLAN_FLAGS[@]}")
   [[ -n "$session_name" ]] && plan_args+=(-n "$session_name")
-  local loop_settings
-  if loop_settings=$(dx_claude_launch_settings) && [[ -n "$loop_settings" ]]; then
-    plan_args+=(--settings "$loop_settings")
-  fi
   plan_args+=(--append-system-prompt "You are in a dxloop planning session. You MUST be in plan mode — if not, call EnterPlanMode immediately. Your original task prompt is saved at ${prompt_file}. Re-read it with the Read tool if you lose track of the task. After ExitPlanMode is approved, stop this Claude Code session immediately so the dxloop wrapper can launch implementation. Do NOT ask whether to continue and do NOT wait for another user prompt. The Stop hook handles the process handoff back to dxloop. When the Stop hook prints the exact command after the audit threshold, run this literal command only if the plan is approved and every planning requirement is met, then stop again: bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"${session_id}\" \"${plan_generation}\"$(dx_session_messaging_prompt "$session_name")")
 
   dx_info "Phase: Plan (read-only until approved)"
@@ -4567,9 +4556,6 @@ $(__dx_provider_prompt)"
   fi
   local impl_args=("${DX_CLAUDE_FLAGS[@]}" --resume)
   [[ -n "$session_name" ]] && impl_args+=(-n "$session_name")
-  if loop_settings=$(dx_claude_launch_settings) && [[ -n "$loop_settings" ]]; then
-    impl_args+=(--settings "$loop_settings")
-  fi
   impl_args+=(--append-system-prompt "You are in a dxloop session. Your original task prompt is saved at ${prompt_file}. Re-read it with the Read tool before any audit step, or when you lose track of what you are working on. When the Stop hook prints the exact command after the audit threshold, run this literal command only if every implementation and verification requirement is met, then stop again: bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"${session_id}\" \"${impl_generation}\"$(dx_session_messaging_prompt "$session_name")")
 
   dx_info "Phase: Implement (autonomous)"

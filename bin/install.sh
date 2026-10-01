@@ -16,19 +16,26 @@ INSTALL_FAILED=0
 
 usage() {
   cat <<'USAGE'
-Usage: dx install
+Usage: dx install [--global-hooks | --no-global-hooks]
 
-Install Dex skills, hooks, tools, and shell integration for the current user.
+Install Dex skills, tools, and shell integration for the current user.
+Sessions Dex launches get Dex's hooks through their own launch settings.
 
 Options:
-  -h, --help  Show this help
+  --global-hooks     Also install Dex's hooks in your Claude settings, for
+                     sessions Dex did not launch
+  --no-global-hooks  Remove Dex's hooks from your Claude settings
+  -h, --help         Show this help
 USAGE
 }
 
 show_help=0
+global_hooks=""
 for arg in "$@"; do
   case "$arg" in
     -h|--help) show_help=1 ;;
+    --global-hooks) global_hooks=install ;;
+    --no-global-hooks) global_hooks=remove ;;
     *)
       dx_error "Unknown install option: $arg"
       usage >&2
@@ -85,13 +92,27 @@ else
   fi
 fi
 
-# 2. Install conservative Claude/Codex tooling.
+# 2. Global hooks, only on request. Before the bootstrap, which refreshes an
+# install that is already gated and warns about an ungated one.
+case "$global_hooks" in
+  install)
+    if dx_refresh_claude_settings 0 && dx_claude_settings_complete; then
+      dx_info "Sessions Dex launches skip these hooks and use their launch settings instead."
+    else
+      dx_error "Could not install Dex hooks into $(dx_claude_settings_file)"
+      INSTALL_FAILED=1
+    fi
+    ;;
+  remove) dx_remove_claude_global_hooks || INSTALL_FAILED=1 ;;
+esac
+
+# 3. Install conservative Claude/Codex tooling.
 if ! dx_bootstrap_agent_tooling "" "install"; then
   dx_warn "Continuing install without complete Claude/Codex tooling bootstrap"
   INSTALL_FAILED=1
 fi
 
-# 3. Source dx.sh in ~/.zshrc
+# 4. Source dx.sh in ~/.zshrc
 if grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$ZSHRC" 2>/dev/null; then
   dx_ok "dx.sh already sourced in ~/.zshrc"
 else
@@ -110,7 +131,7 @@ if [[ "${SHELL:-}" != */zsh ]]; then
   dx_warn "Switch to zsh (chsh -s \$(which zsh)) or source ~/.zshrc from a zsh session to use Dex."
 fi
 
-# 4. Make scripts executable. The .py files stay as Git shipped them: every
+# 5. Make scripts executable. The .py files stay as Git shipped them: every
 # caller runs them through python3, and re-flipping shell_parse.py's mode
 # would dirty the checkout.
 if chmod +x "$DEX_DIR/hooks/"*.sh "$DEX_DIR/bin/"*.sh 2>/dev/null; then

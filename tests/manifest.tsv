@@ -38,6 +38,8 @@ init-uninit-ownership-test.sh	slow	all	1200	hermetic
 install-health-test.sh	slow	all	1200	hermetic
 install-uninstall-test.sh	slow	all	1200	hermetic
 issue-hygiene-contract-test.sh	fast	all	600	hermetic
+launch-settings-probe-test.sh	fast	all	600	shared
+launch-settings-test.sh	fast	all	600	hermetic
 legacy-resume-test.sh	fast	all	600	hermetic
 lifecycle-control-cli-test.sh	fast	all	600	hermetic
 lifecycle-control-hook-test.sh	fast	all	600	hermetic

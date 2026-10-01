@@ -46,10 +46,12 @@ test('routed picker has one automatic entry and explicit models remain labeled a
   const personal = { options: [{ model: 'anthropic/new', label: 'Personal label' }] };
   assert.deepEqual(launchSettings(JSON.stringify({ modelPicker: personal }), config).modelPicker, personal);
   for (const value of ['missing.json', '{broken', 'null', '[]']) assert.throws(() => launchSettings(value, config), /settings/);
-  const parsed = launchArguments(['--settings', file, '--settings={"effortLevel":"high"}', '--', '--settings=prompt-text']);
-  assert.equal(parsed.settings, '{"effortLevel":"high"}');
+  const parsed = launchArguments(['--settings', file, '--', '--settings=prompt-text']);
+  assert.equal(parsed.settings, file);
   assert.deepEqual(parsed.args.slice(-2), ['--', '--settings=prompt-text']);
   assert.equal(parsed.args.some(arg => arg === file), false);
+  assert.equal(launchArguments(['--settings={"effortLevel":"high"}']).settings, '{"effortLevel":"high"}');
+  assert.throws(() => launchArguments(['--settings', file, '--settings={"effortLevel":"high"}']), /--settings once/);
 });
 
 test('standalone sessions launch without phase files while workflows follow their phase', async t => {

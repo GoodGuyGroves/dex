@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/helpers.sh
+source "$ROOT/tests/helpers.sh"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dex-install-health-test.XXXXXX")"
 
 cleanup() {
@@ -10,6 +12,8 @@ cleanup() {
 trap cleanup EXIT
 
 export HOME="$TMP_DIR/home"
+# run-all.sh points CLAUDE_CONFIG_DIR at its own sandbox; these tests own HOME.
+unset CLAUDE_CONFIG_DIR
 export CODEX_HOME="$HOME/.codex"
 export DEX_DIR="$ROOT"
 export DX_ARTIFACT_DIR="$TMP_DIR/artifacts"
@@ -237,7 +241,7 @@ if dx_bootstrap_agent_tooling "" "check" > "$TMP_DIR/doctor.out" 2>&1; then
   printf 'tooling doctor accepted incomplete Claude settings\n' >&2
   exit 1
 fi
-grep -Fq "Claude settings are incomplete" "$TMP_DIR/doctor.out"
+grep -Fq "Global Claude hooks are incomplete" "$TMP_DIR/doctor.out"
 
 dx_install_claude_dex_links() { return 0; }
 dx_install_codex_skills() { return 0; }
@@ -249,7 +253,7 @@ dx_install_safe_official_claude_plugins() { return 0; }
 dx_bootstrap_agent_tooling "" "install" > "$TMP_DIR/repair.out"
 dx_claude_settings_complete
 env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/repaired-status.out"
-assert_status_row "Hooks" "installed in ~/.claude/settings.json" "$TMP_DIR/repaired-status.out"
+assert_status_row "Hooks" "launch-scoped, plus global in $HOME/.claude/settings.json" "$TMP_DIR/repaired-status.out"
 
 python3 - "$HOME/.claude/settings.json" <<'PY'
 import json
@@ -277,7 +281,41 @@ assert sum("session-end.sh" in (command or "") for command in commands) == 1, co
 assert settings["userSetting"] == "keep", settings
 assert settings["worktree"]["userSetting"] == "keep", settings
 assert settings["worktree"]["symlinkDirectories"][0] == "custom-cache", settings
+assert all(command.startswith('[ -z "${DEX_LAUNCHED:-}" ] || exit 0; ')
+           for command in commands if "/hooks/" in (command or "")), commands
 PY
+
+# Hooks are launch-scoped: removing the global install leaves a state that
+# status and the doctor report as healthy, with the user's entries intact.
+dx_remove_claude_global_hooks > "$TMP_DIR/remove.out"
+assert_eq none "$(dx_claude_global_hooks_state)" 'state after removal'
+grep -Fq '/usr/local/bin/user-pre-compact' "$HOME/.claude/settings.json" || assert_at $LINENO
+dx_check_claude_settings > "$TMP_DIR/none-doctor.out"
+env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/none-status.out"
+assert_status_row "Hooks" "launch-scoped \\(Dex sessions only\\)" "$TMP_DIR/none-status.out"
+
+# An ungated install from before launch-scoped hooks runs twice in Dex
+# launches: status and the doctor say so, and the bootstrap leaves it alone.
+python3 "$ROOT/scripts/settings-json.py" merge-settings "$HOME/.claude/settings.json" \
+  "$ROOT/settings.json" "$ROOT" "$HOME" > "$TMP_DIR/legacy.json"
+mv "$TMP_DIR/legacy.json" "$HOME/.claude/settings.json"
+cp "$HOME/.claude/settings.json" "$TMP_DIR/legacy.before"
+assert_eq legacy "$(dx_claude_global_hooks_state)" 'legacy state'
+env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/legacy-status.out"
+assert_status_row "Hooks" "LEGACY global install" "$TMP_DIR/legacy-status.out"
+if dx_check_claude_settings > "$TMP_DIR/legacy-doctor.out" 2>&1; then
+  printf 'tooling doctor accepted a legacy global install\n' >&2
+  exit 1
+fi
+grep -Fq -- "--no-global-hooks" "$TMP_DIR/legacy-doctor.out" || assert_at $LINENO
+dx_bootstrap_agent_tooling "" "install" > "$TMP_DIR/legacy-repair.out" 2>&1
+grep -Fq "predate launch-scoped hooks" "$TMP_DIR/legacy-repair.out" || assert_at $LINENO
+cmp -s "$TMP_DIR/legacy.before" "$HOME/.claude/settings.json" || assert_at $LINENO
+
+# The global install writes where Claude Code reads: CLAUDE_CONFIG_DIR.
+CLAUDE_CONFIG_DIR="$TMP_DIR/config-dir" bash "$ROOT/bin/install-settings.sh" --quiet
+CLAUDE_CONFIG_DIR="$TMP_DIR/config-dir" dx_claude_settings_complete
+cmp -s "$TMP_DIR/legacy.before" "$HOME/.claude/settings.json" || assert_at $LINENO
 
 CONFLICT_BIN="$TMP_DIR/conflict-bin"
 mkdir -p "$CONFLICT_BIN"
