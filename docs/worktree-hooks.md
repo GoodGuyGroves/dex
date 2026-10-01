@@ -49,7 +49,7 @@ sequence in a script and name the script.
 |----------|-------|
 | `DX_WORKTREE_NAME` | The worktree's directory name (`ticket-142`, `task-fix-login`). For an in-place session (`dx --no-worktree`) there is no worktree, so it is the repository directory's own name. |
 | `DX_WORKTREE_PATH` | Its absolute path, whether or not the directory still exists |
-| `DX_TICKET` | The ticket ID when Dex knows one, empty otherwise |
+| `DX_TICKET` | The ticket ID when Dex knows one (`142`, or `ENG-142` for `ticket-eng-142`), empty otherwise |
 | `DX_REPO_ROOT` | The main checkout, which is where `.dex/dex.md` lives |
 
 The command runs in the worktree. When the directory is already gone — an

@@ -1420,23 +1420,36 @@ dx_meta_write() {
   fi
 }
 
-# dx_meta_find_workspace_by_ticket <ticket_number>
+# dx_meta_find_workspace_by_ticket <ticket_id>
 # Scan meta sidecars in the current repo's session scope and print the first
 # match as a TAB-separated record: session_id<TAB>wt_name<TAB>wt_dir<TAB>workspace_mode.
-# Used to resume by ticket number when the conventional ticket-N directory
-# does not exist (e.g. the worktree was originally named task-*).
+# Used to resume by ticket when the conventional ticket directory does not
+# exist (e.g. the worktree was originally named task-*).
+#
+# A record with a ticket_id matches only that exact ID, so ENG-1234 never
+# answers 1234 or OPS-1234, and a record for the bare ticket 1234 never
+# answers ENG-1234. A record written before ticket IDs existed has only its
+# ticket_number; a prefixed request (ENG-1234) also matches that number,
+# because the record never said which prefix it belonged to.
 dx_meta_find_workspace_by_ticket() {
-  local ticket="$1" repo_key match="" match_identity="" candidate candidate_identity
+  local ticket="$1" ticket_number repo_key match="" match_identity="" candidate candidate_identity
   [[ -n "$ticket" ]] || return 1
   [[ -d "$DX_STATE_DIR" ]] || return 1
+  ticket_number="${ticket##*-}"
   repo_key=$(dx_session_repo_key)
 
   local meta_file session_id ticket_in_file wt_name wt_dir workspace_mode
   while IFS= read -r meta_file; do
     [[ -n "$meta_file" && -f "$meta_file" ]] || continue
     session_id="$(basename "$meta_file" .meta)"
-    ticket_in_file=$(awk -F= '$1 == "ticket_number" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)
-    [[ "$ticket_in_file" == "$ticket" ]] || continue
+    ticket_in_file=$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)
+    if [[ -n "$ticket_in_file" ]]; then
+      [[ "$ticket_in_file" == "$ticket" ]] || continue
+    else
+      ticket_in_file=$(awk -F= '$1 == "ticket_number" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)
+      [[ -n "$ticket_in_file" ]] || continue
+      [[ "$ticket_in_file" == "$ticket" || "$ticket_in_file" == "$ticket_number" ]] || continue
+    fi
     wt_name=$(awk -F= '$1 == "wt_name" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)
     wt_dir=$(awk -F= '$1 == "wt_dir" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)
     workspace_mode=$(awk -F= '$1 == "workspace_mode" { sub(/^[^=]*=/, ""); print; exit }' "$meta_file" 2>/dev/null)

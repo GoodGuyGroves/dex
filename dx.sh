@@ -253,27 +253,28 @@ __dx_cli() {
         return 1
       fi
       local rev_phase="${2:-}"
-      local rev_name ticket_number=""
-      if __dx_is_ticket "$raw"; then
-        ticket_number="${raw//[^0-9]/}"
-        rev_name="ticket-${ticket_number}"
+      local rev_root
+      rev_root=$(dx_repo_root) || return 1
+      local rev_name ticket_id=""
+      if __dx_parse_ticket_input "$raw" "$rev_root"; then
+        ticket_id="$_dx_ticket_id"
+        __dx_prefer_legacy_ticket_workspace worktree "$rev_root" || true
+        rev_name="$_dx_ticket_wt_name"
       else
         rev_name="task-$(dx_slugify "$raw")"
       fi
-      local rev_root
-      rev_root=$(dx_repo_root) || return 1
       local rev_dir="${rev_root}/.dex/worktrees/${rev_name}"
-      if [[ -n "$ticket_number" && ! -d "$rev_dir" ]]; then
+      if [[ -n "$ticket_id" && ! -d "$rev_dir" ]]; then
         local resolution_status=0
-        __dx_resolve_existing_workspace_by_ticket "$ticket_number" || resolution_status=$?
+        __dx_resolve_existing_workspace_by_ticket "$ticket_id" || resolution_status=$?
         if [[ $resolution_status -eq 0 ]]; then
           if [[ "$_dx_workspace_mode" != "worktree" ]]; then
-            dx_error "Ticket ${ticket_number} uses an in-place lifecycle; dx revert only accepts linked worktrees."
+            dx_error "Ticket ${ticket_id} uses an in-place lifecycle; dx revert only accepts linked worktrees."
             return 1
           fi
           rev_name="$_dx_wt_name"
           rev_dir="${rev_root}/.dex/worktrees/${rev_name}"
-          dx_info "Resolved ticket ${ticket_number} to existing workspace ${rev_name}"
+          dx_info "Resolved ticket ${ticket_id} to existing workspace ${rev_name}"
         elif [[ $resolution_status -ne 1 ]]; then
           return 1
         fi
@@ -516,22 +517,121 @@ __dx_kill_process_tree() {
 }
 
 # __dx_is_ticket <string>
-# Returns 0 if the string looks like a ticket reference (bare number, prefixed
-# like ENG-999, ticket-999). Returns 1 otherwise (freeform task description).
+# Returns 0 if the string looks like a ticket reference: a bare number, or a
+# 2-10 character prefix and a number (ENG-999, ticket-999). Returns 1 otherwise
+# (freeform task description). Checks the shape only, so it reads no config.
 # Used by __dx_setup_worktree and dxrm to consistently classify user input.
 __dx_is_ticket() {
-  [[ "$1" =~ ^[[:space:]]*[a-zA-Z]*-?[0-9]+[[:space:]]*$ ]]
+  dx_ticket_parse "$1" 2>/dev/null
 }
 
-# __dx_resolve_workspace_name <raw_input>
-# Sets: _dx_wt_name, _dx_is_task.
+# __dx_parse_ticket_input <raw> [repo_root]
+# Parse a ticket reference with the project's ticket_prefixes. Sets
+# _dx_ticket_id, _dx_ticket_number and _dx_ticket_prefix (see lib/ticket.sh),
+# _dx_ticket_wt_name for its workspace, _dx_ticket_legacy_name: the
+# number-only name a prefixed ticket's workspace had before prefixes were
+# configured, or empty, and _dx_ticket_prefix_list: the configured prefixes.
+# Returns 1 when raw is not a ticket.
+{ unalias __dx_parse_ticket_input; unfunction __dx_parse_ticket_input; } 2>/dev/null || true
+__dx_parse_ticket_input() {
+  local raw="$1" repo_root="${2:-}" ticket_prefixes=""
+  _dx_ticket_wt_name=""
+  _dx_ticket_legacy_name=""
+  _dx_ticket_prefix_list=""
+  _dx_ticket_prefixes_configured=0
+  dx_ticket_parse "$raw" 2>/dev/null || return 1
+  [[ -n "$repo_root" ]] || repo_root=$(dx_repo_root 2>/dev/null) || repo_root=""
+  [[ -z "$repo_root" ]] || ticket_prefixes=$(dx_ticket_prefixes "$repo_root")
+  _dx_ticket_prefixes_configured=0
+  if [[ -n "$ticket_prefixes" ]]; then
+    _dx_ticket_prefixes_configured=1
+    _dx_ticket_prefix_list="$ticket_prefixes"
+    dx_ticket_parse "$raw" "$ticket_prefixes"
+  fi
+  _dx_ticket_wt_name=$(dx_ticket_workspace_name "$_dx_ticket_id")
+  [[ -z "$_dx_ticket_prefix" ]] || _dx_ticket_legacy_name="ticket-${_dx_ticket_number}"
+  return 0
+}
+
+# __dx_prefer_legacy_ticket_workspace <worktree|in-place> <repo_root>
+# A prefixed ticket whose own workspace does not exist yet resumes the
+# workspace it had under the number-only name, when one exists and no other
+# ticket has claimed it: its metadata has no ticket_id and names no ticket or
+# only the number, or its ticket_id is this ticket. A ticket_id that is the
+# bare number belongs to ticket N itself, which is a different ticket once
+# prefixes are listed. Sets _dx_ticket_wt_name to the legacy name and returns
+# 0 when it does; returns 1 otherwise. Resuming writes this ticket's ID into
+# the legacy workspace's metadata, so another prefix cannot take it afterwards.
+{ unalias __dx_prefer_legacy_ticket_workspace; unfunction __dx_prefer_legacy_ticket_workspace; } 2>/dev/null || true
+__dx_prefer_legacy_ticket_workspace() {
+  local workspace_mode="$1" repo_root="$2" legacy="$_dx_ticket_legacy_name"
+  local legacy_session legacy_ticket
+  [[ -n "$legacy" ]] || return 1
+  if [[ "$workspace_mode" == "in-place" ]]; then
+    [[ ! -e "$(dx_state_file "$(__dx_session_id_for_workspace in-place "$_dx_ticket_wt_name")")" ]] \
+      || return 1
+    legacy_session=$(__dx_session_id_for_workspace in-place "$legacy")
+    [[ -e "$(dx_state_file "$legacy_session")" ]] || return 1
+  else
+    [[ ! -d "${repo_root}/.dex/worktrees/${_dx_ticket_wt_name}" ]] || return 1
+    [[ -d "${repo_root}/.dex/worktrees/${legacy}" ]] || return 1
+    legacy_session=$(dx_session_id "$legacy")
+  fi
+  legacy_ticket=$(dx_meta_read "$legacy_session" ticket_id)
+  if [[ -z "$legacy_ticket" ]]; then
+    legacy_ticket=$(dx_meta_read "$legacy_session" ticket_number)
+    [[ -z "$legacy_ticket" || "$legacy_ticket" == "$_dx_ticket_number" ]] || return 1
+  elif [[ "$legacy_ticket" != "$_dx_ticket_id" ]]; then
+    [[ "$legacy_ticket" != "$_dx_ticket_number" ]] \
+      || dx_info "${legacy} belongs to ticket ${legacy_ticket}, which has no prefix. Run dx ${legacy_ticket} to resume it."
+    return 1
+  fi
+  dx_info "Using ${legacy} for ${_dx_ticket_id}: that number-only workspace is not claimed by another ticket."
+  _dx_ticket_wt_name="$legacy"
+  return 0
+}
+
+# __dx_hint_prefixed_ticket_workspaces <repo_root>
+# Before a bare ticket number gets a new workspace in a project that lists
+# ticket_prefixes, name the prefixed workspaces that share the number. Dex does
+# not pick one: 1234 and ENG-1234 are different tickets there.
+{ unalias __dx_hint_prefixed_ticket_workspaces; unfunction __dx_hint_prefixed_ticket_workspaces; } 2>/dev/null || true
+__dx_hint_prefixed_ticket_workspaces() {
+  local worktrees_dir="${1}/.dex/worktrees" candidate name prefix ticket_id matches=()
+  [[ "$_dx_ticket_prefixes_configured" == 1 && -z "$_dx_ticket_prefix" ]] || return 0
+  for candidate in "$worktrees_dir"/*(/N); do
+    name="${candidate##*/}"
+    [[ "$name" =~ ^ticket-[a-z][a-z0-9]{1,9}-[0-9]+$ ]] || continue
+    [[ "${name##*-}" == "$_dx_ticket_number" ]] || continue
+    matches+=("$(dx_ticket_id_from_workspace_name "$name")")
+  done
+  # An in-place lifecycle has no directory of its own, only its session record.
+  for prefix in ${(f)_dx_ticket_prefix_list}; do
+    ticket_id="${prefix}-${_dx_ticket_number}"
+    (( ${matches[(Ie)$ticket_id]} )) && continue
+    name=$(dx_ticket_workspace_name "$ticket_id")
+    [[ "$(dx_meta_read "$(__dx_session_id_for_workspace in-place "$name")" ticket_id)" == "$ticket_id" ]] \
+      || continue
+    matches+=("$ticket_id")
+  done
+  [[ ${#matches[@]} -gt 0 ]] || return 0
+  dx_info "Ticket ${_dx_ticket_number} has no prefix, so it is a different ticket from ${(j:, :)matches}. Run dx with the prefixed ID to resume one of those."
+}
+
+# __dx_resolve_workspace_name <raw_input> [worktree|in-place repo_root]
+# Sets: _dx_wt_name, _dx_is_task, and for a ticket the _dx_ticket_* values from
+# __dx_parse_ticket_input. Given a workspace mode, a prefixed ticket resumes
+# its legacy number-only workspace when __dx_prefer_legacy_ticket_workspace
+# allows it.
 __dx_resolve_workspace_name() {
-  local raw_input="$1"
+  local raw_input="$1" workspace_mode="${2:-}" repo_root="${3:-}"
 
   _dx_is_task=0
-  if __dx_is_ticket "$raw_input"; then
-    local num="${raw_input//[^0-9]/}"  # strip everything except digits
-    _dx_wt_name="ticket-${num}"
+  if __dx_parse_ticket_input "$raw_input" "$repo_root"; then
+    if [[ -n "$workspace_mode" ]]; then
+      __dx_prefer_legacy_ticket_workspace "$workspace_mode" "$repo_root" || true
+    fi
+    _dx_wt_name="$_dx_ticket_wt_name"
   else
     local slug
     slug=$(dx_slugify "$raw_input")
@@ -713,7 +813,7 @@ __dx_parse_last_session() {
   _dx_session_id=$(__dx_session_id_for_workspace "$_dx_workspace_mode" "$_dx_wt_name")
 }
 
-# __dx_resolve_existing_workspace_by_ticket <ticket_number>
+# __dx_resolve_existing_workspace_by_ticket <ticket_id>
 # Look up an already-created worktree/in-place workspace for a given ticket
 # number using the meta sidecars written at creation time. Sets the same
 # globals __dx_setup_worktree would set when a matching workspace is found.
@@ -737,7 +837,7 @@ __dx_resolve_existing_workspace_by_ticket() {
   wt_dir="${record%%$'\t'*}"
   workspace_mode="${record#*$'\t'}"
 
-  [[ "$wt_name" =~ ^ticket-[0-9]+$ || "$wt_name" =~ ^task-[a-z0-9]+(-[a-z0-9]+)*$ ]] || return 1
+  [[ "$wt_name" =~ ^ticket-([a-z][a-z0-9]{1,9}-)?[0-9]+$ || "$wt_name" =~ ^task-[a-z0-9]+(-[a-z0-9]+)*$ ]] || return 1
   repo_root=$(dx_repo_root) || return 1
   case "$workspace_mode" in
     worktree)
@@ -764,7 +864,7 @@ __dx_resolve_existing_workspace_by_ticket() {
 # remove or replace it before this launcher can act on it.
 { unalias __dx_pin_ticket_workspace_claim; unfunction __dx_pin_ticket_workspace_claim; } 2>/dev/null || true
 __dx_pin_ticket_workspace_claim() {
-  local ticket_number="$1" expected_session="$_dx_session_id"
+  local ticket_id="$1" expected_session="$_dx_session_id"
   local expected_name="$_dx_wt_name" expected_dir="$_dx_wt_dir"
   local expected_mode="$_dx_workspace_mode" verify_result=0
 
@@ -772,7 +872,7 @@ __dx_pin_ticket_workspace_claim() {
     __dx_startup_claim_release || return 1
     __dx_startup_claim_acquire "$expected_session" || return 1
   fi
-  __dx_resolve_existing_workspace_by_ticket "$ticket_number" \
+  __dx_resolve_existing_workspace_by_ticket "$ticket_id" \
     || verify_result=$?
   if [[ "$verify_result" -ne 0 \
     || "$_dx_session_id" != "$expected_session" \
@@ -819,7 +919,7 @@ __dx_setup_worktree() {
   local raw_input="$1" setup_result=0
 
   _dx_repo_root=$(dx_repo_root) || return 1
-  __dx_resolve_workspace_name "$raw_input" || return 1
+  __dx_resolve_workspace_name "$raw_input" worktree "$_dx_repo_root" || return 1
 
   _dx_wt_dir="${_dx_repo_root}/.dex/worktrees/${_dx_wt_name}"
   _dx_default_branch=$(dx_default_branch "$_dx_repo_root")
@@ -847,7 +947,7 @@ __dx_setup_worktree_claimed() {
     dx_link_build_caches_to_worktree "$_dx_repo_root" "$_dx_wt_dir"
     __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
     dx_meta_write "$_dx_session_id" "wt_name=${_dx_wt_name}" "wt_dir=${_dx_wt_dir}" "workspace_mode=worktree" "raw_input=${raw_input}"
-    [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_wt_name#ticket-}"
+    [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${_dx_ticket_id}"
     return 0
   fi
 
@@ -857,12 +957,12 @@ __dx_setup_worktree_claimed() {
   # already represents this ticket. Resume that one instead of creating a new
   # worktree.
   if [[ $_dx_is_task -eq 0 ]]; then
-    local ticket_number="${_dx_wt_name#ticket-}"
-    if [[ -n "$ticket_number" ]]; then
+    local ticket_id="$_dx_ticket_id"
+    if [[ -n "$ticket_id" ]]; then
       local resolution_status=0
-      __dx_resolve_existing_workspace_by_ticket "$ticket_number" || resolution_status=$?
+      __dx_resolve_existing_workspace_by_ticket "$ticket_id" || resolution_status=$?
       if [[ $resolution_status -eq 0 ]]; then
-        __dx_pin_ticket_workspace_claim "$ticket_number" || return 1
+        __dx_pin_ticket_workspace_claim "$ticket_id" || return 1
         if [[ "$_dx_workspace_mode" == "worktree" ]]; then
           if ! dx_wt_is_registered "$_dx_repo_root" "$_dx_wt_dir"; then
             dx_error "Saved workspace is not a registered Git worktree: $_dx_wt_dir"
@@ -873,14 +973,16 @@ __dx_setup_worktree_claimed() {
         fi
         _dx_default_branch=$(dx_default_branch "$_dx_wt_dir")
         __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
-        dx_meta_write "$_dx_session_id" "ticket_number=${ticket_number}"
-        dx_info "Resuming existing workspace ${_dx_wt_name} for ticket ${ticket_number}"
+        dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${ticket_id}"
+        dx_info "Resuming existing workspace ${_dx_wt_name} for ticket ${ticket_id}"
         return 0
       elif [[ $resolution_status -ne 1 ]]; then
         return 1
       fi
     fi
   fi
+
+  [[ $_dx_is_task -eq 1 ]] || __dx_hint_prefixed_ticket_workspaces "$_dx_repo_root"
 
   # Auto-init if .dex doesn't exist yet
   if [[ ! -d "${_dx_repo_root}/.dex" ]]; then
@@ -909,12 +1011,12 @@ __dx_setup_worktree_claimed() {
   dx_link_build_caches_to_worktree "$_dx_repo_root" "$_dx_wt_dir"
   # Let the project stand up whatever else a worktree of it needs — a database,
   # a port, a container. Declared under `## Worktree Hooks`; absent runs nothing.
-  dx_worktree_hook_run after_create "$_dx_repo_root" "$_dx_wt_dir" "$_dx_wt_name"
+  dx_worktree_hook_run after_create "$_dx_repo_root" "$_dx_wt_dir" "$_dx_wt_name" "$_dx_ticket_id"
   __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
   local _dx_original_head
   _dx_original_head=$(git -C "$_dx_wt_dir" rev-parse --verify 'HEAD^{commit}') || return 1
   dx_meta_write "$_dx_session_id" "wt_name=${_dx_wt_name}" "wt_dir=${_dx_wt_dir}" "workspace_mode=worktree" "raw_input=${raw_input}" "original_branch=worktree-${_dx_wt_name}" "original_head=${_dx_original_head}"
-  [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_wt_name#ticket-}"
+  [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${_dx_ticket_id}"
 
   return 0
 }
@@ -975,7 +1077,7 @@ __dx_setup_in_place() {
     dx_error "Not in a git repository."
     return 1
   fi
-  __dx_resolve_workspace_name "$raw_input" || return 1
+  __dx_resolve_workspace_name "$raw_input" in-place "$_dx_repo_root" || return 1
 
   _dx_wt_dir="$_dx_repo_root"
   _dx_default_branch=$(dx_default_branch "$_dx_wt_dir")
@@ -1019,7 +1121,7 @@ __dx_setup_in_place_claimed() {
     local _rc=$?
     if [[ $_rc -eq 0 ]]; then
       dx_meta_write "$_dx_session_id" "wt_name=${_dx_wt_name}" "wt_dir=${_dx_wt_dir}" "workspace_mode=in-place" "raw_input=${raw_input}"
-      [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_wt_name#ticket-}"
+      [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${_dx_ticket_id}"
     fi
     return $_rc
   fi
@@ -1028,25 +1130,27 @@ __dx_setup_in_place_claimed() {
   # session exists yet for ticket-N, see if another workspace already represents
   # this ticket (created earlier with a freeform description) and resume that.
   if [[ $_dx_is_task -eq 0 ]]; then
-    local _ticket_number="${_dx_wt_name#ticket-}"
-    if [[ -n "$_ticket_number" ]]; then
+    local _ticket_id="$_dx_ticket_id"
+    if [[ -n "$_ticket_id" ]]; then
       local _resolution_status=0
-      __dx_resolve_existing_workspace_by_ticket "$_ticket_number" || _resolution_status=$?
+      __dx_resolve_existing_workspace_by_ticket "$_ticket_id" || _resolution_status=$?
       if [[ $_resolution_status -eq 0 ]]; then
-        __dx_pin_ticket_workspace_claim "$_ticket_number" || return 1
+        __dx_pin_ticket_workspace_claim "$_ticket_id" || return 1
         if [[ "$_dx_workspace_mode" == "worktree" ]]; then
           dx_link_claude_to_worktree "$_dx_repo_root" "$_dx_wt_dir"
         fi
         _dx_default_branch=$(dx_default_branch "$_dx_wt_dir")
         __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
-        dx_meta_write "$_dx_session_id" "ticket_number=${_ticket_number}"
-        dx_info "Resuming existing workspace ${_dx_wt_name} for ticket ${_ticket_number}"
+        dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${_ticket_id}"
+        dx_info "Resuming existing workspace ${_dx_wt_name} for ticket ${_ticket_id}"
         return 0
       elif [[ $_resolution_status -ne 1 ]]; then
         return 1
       fi
     fi
   fi
+
+  [[ $_dx_is_task -eq 1 ]] || __dx_hint_prefixed_ticket_workspaces "$_dx_repo_root"
 
   if [[ "$current_branch" == "$branch_name" ]]; then
     dx_ok "Using existing Dex branch ${branch_name}"
@@ -1096,7 +1200,7 @@ __dx_setup_in_place_claimed() {
   else
     dx_meta_write "$_dx_session_id" "wt_name=${_dx_wt_name}" "wt_dir=${_dx_wt_dir}" "workspace_mode=in-place" "raw_input=${raw_input}" "original_branch=${branch_name}"
   fi
-  [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_wt_name#ticket-}"
+  [[ $_dx_is_task -eq 0 ]] && dx_meta_write "$_dx_session_id" "ticket_number=${_dx_ticket_number}" "ticket_id=${_dx_ticket_id}"
   return 0
 }
 
@@ -3674,7 +3778,7 @@ __dx_run_spec_cli() {
   __dx_run_spec_apply_env "$normalized_spec" "$run_token" || return 1
 
   cd "$repo_dir" 2>/dev/null || return 1
-  __dx_resolve_workspace_name "$workspace_input" || return 1
+  __dx_resolve_workspace_name "$workspace_input" in-place "$repo_dir" || return 1
   local session_id
   session_id=$(__dx_session_id_for_workspace "in-place" "$_dx_wt_name")
   __dx_startup_claim_acquire "$session_id" || return 1
@@ -5133,16 +5237,21 @@ dxrm() {
   local raw_input="${(j: :)@}"  # zsh: join all args with spaces
 
   local wt_name
-  if __dx_is_ticket "$raw_input"; then
-    local num="${raw_input//[^0-9]/}"  # strip everything except digits
-    wt_name="ticket-${num}"
+  if __dx_parse_ticket_input "$raw_input" "$repo_root"; then
+    local ticket_id="$_dx_ticket_id"
+    wt_name="$_dx_ticket_wt_name"
+    if [[ ! -d "${worktrees_dir}/${wt_name}" ]] \
+      && ! git show-ref --verify --quiet "refs/heads/worktree-${wt_name}" 2>/dev/null \
+      && __dx_prefer_legacy_ticket_workspace worktree "$repo_root"; then
+      wt_name="$_dx_ticket_wt_name"
+    fi
     if [[ ! -d "${worktrees_dir}/${wt_name}" ]] \
       && ! git show-ref --verify --quiet "refs/heads/worktree-${wt_name}" 2>/dev/null; then
       local resolution_status=0
-      __dx_resolve_existing_workspace_by_ticket "$num" || resolution_status=$?
+      __dx_resolve_existing_workspace_by_ticket "$ticket_id" || resolution_status=$?
       if [[ $resolution_status -eq 0 ]]; then
         wt_name="$_dx_wt_name"
-        dx_info "Resolved ticket ${num} to existing workspace ${wt_name}"
+        dx_info "Resolved ticket ${ticket_id} to existing workspace ${wt_name}"
       elif [[ $resolution_status -ne 1 ]]; then
         return 1
       fi
@@ -5341,9 +5450,10 @@ dxcd() {
 
   # Ticket IDs may point to a task-named workspace after tracker intake linked
   # a freeform lifecycle to a ticket.
-  if __dx_is_ticket "$target"; then
-    local ticket_number="${target//[^0-9]/}"
-    local ticket_dir="$worktrees_dir/ticket-${ticket_number}"
+  if __dx_parse_ticket_input "$target" "$repo_root"; then
+    local ticket_id="$_dx_ticket_id"
+    __dx_prefer_legacy_ticket_workspace worktree "$repo_root" || true
+    local ticket_dir="$worktrees_dir/${_dx_ticket_wt_name}"
     if [[ -d "$ticket_dir" ]]; then
       if ! dx_wt_is_registered "$repo_root" "$ticket_dir"; then
         dx_error "Workspace path is not a registered Git worktree: ${ticket_dir}"
@@ -5353,10 +5463,10 @@ dxcd() {
       return 0
     fi
     local resolution_status=0
-    __dx_resolve_existing_workspace_by_ticket "$ticket_number" || resolution_status=$?
+    __dx_resolve_existing_workspace_by_ticket "$ticket_id" || resolution_status=$?
     if [[ $resolution_status -eq 0 ]]; then
       if [[ "$_dx_workspace_mode" == "in-place" ]]; then
-        dx_info "Ticket ${ticket_number} uses the current checkout" >&2
+        dx_info "Ticket ${ticket_id} uses the current checkout" >&2
         cd "$repo_root" || return 1
         return 0
       fi
@@ -5365,7 +5475,7 @@ dxcd() {
         dx_error "Workspace path is not a registered Git worktree: ${linked_dir}"
         return 1
       fi
-      dx_info "Resolved ticket ${ticket_number} to existing workspace $_dx_wt_name" >&2
+      dx_info "Resolved ticket ${ticket_id} to existing workspace $_dx_wt_name" >&2
       cd "$linked_dir" || return 1
       return 0
     elif [[ $resolution_status -ne 1 ]]; then

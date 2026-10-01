@@ -313,6 +313,8 @@ After write-back:
   SID="${DEX_SESSION_ID:-$(dx_session_id)}"
   dx_meta_write "$SID" "tracker_key=<KEY-OR-URL>" "ticket_number=<NUMBER-IF-GITHUB>"
   ```
+  When `## Tickets` in `.dex/dex.md` lists the key's prefix, also write
+  `ticket_id=<PREFIX-N>` in upper case (for example `ticket_id=ENG-123`).
 - If the tracker provides a branch name for the chosen ticket, prepare it with
   the shared branch helper. This resumes an eligible branch already on origin
   and otherwise keeps a new branch local until Phase 2 creates its first
