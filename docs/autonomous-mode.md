@@ -569,6 +569,15 @@ Claude receives it through `claude --model`; interactive Codex lifecycles and
 non-interactive Codex delegation receive it through their native `--model`
 flag.
 
+`dx --title "<title>" 999` names the lifecycle's Claude session
+`<ticket> <title>`, for example `999 Fix login redirect`, so `/resume` lists
+it by ticket and title. `DEX_SESSION_TITLE` does the same from the
+environment, and a run spec's `source.title` does it for `dx run`. Dex
+replaces control characters with spaces and keeps the rest of the title as
+written. Without a title the session is named after the workspace, as before.
+The name is fixed when the lifecycle first launches, and later resumes reuse
+it.
+
 **From inside an existing Claude Code session** (via `/dxloop` skill):
 The skill prepares a shell-safe terminal command for the dedicated `dxloop`
 wrapper. It does not claim that it can retrofit hook ownership into the current
@@ -774,8 +783,9 @@ Even in autonomous mode, Claude stops and escalates to the user for:
 The user can always interrupt by providing input or pressing Ctrl+C. Phase
 state and the provider's exact conversation ID are saved so `dx 999` or
 `dx --resume` can restore both the lifecycle and its conversation after a
-crash. Older Claude lifecycles fall back to their stable Dex session name;
-older Codex lifecycles fall back to the most recent session in the workspace.
+crash. Claude lifecycles without a saved conversation ID fall back to their
+stored Dex session name (`--resume <name>`); older Codex lifecycles fall back
+to the most recent session in the workspace.
 If the provider reports that the saved conversation no longer exists, Dex
 retries once with a new conversation at the current phase, keeping the same
 worktree, run, and phase context. The startup hook saves the new conversation

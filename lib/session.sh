@@ -1420,6 +1420,42 @@ dx_meta_write() {
   fi
 }
 
+# dx_session_title_sanitize <title>
+# Replace control characters with spaces, collapse runs of spaces and trim.
+# Claude Code accepts any other display name, and a tab or newline would split
+# the key=value line the name is stored on.
+dx_session_title_sanitize() {
+  printf '%s' "${1:-}" | LC_ALL=C tr '[:cntrl:]' ' ' | LC_ALL=C tr -s ' ' \
+    | LC_ALL=C sed 's/^ //; s/ $//'
+}
+
+# dx_claude_session_name_resolve <session_id> <workspace_mode> <workspace_name> <resuming:0|1> [title]
+# Print the Claude session name for a lifecycle. A name stored in the session
+# metadata always wins, so every launch and the name-based resume fallback use
+# the first one. A titled fresh launch is "<ticket_id> <title>", with the
+# workspace name standing in for a task that has no ticket. A resumed lifecycle
+# with no stored name predates titles and keeps its workspace name.
+dx_claude_session_name_resolve() {
+  local session_id="$1" workspace_mode="$2" wt_name="$3" resuming="$4"
+  local stored legacy title ticket_id
+  stored=$(dx_meta_read "$session_id" claude_session_name)
+  if [[ -n "$stored" ]]; then
+    printf '%s\n' "$stored"
+    return 0
+  fi
+  legacy="$wt_name"
+  if [[ "$workspace_mode" == "in-place" ]]; then
+    legacy="inplace-${wt_name}"
+  fi
+  title=$(dx_session_title_sanitize "${5:-}")
+  if [[ "$resuming" == "1" || -z "$title" ]]; then
+    printf '%s\n' "$legacy"
+    return 0
+  fi
+  ticket_id=$(dx_meta_read "$session_id" ticket_id)
+  printf '%s %s\n' "${ticket_id:-$wt_name}" "$title"
+}
+
 # dx_meta_find_workspace_by_ticket <ticket_id>
 # Scan meta sidecars in the current repo's session scope and print the first
 # match as a TAB-separated record: session_id<TAB>wt_name<TAB>wt_dir<TAB>workspace_mode.
