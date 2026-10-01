@@ -19,7 +19,7 @@ fail() {
 # than as broken, which is the wrong answer arriving quietly.
 BASH_FILES=(
   "$ROOT"/install.sh "$ROOT"/lib/*.sh "$ROOT"/hooks/*.sh "$ROOT"/bin/*.sh
-  "$ROOT"/tests/*.sh "$ROOT"/research/*.sh "$ROOT"/research/lib/*.sh
+  "$ROOT"/bin/dx-multicall "$ROOT"/tests/*.sh "$ROOT"/research/*.sh "$ROOT"/research/lib/*.sh
   "$ROOT"/research/review-loop/*.sh "$ROOT"/research/scenarios/*/*.sh
   "$ROOT"/research/compare/*.sh
 )

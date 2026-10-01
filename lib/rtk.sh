@@ -210,46 +210,10 @@ except (OSError, tarfile.TarError, UnicodeError):
 PY
 }
 
-dx_install_rtk_user_path_link() {
-  local managed local_bin target current path_entry
-
-  managed=$(dx_rtk_managed_binary)
-  [[ -x "$managed" ]] || return 0
-
-  if command -v rtk >/dev/null 2>&1; then
-    return 0
-  fi
-
-  local_bin="$HOME/.local/bin"
-  target="$local_bin/rtk"
-  mkdir -p "$local_bin"
-
-  # Best-effort: the hooks address RTK by absolute path, so a conflicting or
-  # failed convenience link warns without failing the install.
-  if [[ -L "$target" ]]; then
-    current=$(readlink "$target")
-    if [[ "$current" == "$managed" ]]; then
-      dx_ok "RTK linked at ${target}"
-    else
-      dx_warn "${target} points to ${current}; leaving it unchanged"
-      return 0
-    fi
-  elif [[ -e "$target" ]]; then
-    dx_warn "${target} exists and is not a symlink; leaving it unchanged"
-    return 0
-  elif ln -s "$managed" "$target"; then
-    dx_done "Linked RTK into ${target}"
-  else
-    dx_warn "Could not link RTK into ${target}"
-    return 0
-  fi
-
-  path_entry=":${PATH:-}:"
-  if [[ "$path_entry" != *":$local_bin:"* ]]; then
-    dx_warn "${local_bin} is not on PATH; Claude hooks use RTK by absolute path, but shell sessions may not find 'rtk'"
-  fi
-}
-
+# The managed binary is not linked onto the user's PATH: hooks address it by
+# absolute path and Dex launches put its directory on the session PATH
+# (dx_session_path). Uninstall still removes the ~/.local/bin/rtk link older
+# installs made.
 dx_install_rtk_binary() {
   local existing existing_path managed target version install_dir temp_dir archive archive_name
   local checksums_file checksums_url url binary
@@ -263,11 +227,9 @@ dx_install_rtk_binary() {
   if existing_path=$(dx_rtk_resolved_binary 2>/dev/null); then
     dx_ok "RTK available at ${existing_path}"
     if [[ -n "${DX_RTK_BIN:-}" ]] || [[ "$existing_path" == "$managed" ]]; then
-      dx_install_rtk_user_path_link
       return 0
     fi
     if [[ -x "$managed" ]] && dx_rtk_binary_is_token_killer "$managed"; then
-      dx_install_rtk_user_path_link
       return 0
     fi
     dx_info "Installing Dex-managed RTK fallback for hooks"
@@ -379,7 +341,6 @@ dx_install_rtk_binary() {
   fi
 
   dx_done "Installed RTK ${version}"
-  dx_install_rtk_user_path_link
 }
 
 dx_rtk_codex_markdown_block() {

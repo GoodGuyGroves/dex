@@ -268,6 +268,7 @@ __dx_worktree_audit() {
     [[ -n "$entry" ]] || continue
     dx_info "Tearing down the stale registration: ${entry##*/}"
     dx_worktree_hook_run before_remove "$DX_WT_REPO_ROOT" "$entry" "${entry##*/}"
+    dx_unlink_claude_from_worktree "$entry"
   done < "$stale"
 
   # A reported orphan has no directory left to run in, so the hook runs from

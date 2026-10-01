@@ -15,15 +15,18 @@
 #
 # tests/no-global-writes-test.sh fails on a write no row matches, and on a row
 # that matches nothing in one of its steps: when a unit removes a write, it
-# deletes that write's rows here in the same change. Once units 03 and 04
-# land this file holds only comments.
+# deletes that write's rows here in the same change. Once unit 03 lands this
+# file holds only comments.
 #
-# Units: 03 per-launch MCP and plugins (#5), 04 no shell rc install (#6).
-# Units 01 (launch-scoped settings, #3), 02 (skills as a plugin, #4) and 05
-# (DEX_HOME state root, #7) removed all of their rows: Dex's hooks reach only
-# the sessions Dex launches, through each launch's --settings file; Dex's
-# skills reach them as the plugin `dex`, through each launch's --plugin-dir;
-# and every step here runs with DEX_HOME, where Dex now keeps its state.
+# Units: 03 per-launch MCP and plugins (#5).
+# Units 01 (launch-scoped settings, #3), 02 (skills as a plugin, #4), 04 (no
+# shell rc install, #6) and 05 (DEX_HOME state root, #7) removed all of their
+# rows: Dex's hooks reach only the sessions Dex launches, through each
+# launch's --settings file; Dex's skills reach them as the plugin `dex`,
+# through each launch's --plugin-dir; dx install runs with
+# --no-shell-integration, Dex no longer links ~/.local/bin/rtk or
+# ~/.claude/projects entries, and the shims reach sessions through PATH; and
+# every step here runs with DEX_HOME, where Dex now keeps its state.
 #
 # Steps no row names write nothing outside DEX_HOME and the repository.
 
@@ -58,11 +61,3 @@
 03	uninstall	removed	.codex/skills/{dex-skill}	-
 03	uninstall	removed	.codex/RTK.md	-
 03	uninstall	removed	.codex/AGENTS.md	-
-
-# ── 04: shell rc, worktree project-data links and the rtk PATH shim ─────────
-04	install	modified	.zshrc	-	bin/install.sh appends the DEX_DIR export and source line
-04	uninstall	modified	.zshrc	-	bin/uninstall.sh removes them again
-04	wt-create	added	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_link_claude_to_worktree
-04	wt-remove	removed	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_unlink_claude_from_worktree
-04	init,tools-fresh,install	added	.local/bin/rtk	-	lib/rtk.sh PATH shim (~/.local/bin/rtk link)
-04	uninstall	removed	.local/bin/rtk	-

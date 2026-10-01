@@ -815,7 +815,28 @@ __dx_provider_minimal_mcp_config() {
   printf '%s\n' "$config_file"
 }
 
+# dx_session_path — PATH for a launched session: Dex's shims, so in-session
+# `dx control` and `dx run-gate` resolve with no shell rc, and the managed RTK
+# directory. An entry already on PATH is not added again.
+dx_session_path() {
+  local entries=":${PATH:-}:" dir rtk_dir
+  # A fast path that loaded provider.sh without rtk.sh just goes without RTK.
+  rtk_dir=$(dx_rtk_install_dir 2>/dev/null) || rtk_dir=""
+  for dir in "$rtk_dir" "$DEX_DIR/shims"; do
+    if [[ -n "$dir" && -d "$dir" && "$entries" != *":$dir:"* ]]; then
+      entries=":$dir$entries"
+    fi
+  done
+  entries="${entries#:}"
+  printf '%s\n' "${entries%:}"
+}
+
 dx_provider_claude() {
+  # Exported for this call only, so every engine inherits it. `local -x`, not
+  # `declare -x`: zsh's GLOBAL_EXPORT makes the latter global.
+  local session_path
+  session_path=$(dx_session_path)
+  local -x PATH="$session_path"
   if [[ "${DEX_LOOP_ACTIVE:-0}" == 1 || "${DEX_REVIEW_PASS_ACTIVE:-0}" == 1 \
     || "${DEX_REVIEW_ASSESSMENT_ACTIVE:-0}" == 1 || "${DEX_TRIAGE_ACTIVE:-0}" == 1 ]]; then
     local -x DEX_SESSION_ONLY=0
@@ -1398,6 +1419,9 @@ dx_provider_codex() {
     [[ -n "$_env_name" ]] && env_args+=(-u "$_env_name")
   done < <(__dx_provider_env_unset_args)
   env_args+=(-u DX_PROVIDER_CODEX_WRAPPER -u DX_CODEX_READ_ONLY)
+  local session_path
+  session_path=$(dx_session_path)
+  local -x PATH="$session_path"
   env "${env_args[@]}" codex "$@"
 }
 

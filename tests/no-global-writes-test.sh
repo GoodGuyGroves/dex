@@ -160,8 +160,8 @@ new_sandbox() {
     "$SB_HOME/.npm" "$SB_HOME/.config" "$SB_DEX_HOME" "$SB_REPO" "$SB_STUB" "$box/tmp"
   : > "$SB_OBSERVED"
   python3 "$HELPER" seed "$SB_HOME" ${SB_SEED_FLAGS[@]+"${SB_SEED_FLAGS[@]}"}
-  # Claude Code's own project data for the repository, which Dex links into
-  # each worktree (lib/worktree.sh dx_link_claude_to_worktree).
+  # Claude Code's own project data for the repository. Dex used to link it
+  # into each worktree; it stays seeded so a link coming back shows here.
   mkdir -p "$SB_HOME/.claude/projects/$(printf '%s' "$SB_REPO" | tr '/.' '--')"
   printf 'user memory\n' > "$SB_HOME/.claude/projects/$(printf '%s' "$SB_REPO" | tr '/.' '--')/memory.md"
 
@@ -285,7 +285,8 @@ sys.exit(code if code >= 0 else 128 - code)')
 run_scenario() {
   new_sandbox "$TMP_DIR/box"
   if [[ "$2" == 1 ]]; then
-    dx_step install "$NO_INPUT" 0 'dx install'
+    # The rc append, and its refusal, are covered by tests/dx-without-rc-test.sh.
+    dx_step install "$NO_INPUT" 0 'dx install --no-shell-integration'
   fi
   dx_step init "$DEFAULTS" 0 'dx init'
   step config "$DEFAULTS" 0 "${ON_A_TTY[@]}" zsh -fc 'source "$DEX_DIR/dx.sh"; dx config'

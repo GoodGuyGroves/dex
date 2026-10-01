@@ -4,6 +4,8 @@
 #
 # Source this in ~/.zshrc:
 #   source $DEX_DIR/dx.sh
+# or, with no rc change, put "$DEX_DIR/shims" on PATH (bin/dx-multicall runs
+# each function as a command; dxcd then prints its target instead of cd-ing).
 #
 # Requires zsh — uses zsh-specific syntax (e.g., ${(j: :)@} for array joining).
 # Hook scripts (hooks/*.sh) use #!/usr/bin/env bash. Library files (lib/*.sh)
@@ -163,7 +165,7 @@ __dx_cli() {
       echo "  Free-form prompts ask which mode to use; Enter selects session only."
       echo ""
       echo "Commands:"
-      echo "  dx install          Global install (tools, zshrc; --global-skills/--global-hooks opt in)"
+      echo "  dx install          Global install (tools, zshrc; --global-skills/--global-hooks opt in, --no-shell-integration skips zshrc)"
       echo "  dx uninstall        Global uninstall"
       echo "  dx init             Bootstrap current repo for Dex"
       echo "  dx sync             Refresh repo memory/rules from verified observations"
@@ -5056,7 +5058,6 @@ dxrm() {
 
         echo "Removing ${wt_name}..."
         dx_cleanup_checkpoints "$wt_dir"
-        dx_unlink_claude_from_worktree "$wt_dir"
         if ! dx_wt_remove "$wt_dir" "$repo_root"; then
           dx_error "Failed to remove worktree ${wt_name}; its branch and session state were left intact."
           removal_failed=1
@@ -5097,6 +5098,7 @@ dxrm() {
       found=1
     done
 
+    dx_unlink_claude_from_gone_worktrees
     git worktree prune 2>/dev/null
 
     last_session_result=0
@@ -5212,11 +5214,13 @@ dxrm() {
 
   if [[ $has_dir -eq 1 ]]; then
     dx_cleanup_checkpoints "$wt_dir"
-    dx_unlink_claude_from_worktree "$wt_dir"
     if ! dx_wt_remove "$wt_dir" "$repo_root"; then
       dx_error "Failed to remove worktree ${wt_name}; its branch and session state were left intact."
       return 1
     fi
+  else
+    # The directory is already gone; a link an older Dex made can outlive it.
+    dx_unlink_claude_from_worktree "$wt_dir"
   fi
 
   if [[ $has_branch -eq 1 ]]; then
@@ -5352,7 +5356,7 @@ dxcd() {
     __dx_resolve_existing_workspace_by_ticket "$ticket_number" || resolution_status=$?
     if [[ $resolution_status -eq 0 ]]; then
       if [[ "$_dx_workspace_mode" == "in-place" ]]; then
-        dx_info "Ticket ${ticket_number} uses the current checkout"
+        dx_info "Ticket ${ticket_number} uses the current checkout" >&2
         cd "$repo_root" || return 1
         return 0
       fi
@@ -5361,7 +5365,7 @@ dxcd() {
         dx_error "Workspace path is not a registered Git worktree: ${linked_dir}"
         return 1
       fi
-      dx_info "Resolved ticket ${ticket_number} to existing workspace $_dx_wt_name"
+      dx_info "Resolved ticket ${ticket_number} to existing workspace $_dx_wt_name" >&2
       cd "$linked_dir" || return 1
       return 0
     elif [[ $resolution_status -ne 1 ]]; then
@@ -5498,7 +5502,6 @@ dxclean() {
       fi
 
       echo "  Removing stale worktree: ${wt_name}"
-      dx_unlink_claude_from_worktree "$wt_dir"
       if ! dx_wt_remove "$wt_dir" "$repo_root"; then
         dx_error "Failed to remove stale worktree ${wt_name}; its branch and session state were left intact."
         cleanup_failed=1
@@ -5595,6 +5598,7 @@ dxclean() {
     fi
   done < <(git branch --list 'worktree-ticket-*' 'worktree-task-*' 2>/dev/null | sed 's/^[*+ ]*//')
 
+  dx_unlink_claude_from_gone_worktrees
   git worktree prune 2>/dev/null
 
   # 4. Clean up old loop state files (older than 7 days).

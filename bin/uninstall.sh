@@ -65,8 +65,27 @@ else
   uninstall_failed=1
 fi
 
-# 5. Remove source line and Dex comment from zshrc
-if grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$ZSHRC" 2>/dev/null; then
+# Worktree links older versions made in Claude Code's projects directory: a
+# symlink to another projects directory, named for a .dex/worktrees path.
+# (.claude/worktrees entries are Claude Code's own `claude --worktree` ones.)
+legacy_links=0
+for link in "$CLAUDE_DIR"/projects/*--dex-worktrees-*; do
+  [[ -L "$link" ]] || continue
+  case "$(readlink "$link")" in
+    "$CLAUDE_DIR"/projects/*) rm -f "$link" && legacy_links=$((legacy_links + 1)) ;;
+  esac
+done
+[[ $legacy_links -eq 0 ]] || dx_done "Removed ${legacy_links} legacy worktree link(s) from ~/.claude/projects"
+
+# 5. Remove source line and Dex comment from zshrc. A symlinked or hardlinked
+# rc belongs to whatever made the link (home-manager, a dotfiles repo):
+# rewriting it with mv would replace the link with a plain file.
+zshrc_links=$(python3 -c 'import os, sys; print(os.stat(sys.argv[1]).st_nlink)' "$ZSHRC" 2>/dev/null) || zshrc_links=1
+if [[ -L "$ZSHRC" ]] && grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$ZSHRC" 2>/dev/null; then
+  dx_warn "~/.zshrc is a symlink to $(readlink "$ZSHRC"); left unchanged. Remove the Dex lines from it by hand."
+elif [[ "$zshrc_links" -gt 1 ]] && grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$ZSHRC" 2>/dev/null; then
+  dx_warn "~/.zshrc has ${zshrc_links} hard links; left unchanged. Remove the Dex lines from it by hand."
+elif grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$ZSHRC" 2>/dev/null; then
   # -x matches entire line; removes "# Dex" or "# Dex — ..." exact lines.
   # Also removes the DEX_DIR export and source lines. The source-line pattern
   # is anchored to source/. commands: the old bare 'dex.*dx\.sh' also deleted

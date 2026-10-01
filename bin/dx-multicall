@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# dx-multicall — run a Dex command without sourcing dx.sh from a shell rc.
+#
+# shims/ holds one symlink per public dx.sh function, all pointing here; the
+# name it was invoked by picks the function. Put "$DEX_DIR/shims" on PATH (a
+# dev shell, direnv, or `dx install --no-shell-integration`) and dx, dxls,
+# dxrm... work from any shell. Dex launches put it on the session PATH too, so
+# in-session `dx control` and `dx run-gate` resolve without an rc.
+#
+# `zsh -f` skips the user's rc files, which may source a different Dex.
+# DEX_DIR defaults to the checkout this script lives in.
+set -euo pipefail
+
+name=$(basename "$0")
+if [ -z "${DEX_DIR:-}" ]; then
+  self=$0
+  while [ -L "$self" ]; do
+    link=$(readlink "$self")
+    case "$link" in
+      /*) self=$link ;;
+      *) self=$(dirname "$self")/$link ;;
+    esac
+  done
+  # -P: shims/ reached through a linked directory must resolve to the
+  # checkout, not to the link's parent.
+  DEX_DIR=$(cd -P "$(dirname "$self")/.." && pwd -P)
+  export DEX_DIR
+fi
+if [ ! -f "$DEX_DIR/dx.sh" ]; then
+  echo "$name: DEX_DIR=$DEX_DIR has no dx.sh; is the Dex checkout missing?" >&2
+  exit 127
+fi
+if ! command -v zsh >/dev/null 2>&1; then
+  echo "$name: Dex needs zsh on PATH; install it and retry" >&2
+  exit 127
+fi
+
+if [ "$name" = dxcd ]; then
+  # A child process cannot change its caller's directory, so dxcd prints the
+  # target instead: d=$(dxcd NAME) && cd "$d". Its own messages go to stderr,
+  # and stdout stays empty when it fails.
+  exec zsh -f -c 'source "$DEX_DIR/dx.sh" || exit
+case "${1:-}" in -h|--help) dxcd "$@"; exit ;; esac
+dxcd "$@" >&2 && pwd' dxcd "$@"
+fi
+exec zsh -f -c 'source "$DEX_DIR/dx.sh" || exit; "$0" "$@"' "$name" "$@"

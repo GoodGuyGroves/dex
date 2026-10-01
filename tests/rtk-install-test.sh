@@ -96,6 +96,12 @@ dx_install_rtk_binary > "$TMP_DIR/install.out"
   printf 'verified RTK fixture was not installed\n' >&2
   exit 1
 }
+# Sessions get the managed directory on PATH (dx_session_path); the user's
+# ~/.local/bin is not Dex's to write.
+[[ ! -e "$HOME/.local/bin/rtk" && ! -L "$HOME/.local/bin/rtk" ]] || {
+  printf 'RTK install linked into ~/.local/bin\n' >&2
+  exit 1
+}
 [[ "$("$DX_RTK_INSTALL_DIR/rtk" rewrite "git status")" == "rtk git status" ]] || {
   printf 'installed RTK fixture failed its behavior check\n' >&2
   exit 1
@@ -185,7 +191,7 @@ if dx_rtk_verify_archive_checksum \
   exit 1
 fi
 
-rm -f "$DX_RTK_INSTALL_DIR/rtk" "$HOME/.local/bin/rtk"
+rm -f "$DX_RTK_INSTALL_DIR/rtk"
 if DX_RTK_VERSION='../unsafe' dx_install_rtk_binary > "$TMP_DIR/version.out" 2>&1; then
   printf 'unsafe RTK version unexpectedly passed\n' >&2
   exit 1

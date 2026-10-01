@@ -32,6 +32,37 @@ That is the normal path — run it from zsh, since `source ~/.zshrc` and the
 project context so future runs know your stack, conventions, quality gates,
 reviewers, guards, and durable repo memory.
 
+### Without a shell rc
+
+If your `~/.zshrc` is managed by home-manager or a dotfiles repo, or you would
+rather not edit it, install with `bash ~/work/dex/install.sh --no-shell-integration`
+and put Dex's shims on PATH from a dev shell, `.envrc` or your own config:
+
+```bash
+export DEX_DIR="$HOME/work/dex"
+export PATH="$DEX_DIR/shims:$PATH"
+```
+
+For a Nix flake dev shell, the same two lines go in `shellHook`:
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = [ pkgs.zsh ];
+  shellHook = ''
+    export DEX_DIR="$HOME/work/dex"
+    export PATH="$DEX_DIR/shims:$PATH"
+  '';
+};
+```
+
+Each shim runs the matching `dx.sh` function under `zsh -f`, so they work from
+any shell, and `DEX_DIR` defaults to the checkout the shims live in. One
+difference: a command cannot change its caller's directory, so `dxcd` prints
+the target and you run `d=$(dxcd 1234) && cd "$d"`; a bare
+`cd "$(dxcd 1234)"` exits 0 without moving when dxcd fails (zsh/sh). Sessions
+Dex launches get the shims on their PATH either way, so in-session
+`dx control` and `dx run-gate` need no rc.
+
 For a free-form prompt, Dex asks before starting anything:
 
 ```text
@@ -167,6 +198,7 @@ no secret the reviewer lacks. Keep the human review gate on the PR. See
 
 ```bash
 dx install                 # Install shell functions and tooling (--global-hooks / --global-skills: hooks / skills outside Dex sessions too)
+dx install --no-shell-integration  # The same, leaving ~/.zshrc alone
 dx status                  # Show global and project setup
 dx init                    # Analyze the current repo and create .dex/
 dx sync                    # Refresh durable repo memory and rules
@@ -259,10 +291,10 @@ continues through the usual approval and quality gates.
 
 ## Requirements
 
-- **zsh as your interactive shell.** `dx.sh` uses zsh-only syntax and is sourced
-  from `~/.zshrc`. The installer runs under any shell and writes the same files,
-  but warns when `$SHELL` is not zsh, because nothing it installs will load for
-  you until you get there.
+- **zsh.** `dx.sh` uses zsh-only syntax. Sourced from `~/.zshrc`, it needs zsh
+  as your interactive shell, and the installer warns when `$SHELL` is not zsh.
+  The shims (see [Without a shell rc](#without-a-shell-rc)) only need zsh
+  installed, and run from any shell.
 - Claude Code CLI installed and signed in.
 - A git repository.
 - Python 3 (standard library only).

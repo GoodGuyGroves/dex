@@ -9,7 +9,7 @@ Dex is a standalone workflow automation framework for Claude Code and the Codex 
 ## Tech Stack
 
 - **Shell (primary):** All CLI logic, hooks, and library code
-  - `dx.sh` — **zsh-only** (sourced in `~/.zshrc`, uses zsh syntax like `${(j: :)@}`)
+  - `dx.sh` — **zsh-only** (sourced in `~/.zshrc`, or run per command through `shims/` → `bin/dx-multicall`; uses zsh syntax like `${(j: :)@}`)
   - `hooks/*.sh` — **bash** (`#!/usr/bin/env bash`)
   - `lib/*.sh` — **bash/zsh-compatible** (sourced by both dx.sh and hooks)
 - **Python 3 (stdlib only):** `hooks/guard-handler.py` — guard evaluation;
@@ -37,6 +37,7 @@ prompts/             Prompt templates for skills and CLI harness workflows
   phase-audits/      Phase-specific audit prompts (0-6 + prompt-loop)
 research/            Benchmarks: scenario suite, Dex-vs-bare comparison (compare/), review-loop evaluation — not shipped functionality
 scripts/             Python/Node helpers imported by lib/ and Dex-managed tooling
+shims/               One symlink per public dx.sh function, for PATH use without an rc (docs/reference.md#shims)
 skills/              Lifecycle skills (the plugin's skills for Claude; linked individually into $CODEX_HOME/skills/)
 templates/           Files Dex installs into other repos (the dx-maintain GitHub workflow)
 tests/               Test suite: check.sh (static), run-all.sh (manifest runner), *-test.sh
