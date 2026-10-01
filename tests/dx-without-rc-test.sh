@@ -195,13 +195,16 @@ chmod 444 "$store/zshrc"
 chmod 555 "$store"
 ln -s "$store/zshrc" "$link_home/.zshrc"
 # A settings.json that is a directory would pass a bare -w and fail mid-way.
+# Install writes settings only for --global-hooks, so that run asks for them.
 dir_home="$TMP_DIR/dir-home"
 mkdir -p "$dir_home/.claude/settings.json"
 printf '# user rc\n' > "$dir_home/.zshrc"
 for home in "$ro_home" "$link_home" "$dir_home"; do
   before=$(home_listing "$home")
   rc=0
-  run_install "$home" > "$home.out" 2>&1 || rc=$?
+  install_args=()
+  [[ "$home" != "$dir_home" ]] || install_args=(--global-hooks)
+  run_install "$home" ${install_args[@]+"${install_args[@]}"} > "$home.out" 2>&1 || rc=$?
   [[ $rc -eq 1 ]] || { cat "$home.out" >&2; assert_at $LINENO; }
   assert_contains "Nothing was installed" "$home.out"
   assert_contains 'export PATH="$DEX_DIR/shims:$PATH"' "$home.out"
