@@ -105,6 +105,7 @@ run_lifecycle() {
       __dx_claude() {
         local arg prev=""
         printf "%s\n" "$@" > "$TEST_RECORD.args"
+        printf "%s\n" "${DEX_SESSION_TITLE-unset}" > "$TEST_RECORD.title-env"
         for arg in "$@"; do
           [[ "$prev" == --append-system-prompt-file ]] && cp "$arg" "$TEST_RECORD.context"
           prev="$arg"
@@ -127,6 +128,8 @@ assert_contains "Fix the login bug" "$TMP_DIR/titled-fresh.args"
 grep -Fxq -- "-n" "$TMP_DIR/titled-fresh.args" || assert_at $LINENO
 grep -Fxq "17 Fix the login bug" "$TMP_DIR/titled-fresh.args" || assert_at $LINENO
 [[ "$(dx_meta_read "$SID" claude_session_name)" == "17 Fix the login bug" ]] || assert_at $LINENO
+# The provider does not inherit the title, so a dx run inside it starts clean.
+[[ "$(cat "$TMP_DIR/titled-fresh.title-env")" == unset ]] || assert_at $LINENO
 # The messaging prompt names the same session.
 assert_contains 'This session is named "17 Fix the login bug"' "$TMP_DIR/titled-fresh.context"
 

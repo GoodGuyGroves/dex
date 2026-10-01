@@ -3304,6 +3304,9 @@ __dx_run_phases_inline() {
     if ! dx_session_process_token_attach "$session_id"; then
       dx_warn "Dex could not take process ownership of this phase; processes it starts may outlive it."
     fi
+    # The title is spent on this launch's name. A dx started inside the
+    # session belongs to another lifecycle and must not inherit it.
+    unset DEX_SESSION_TITLE
     cd "$wt_dir" && \
     DEX_SESSION_ID="$session_id" \
     DEX_RUN_ID="$run_id" \
