@@ -281,7 +281,7 @@ dx_refresh_global_claude_hooks() {
 # and `dx install --no-global-hooks`. Covers both files an install may have
 # written (__dx_claude_hook_settings_files).
 dx_remove_claude_global_hooks() {
-  local settings_file state_file="$HOME/.claude/.dex-install-state.json"
+  local settings_file state_file="$DX_INSTALL_STATE_FILE"
   local helper="$DEX_DIR/scripts/settings-json.py" tmp dirs="[]" failed=0 hook_status
   local files=()
   while IFS= read -r settings_file; do
