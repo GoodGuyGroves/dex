@@ -203,7 +203,9 @@ run_sync
 # --- A conflict stops the rebase and names the files; continue records a note. ---
 new_fixture 13-conflict
 printf 'feature line\n' > "$FIXTURE_REPO/base.txt"
-git -C "$FIXTURE_REPO" commit -q -am "feat: change base"
+GIT_AUTHOR_NAME="Co Author" GIT_AUTHOR_EMAIL="co@example.test" \
+  GIT_AUTHOR_DATE="2026-01-02T03:04:05+00:00" \
+  git -C "$FIXTURE_REPO" commit -q -am "feat: change base"
 publish_branch
 owned_session conflict
 advance_main base.txt "main line"
@@ -232,6 +234,9 @@ CONTINUE_OUT=$(cd "$FIXTURE_REPO" && dx_branch_sync_continue "$FIXTURE_REPO" "ba
 LAST_MESSAGE=$(git -C "$FIXTURE_REPO" log -1 --format=%B)
 [[ "$LAST_MESSAGE" == *"feat: change base"* ]] || assert_at $LINENO
 [[ "$LAST_MESSAGE" == *"Rebase-note: base.txt: kept both sides"* ]] || assert_at $LINENO
+# The replayed commit keeps its own author and author date, not the resolver's.
+[[ "$(git -C "$FIXTURE_REPO" log -1 --format='%an <%ae> %at')" \
+  == "Co Author <co@example.test> 1767323045" ]] || assert_at $LINENO
 [[ ! -d "$(git -C "$FIXTURE_REPO" rev-parse --git-path rebase-merge)" ]] || assert_at $LINENO
 [[ "$(remote_oid "$FIXTURE_BRANCH")" == "$(git -C "$FIXTURE_REPO" rev-parse HEAD)" ]] || assert_at $LINENO
 

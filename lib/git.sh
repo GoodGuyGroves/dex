@@ -883,7 +883,8 @@ dx_branch_sync_with_base() {
 # note, 3 another conflict, 4/5/7 from the push.
 dx_branch_sync_continue() {
   local repo_dir="${1:-}" rebase_note="${2:-}" session_id="${DEX_SESSION_ID:-}"
-  local original_message push_rc=0
+  local original_message original_author_name original_author_email
+  local original_author_date push_rc=0
   if [[ -z "$repo_dir" ]] || ! __dx_branch_rebase_in_progress "$repo_dir"; then
     printf 'cannot-run\nreason=no rebase is in progress\n'
     return 2
@@ -901,9 +902,16 @@ dx_branch_sync_continue() {
     printf 'cannot-run\nreason=REBASE_HEAD is missing; this git is too old for the continue path\n'
     return 2
   }
+  # A plain `git commit` here would credit the resolver; keep the replayed
+  # commit's original author and author date, as `rebase --continue` would.
+  original_author_name=$(git -C "$repo_dir" log -1 --format=%an REBASE_HEAD)
+  original_author_email=$(git -C "$repo_dir" log -1 --format=%ae REBASE_HEAD)
+  original_author_date=$(git -C "$repo_dir" log -1 --format=%aI REBASE_HEAD)
   if ! printf '%s\n' "$original_message" \
     | git -C "$repo_dir" interpret-trailers --trailer "Rebase-note: ${rebase_note}" \
-    | git -C "$repo_dir" commit --quiet --no-edit -F - >/dev/null 2>&1; then
+    | GIT_AUTHOR_NAME="$original_author_name" GIT_AUTHOR_EMAIL="$original_author_email" \
+      GIT_AUTHOR_DATE="$original_author_date" \
+      git -C "$repo_dir" commit --quiet --no-edit -F - >/dev/null 2>&1; then
     printf 'cannot-run\nreason=committing the resolution failed\n'
     return 2
   fi
