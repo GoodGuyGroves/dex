@@ -52,8 +52,9 @@ fi
 
 dx_link_claude_to_worktree "$repo" "$wt"
 [[ -L "$wt/.claude" ]] || assert_at $LINENO
+# ~/.claude/projects is Claude Code's own; Dex no longer links into it.
 wt_claude_project=$(dx_claude_project_dir "$wt")
-[[ -L "$wt_claude_project" ]] || assert_at $LINENO
+[[ ! -e "$wt_claude_project" && ! -L "$wt_claude_project" ]] || assert_at $LINENO
 
 status="$(git -C "$wt" status --short)"
 if grep -Fq ".claude" <<< "${status}"; then

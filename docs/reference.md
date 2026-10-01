@@ -25,7 +25,7 @@ it.
 | `lifecycle-control.sh` | Human/agent lifecycle pause, stop, phase transition, ownership, and audit receipts | `dx_write_lifecycle_control()`, `dx_lifecycle_control_read()`, `dx_lifecycle_control_lock_acquire()` |
 | `maintenance.sh` | Background maintenance config, workflow install, run IDs, locks, and reviewer normalization | `dx_maintenance_event_mode()`, `dx_maintenance_install_workflow()`, `dx_maintenance_run_id()`, `dx_maintenance_request_reviewer()`, `dx_maintenance_pr_review_state()` |
 | `override.sh` | Session policy journal, validation, expiry, and effective-value resolution | `dx_override_set()`, `dx_override_clear()`, `dx_override_list()`, `dx_override_effective()` |
-| `provider.sh` | Provider/model profile resolution, launch wrapping, and diagnostics | `dx_provider_apply()`, `dx_provider_claude()`, `dx_provider_command()`, `dx_provider_doctor()` |
+| `provider.sh` | Provider/model profile resolution, launch wrapping (including the session PATH), and diagnostics | `dx_provider_apply()`, `dx_provider_claude()`, `dx_session_path()`, `dx_provider_command()`, `dx_provider_doctor()` |
 | `project-state.sh` | Init ownership snapshots, conservative project cleanup, and the machine-readable `.dex/dex.md` contract reader | `dx_project_state_begin()`, `dx_project_state_finalize()`, `dx_project_state_remove_managed()`, `dx_project_contract_values()`, `dx_project_worktree_hook()` |
 | `review.sh` | Scope-bound review selection/state, evidence, deterministic baselines, wrapper-clock metrics, retained proofs, ledgers, receipts, result parsing, churn detection, and telemetry JSON | `dx_review_evidence_valid()`, `dx_review_baseline_publish()`, `dx_review_metrics_mark()`, `dx_review_ledger_valid()`, `dx_review_write_receipt()`, `dx_review_event_json()` |
 | `review-capacity.sh` | Host-wide FIFO admission with named pools (`waves`, `checks`, `heavy`), PID-reuse-safe stale-owner recovery, and a per-pool limit | `dx_review_capacity_limit()`, `dx_review_capacity_wait()`, `dx_review_capacity_release()`, `dx_capacity_pool_wait()`, `dx_capacity_pool_release()`, `dx_capacity_pool_queue_status()` |
@@ -48,6 +48,22 @@ it.
 | `triage.sh` | Standalone ticket triage arguments, provider launch, and isolated cleanup | `dx_triage_run()`, `dx_triage_cleanup()` |
 | `worker.sh` | DexCode worker registration and the poll/claim/lease/settle daemon | `dx_worker_command()`, `dx_worker_register()`, `dx_worker_daemon()` |
 | `worktree.sh` | Worktree management utilities, shared build-cache links, and the project's `## Worktree Hooks` lifecycle commands | `dx_wt_branch()`, `dx_wt_remove()`, `dx_worktree_hook_run()`, `dx_worktree_orphan_resources()`, `dx_cleanup_last_session()`, `dx_cleanup_stale_files()` |
+
+## Shims
+
+`shims/` holds one relative symlink per public `dx.sh` function (`dx`, `dex`,
+`dexter`, `dxloop`, `dxtriage`, `dxrefine`, `dxcomplete`, `dxreviewloop`,
+`dxrm`, `dxls`, `dxcd`, `dxclean`), each pointing at `bin/dx-multicall`. The
+multicall script runs the function it was invoked as under
+`zsh -f -c 'source "$DEX_DIR/dx.sh"; "$0" "$@"'`. `DEX_DIR` defaults to the
+checkout the script lives in; a missing `dx.sh` or zsh exits 127. `dxcd` prints
+its target instead of changing directory.
+
+`dx install --no-shell-integration` skips the `~/.zshrc` append and prints the
+two lines that put the shims on PATH. `dx_session_path` puts `$DEX_DIR/shims`
+and the managed RTK directory on the PATH of every Claude and Codex launch, so
+in-session `dx` commands resolve without an rc. `tests/dx-without-rc-test.sh`
+keeps the shim list in step with `dx.sh`.
 
 ## Environment variables
 

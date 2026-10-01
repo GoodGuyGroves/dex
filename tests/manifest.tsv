@@ -22,6 +22,7 @@ dexcode-revoked-test.sh	service	all	900	hermetic
 dexcode-worker-test.sh	service	all	900	hermetic
 docs-consistency-test.sh	fast	all	600	hermetic
 dx-script-test.sh	fast	all	600	hermetic
+dx-without-rc-test.sh	fast	all	600	hermetic
 events-test.sh	fast	all	600	hermetic
 factory-redirect-test.sh	service	all	900	hermetic
 factory-sync-test.sh	service	all	900	hermetic

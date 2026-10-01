@@ -304,10 +304,15 @@ if env \
   printf 'global install succeeded with a conflicting Claude skills path\n' >&2
   exit 1
 fi
-grep -Fq "Failed to symlink ~/.claude/skills" "$TMP_DIR/conflict.out"
-grep -Fq "Install incomplete" "$TMP_DIR/conflict.out"
+grep -Fq ".claude/skills exists and is not a directory" "$TMP_DIR/conflict.out"
+grep -Fq "Nothing was installed" "$TMP_DIR/conflict.out"
 if grep -Fq "Install complete." "$TMP_DIR/conflict.out"; then
   printf 'failed global install printed a completion message\n' >&2
+  exit 1
+fi
+# The preflight caught it, so nothing else was written either.
+if [[ -e "$conflict_home/.claude/settings.json" || "$(cat "$conflict_home/.zshrc")" != '# user shell config' ]]; then
+  printf 'install wrote settings or ~/.zshrc after a failed preflight\n' >&2
   exit 1
 fi
 

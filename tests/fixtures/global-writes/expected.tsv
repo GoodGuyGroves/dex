@@ -94,12 +94,6 @@
 03	uninstall	removed	.codex/RTK.md	-
 03	uninstall	removed	.codex/AGENTS.md	-
 
-# ── 04: shell rc and worktree project-data links ────────────────────────────
-04	install	modified	.zshrc	-	bin/install.sh appends the DEX_DIR export and source line
-04	uninstall	modified	.zshrc	-	bin/uninstall.sh removes them again
-04	wt-create	added	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_link_claude_to_worktree
-04	wt-remove	removed	.claude/projects/*-dex-worktrees-task-gw-task	-	lib/worktree.sh dx_unlink_claude_from_worktree
-
 # ── 05: state and tool caches outside DEX_HOME ──────────────────────────────
 05	config	added	.claude/.dex-install-state.json#sessionMessaging	-	bin/config.sh, asked on a terminal only
 05	init,session-fresh,phase-fresh	added	.claude/.dex-phases	-	DX_STATE_DIR default
@@ -144,8 +138,6 @@
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture	-
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/package.json	fold
 05	init,tools-fresh,install	added	.claude/.dex-tools/ui-capture/node_modules	fold	npm package tree
-05	init,tools-fresh,install	added	.local/bin/rtk	-	~/.local/bin/rtk link
-05	uninstall	removed	.local/bin/rtk	-
 05	init,tools-fresh,install	added	.npm/_cacache	fold	npm cache
 05	init,tools-fresh,install	added	.npm/_npx	fold	npx cache
 05	init,tools-fresh,install	added	Library/Caches/ms-playwright	fold,darwin	Playwright browser cache

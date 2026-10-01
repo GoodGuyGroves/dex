@@ -407,6 +407,7 @@ dx_wt_remove() {
     repo_root=$(__dx_wt_repo_root "$wt_dir" 2>/dev/null) || repo_root=""
   fi
   [[ -z "$repo_root" ]] || dx_worktree_hook_run before_remove "$repo_root" "$wt_dir"
+  dx_unlink_claude_from_worktree "$wt_dir"
   git worktree remove "$wt_dir" --force 2>/dev/null || rm -rf "$wt_dir"
 }
 
@@ -444,9 +445,13 @@ dx_exclude_claude_artifacts() {
 }
 
 # dx_link_claude_to_worktree <repo_root> <wt_dir>
-# For Claude-backed sessions, share .claude/ config and MCP auth with the main
-# repo. Codex keeps its own project data, so it does not need these links.
-# Idempotent and non-fatal.
+# For Claude-backed sessions, share the repo's .claude/ (settings.local.json
+# and project-local Claude config) with the worktree. Codex keeps its own
+# project data, so it does not need the link. Idempotent and non-fatal.
+#
+# ~/.claude/projects/ is not linked. MCP OAuth tokens are per server, not per
+# project, and auto-memory is already shared across a repo's worktrees, so a
+# link there only moved worktree transcripts into the main repo's directory.
 dx_link_claude_to_worktree() {
   local repo_root="$1" wt_dir="$2"
 
@@ -454,24 +459,11 @@ dx_link_claude_to_worktree() {
 
   dx_exclude_claude_artifacts "$wt_dir"
 
-  # 1. Symlink .claude/ (settings.local.json and project-local Claude config)
   if [[ -d "$repo_root/.claude" ]] && [[ ! -e "$wt_dir/.claude" ]]; then
     if ln -s "$repo_root/.claude" "$wt_dir/.claude" 2>/dev/null; then
       dx_info "Linked .claude/ from main repo"
     else
       dx_warn "Failed to symlink .claude/ into worktree"
-    fi
-  fi
-
-  # 2. Symlink ~/.claude/projects/ so worktree shares MCP OAuth tokens
-  local repo_proj wt_proj
-  repo_proj=$(dx_claude_project_dir "$repo_root")
-  wt_proj=$(dx_claude_project_dir "$wt_dir")
-  if [[ -d "$repo_proj" ]] && [[ ! -e "$wt_proj" ]]; then
-    if ln -s "$repo_proj" "$wt_proj" 2>/dev/null; then
-      dx_info "Linked Claude project data for MCP auth"
-    else
-      dx_warn "Failed to symlink Claude project data"
     fi
   fi
 }
@@ -531,9 +523,9 @@ EOF
 }
 
 # dx_unlink_claude_from_worktree <wt_dir>
-# Remove the ~/.claude/projects/ symlink for a worktree.
-# Only removes symlinks, never real directories.
-# The .claude/ symlink inside the worktree is removed by dx_wt_remove.
+# Remove the ~/.claude/projects/ symlink older Dex versions made for a
+# worktree. Only removes symlinks, never real directories. dx_wt_remove calls
+# it, so every teardown path cleans up after those installs.
 dx_unlink_claude_from_worktree() {
   local wt_dir="$1"
   local wt_proj
@@ -541,6 +533,21 @@ dx_unlink_claude_from_worktree() {
   if [[ -L "$wt_proj" ]]; then
     rm -f "$wt_proj"
   fi
+}
+
+# dx_unlink_claude_from_gone_worktrees — the same, for every .dex/worktrees
+# registration in the current repository whose directory is already gone.
+# Callers run it before `git worktree prune` forgets those paths.
+dx_unlink_claude_from_gone_worktrees() {
+  local line wt
+  while IFS= read -r line; do
+    [[ "$line" == "worktree "* ]] || continue
+    wt="${line#worktree }"
+    if [[ "$wt" == */.dex/worktrees/?* && ! -d "$wt" ]]; then
+      dx_unlink_claude_from_worktree "$wt"
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null)
+  return 0
 }
 
 # dx_cleanup_stale_files <dir> <extensions> <max_age_days>

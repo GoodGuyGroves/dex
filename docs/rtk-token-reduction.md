@@ -38,10 +38,12 @@ Claude Code Bash tool calls now run through Dex guards first. If a guard allows
 the command, the RTK hook gets the same payload and may return an `updatedInput`
 command. When `python3` is available, the wrapper prefixes rewritten commands
 with RTK's install directory in `PATH`, so the generated `rtk ...` command
-still works when the agent shell did not load `~/.local/bin`; without
-`python3` the rewrite is passed through unprefixed. If RTK is unavailable or
-fails, the wrapper exits successfully and leaves the original command
-untouched.
+works whatever PATH the agent shell has; without `python3` the rewrite is
+passed through unprefixed. Dex does not put RTK on your own PATH. Sessions Dex
+launches get the install directory on theirs (`dx_session_path`), and
+`dx uninstall` removes the `~/.local/bin/rtk` link older versions made. If
+RTK is unavailable or fails, the wrapper exits successfully and leaves the
+original command untouched.
 
 Codex does not currently expose the same transparent Bash rewrite path through
 Dex, so Codex receives compact global instructions. Those instructions prefer
@@ -76,8 +78,7 @@ real Dex tooling bootstrap.
   and the rewritten command ran with `PATH=/usr/bin:/bin`.
 - The fail-open path returned exit 0 with no output when RTK was unavailable.
 - Real `dx tools bootstrap` installed RTK in `~/.claude/.dex-tools/rtk/bin/rtk`,
-  linked `~/.local/bin/rtk`, refreshed Claude settings, and wrote Codex RTK
-  instructions.
+  refreshed Claude settings, and wrote Codex RTK instructions.
 - `dx tools doctor`, `dx status`, `shellcheck`, `bash -n`, `zsh -n dx.sh`,
   `jq . settings.json`, and `git diff --check` passed.
 

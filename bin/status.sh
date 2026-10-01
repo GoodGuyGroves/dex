@@ -127,6 +127,9 @@ fi
 
 if grep -qE "$DX_ZSHRC_SOURCE_ACTIVE_PATTERN" "$HOME/.zshrc" 2>/dev/null; then
   echo "  Shell:      sourced in ~/.zshrc"
+elif dx_on_path=$(command -v dx 2>/dev/null) && [[ -n "$dx_on_path" ]]; then
+  # A dev shell or .envrc that puts $DEX_DIR/shims on PATH needs no rc line.
+  echo "  Shell:      dx on PATH (${dx_on_path})"
 else
   echo "  Shell:      NOT INSTALLED"
 fi
