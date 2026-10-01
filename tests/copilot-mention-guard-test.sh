@@ -70,6 +70,8 @@ expect_blocked "bash -c 'gh pr comment 7 --body \"@copilot\"'"
 expect_blocked "gh pr comment 7 --body-file $body_file"
 expect_blocked "gh pr comment 7 --body-file=$body_file"
 expect_blocked 'gh pr edit 7 --add-reviewer @copilot && gh pr comment 7 --body "@copilot review"'
+# A command substitution is parsed twice; its reviewer value still counts once.
+expect_blocked 'R=$(gh pr edit 7 --add-reviewer @copilot); gh pr comment 7 --body "@copilot fix"'
 # A reviewer flag quoted inside the posted text is prose, so still a mention.
 expect_blocked 'gh pr comment 7 --body "I ran gh pr edit 7 --add-reviewer @copilot"'
 expect_blocked 'gh pr comment 7 --body "fixed -r @copilot please look"'
@@ -87,6 +89,7 @@ expect_allowed 'gh pr create --fill --reviewer @copilot'
 expect_allowed 'gh pr create --fill -r @copilot,octocat'
 expect_allowed 'gh -R owner/repo pr create --fill -r @copilot'
 expect_allowed "bash -c 'gh pr edit 7 --add-reviewer @copilot'"
+expect_allowed 'R=$(gh pr edit 7 --add-reviewer @copilot)'
 expect_allowed 'gh pr edit 7 --add-reviewer "@copilot"'
 expect_allowed 'gh pr comment 7 --body "@greptileai review"'
 expect_allowed "gh pr comment 7 --body \"Copilot's review flagged the retry loop\""

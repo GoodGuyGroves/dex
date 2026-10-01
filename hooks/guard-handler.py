@@ -2465,7 +2465,12 @@ def has_copilot_mention_comment(text):
     segments = list(_gh_posting_segments(text))
     if not segments:
         return False
-    reviewer_values = sum(_copilot_reviewer_mentions(args) for args in segments)
+    # A command substitution is parsed both as a nested fragment and in the
+    # outer command, so count each distinct command once. Counting too few
+    # reviewer values only blocks more; counting one twice lets a real mention
+    # elsewhere through.
+    reviewer_values = sum(_copilot_reviewer_mentions(list(args))
+                          for args in dict.fromkeys(tuple(a) for a in segments))
     if len(COPILOT_MENTION.findall(text)) > reviewer_values:
         return True
     return any(_copilot_body_file_mentions(path)
