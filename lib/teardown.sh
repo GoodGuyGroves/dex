@@ -307,6 +307,38 @@ dx_remote_branch_delete_if_merged() {
   return 0
 }
 
+# dx_lifecycle_branch_release <repo-dir> <branch> [merged-oid]
+# Delete a lifecycle branch Dex is done with, and its remote branch when the
+# project asked for that. GitHub is only asked about a merge when the answer
+# matters: the branch holds commits nothing else does (a squash merge leaves
+# exactly that), or delete_remote_branch_on_merge is on. Returns what
+# dx_branch_delete_safe returns.
+dx_lifecycle_branch_release() {
+  local repo_dir="$1" branch="$2" merged_oid="${3:-}" unique_count delete_result=0
+  [[ -n "$branch" ]] || return 0
+  if [[ -z "$merged_oid" ]]; then
+    unique_count=$(dx_branch_unpushed_count "$repo_dir" "$branch" 2>/dev/null) || unique_count=""
+    if [[ "$unique_count" != 0 ]] \
+      || [[ "$(dx_teardown_setting "$repo_dir" delete_remote_branch_on_merge)" == "true" ]]; then
+      merged_oid=$(dx_pr_merged_head "$repo_dir" "$branch") || merged_oid=""
+    fi
+  fi
+  dx_branch_delete_safe "$repo_dir" "$branch" "$merged_oid" || delete_result=$?
+  [[ -z "$merged_oid" ]] || dx_remote_branch_delete_if_merged "$repo_dir" "$branch" "$merged_oid"
+  return "$delete_result"
+}
+
+# dx_teardown_defer <session-id> <deferral> <branch>
+# Record at completion that this lifecycle's teardown waits for a merge
+# (on_merge) or for the caller (caller). The branch is copied into .meta
+# because dxclean's stale sweep removes the per-phase .branch record after a
+# week, and the sweep and dxrm still need it after that.
+dx_teardown_defer() {
+  local sid="$1" deferral="$2" branch="$3"
+  dx_meta_write "$sid" "teardown_deferred=${deferral}" "teardown_branch=${branch}" \
+    "teardown_at=$(date +%s)"
+}
+
 # dx_teardown_deferred_list <repo-root>
 # One line per lifecycle in this repository whose teardown was deferred at
 # completion (worktree_teardown: on_merge or caller):
@@ -315,6 +347,8 @@ dx_teardown_deferred_list() {
   local repo_root="$1" repo_key meta_file sid deferral wt_name wt_dir workspace_mode branch
   [[ -d "$DX_STATE_DIR" ]] || return 0
   repo_key=$(cd "$repo_root" 2>/dev/null && dx_session_repo_key) || return 0
+  # Only the sidecars that carry a deferral are read key by key; this runs at
+  # every `dx` start, and most repositories have none.
   while IFS= read -r meta_file; do
     [[ -n "$meta_file" && -f "$meta_file" ]] || continue
     sid=$(basename "$meta_file" .meta)
@@ -327,7 +361,8 @@ dx_teardown_deferred_list() {
     [[ -n "$wt_name" ]] || continue
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$wt_name" "$wt_dir" \
       "${workspace_mode:-worktree}" "$branch" "$deferral"
-  done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" -print 2>/dev/null)
+  done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" \
+    -exec grep -l '^teardown_deferred=' {} + 2>/dev/null)
 }
 
 # dx_session_known_branch <session-id>
@@ -340,4 +375,22 @@ dx_session_known_branch() {
   [[ -n "$branch" ]] || branch=$(dx_session_branch_read "$sid" 2>/dev/null || echo "")
   [[ -n "$branch" ]] || branch=$(dx_meta_read "$sid" current_branch)
   printf '%s\n' "$branch"
+}
+
+# dx_session_branch_records <repo-root>
+# One line per Dex session in this repository whose branch Dex recorded:
+#   branch<TAB>session_id<TAB>wt_name<TAB>wt_dir<TAB>deferral
+# dxclean uses it to find lifecycle branches renamed away from worktree-*.
+dx_session_branch_records() {
+  local repo_root="$1" repo_key meta_file sid branch
+  [[ -d "$DX_STATE_DIR" ]] || return 0
+  repo_key=$(cd "$repo_root" 2>/dev/null && dx_session_repo_key) || return 0
+  while IFS= read -r meta_file; do
+    [[ -n "$meta_file" && -f "$meta_file" ]] || continue
+    sid=$(basename "$meta_file" .meta)
+    branch=$(dx_session_known_branch "$sid")
+    [[ -n "$branch" ]] || continue
+    printf '%s\t%s\t%s\t%s\t%s\n' "$branch" "$sid" "$(dx_meta_read "$sid" wt_name)" \
+      "$(dx_meta_read "$sid" wt_dir)" "$(dx_meta_read "$sid" teardown_deferred)"
+  done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" -print 2>/dev/null)
 }

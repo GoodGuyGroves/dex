@@ -1721,9 +1721,33 @@ __dx_configure_inline_phase() {
 { unalias __dx_cleanup_completed_workspace; unfunction __dx_cleanup_completed_workspace; } 2>/dev/null || true
 __dx_cleanup_completed_workspace() {
   local wt_name="$1" wt_dir="$2" default_branch="$3" workspace_mode="${4:-worktree}" session_id="${5:-}"
+  local teardown_repo teardown_timing lifecycle_branch
 
   if [[ -n "$session_id" ]] && ! dx_ui_capture_mark_completed "$session_id"; then
     dx_warn "The lifecycle completed, but Dex could not start the UI proof retention window."
+  fi
+
+  # worktree_teardown: on_merge and caller keep the worktree (or, in place,
+  # the branch) past completion; the record in .meta is what the sweep and
+  # dxrm work from later.
+  if [[ "$workspace_mode" == "worktree" ]]; then
+    teardown_repo=$(__dx_wt_repo_root "$wt_dir" 2>/dev/null) || teardown_repo="$wt_dir"
+  else
+    teardown_repo="$wt_dir"
+  fi
+  teardown_timing=$(dx_teardown_setting "$teardown_repo" worktree_teardown)
+  if [[ "$teardown_timing" != "on_complete" ]]; then
+    lifecycle_branch=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+    if [[ -n "$session_id" ]] && ! dx_teardown_defer "$session_id" "$teardown_timing" "$lifecycle_branch"; then
+      dx_warn "Ticket lifecycle completed, but Dex could not record the deferred teardown; ${wt_name} was kept. Run dxrm ${wt_name} when you are done with it."
+      return 1
+    fi
+    if [[ "$teardown_timing" == "on_merge" ]]; then
+      dx_info "Kept ${wt_name} until its pull request merges (worktree_teardown: on_merge). dxclean or the next dx run removes it then."
+    else
+      dx_info "Kept ${wt_name} for the caller to remove (worktree_teardown: caller). Run dxrm ${wt_name} after the pull request merges."
+    fi
+    return 0
   fi
 
   if [[ "$workspace_mode" == "worktree" ]]; then
@@ -1767,7 +1791,12 @@ __dx_cleanup_completed_workspace() {
     return 1
   fi
 
-  if ! git -C "$wt_dir" branch -D "$current_branch"; then
+  local release_result=0
+  dx_lifecycle_branch_release "$wt_dir" "$current_branch" || release_result=$?
+  if [[ "$release_result" -eq 3 ]]; then
+    dx_warn "Ticket lifecycle completed; local branch ${current_branch} was kept (see above)."
+    return 1
+  elif [[ "$release_result" -ne 0 ]]; then
     dx_warn "Ticket lifecycle completed, but failed to delete local branch ${current_branch}."
     return 1
   fi
@@ -3037,7 +3066,9 @@ PY
       return 1
     fi
     echo "Ticket lifecycle already complete for ${workspace_name}."
-    if [[ "$workspace_mode" == "worktree" ]]; then
+    if [[ -n "$(dx_meta_read "$session_id" teardown_deferred)" ]]; then
+      echo "Its teardown is deferred (worktree_teardown: $(dx_meta_read "$session_id" teardown_deferred)). Run dxrm ${workspace_name} to remove it now."
+    elif [[ "$workspace_mode" == "worktree" ]]; then
       echo "Local cleanup should already be complete. If files remain, run dxrm ${workspace_name}."
     else
       echo "This lifecycle ran in the current checkout; local branch cleanup is handled at completion when safe."
@@ -4347,6 +4378,13 @@ dx() {
     return $exit_code
   fi
 
+  # Finish deferred teardowns (worktree_teardown: on_merge) whose pull request
+  # merged since the last run. Best-effort: it never blocks a start.
+  local sweep_repo
+  if sweep_repo=$(dx_repo_root 2>/dev/null) && [[ -n "$sweep_repo" ]]; then
+    __dx_sweep_deferred_teardowns "$sweep_repo" >/dev/null </dev/null || true
+  fi
+
   # Normal mode — setup workspace and run phased lifecycle
   if [[ $use_worktree -eq 1 ]]; then
     if ! __dx_setup_worktree "$raw_input"; then
@@ -4386,7 +4424,9 @@ dx() {
       return 1
     fi
     echo "Ticket lifecycle already complete for ${_dx_wt_name}."
-    if [[ "$_dx_workspace_mode" == "worktree" ]]; then
+    if [[ -n "$(dx_meta_read "$session_id" teardown_deferred)" ]]; then
+      echo "Its teardown is deferred (worktree_teardown: $(dx_meta_read "$session_id" teardown_deferred)). Run dxrm ${raw_input} to remove it now."
+    elif [[ "$_dx_workspace_mode" == "worktree" ]]; then
       echo "Local cleanup should already be complete. If files remain, run dxrm ${raw_input}."
     else
       echo "This lifecycle ran in the current checkout; local branch cleanup is handled at completion when safe."
@@ -5180,7 +5220,7 @@ dxrm() {
   if [[ "$1" == "--all" ]]; then
     local found=0
     local skipped_active_in_place=0
-    local removal_failed=0
+    local removal_failed=0 kept_worktrees=0 remove_result
     local renamed_branches=()
     local session_ids=()
     local wt_dir wt_name actual_branch branch active_in_place_phase
@@ -5200,7 +5240,12 @@ dxrm() {
 
         echo "Removing ${wt_name}..."
         dx_cleanup_checkpoints "$wt_dir"
-        if ! dx_wt_remove "$wt_dir" "$repo_root"; then
+        remove_result=0
+        dx_wt_remove "$wt_dir" "$repo_root" || remove_result=$?
+        if [[ "$remove_result" -eq 3 ]]; then
+          kept_worktrees=1
+          continue
+        elif [[ "$remove_result" -ne 0 ]]; then
           dx_error "Failed to remove worktree ${wt_name}; its branch and session state were left intact."
           removal_failed=1
           continue
@@ -5227,8 +5272,10 @@ dxrm() {
         skipped_active_in_place=1
         continue
       fi
+      # A branch still checked out in a kept worktree is not ours to delete.
+      __dx_ticket_branch_worktree "$repo_root" "$branch" >/dev/null && continue
       echo "Deleting branch ${branch}..."
-      if git branch -D "$branch" 2>/dev/null; then
+      if dx_branch_delete_safe "$repo_root" "$branch"; then
         __dx_cleanup_lifecycle_state_for_branch "$branch"
       fi
     done < <(git branch --list 'worktree-ticket-*' 'worktree-task-*' 2>/dev/null | sed 's/^[*+ ]*//')
@@ -5236,7 +5283,7 @@ dxrm() {
     # Delete renamed branches that wouldn't match the worktree-* pattern
     for branch in "${renamed_branches[@]}"; do
       echo "Deleting renamed branch ${branch}..."
-      git branch -D "$branch" 2>/dev/null || true
+      dx_branch_delete_safe "$repo_root" "$branch" || true
       found=1
     done
 
@@ -5250,7 +5297,7 @@ dxrm() {
     fi
 
     # Clean up last-session pointer unless it still points at a resumable in-place session.
-    if [[ $removal_failed -eq 0 && $last_session_active_in_place -eq 0 ]]; then
+    if [[ $removal_failed -eq 0 && $kept_worktrees -eq 0 && $last_session_active_in_place -eq 0 ]]; then
       rm -f "$DX_STATE_DIR/last-session" 2>/dev/null
     fi
 
@@ -5262,6 +5309,8 @@ dxrm() {
     if [[ $removal_failed -eq 1 ]]; then
       dx_warn "Some worktrees could not be removed. Resolve the errors above and run dxrm --all again."
       return 1
+    elif [[ $kept_worktrees -eq 1 ]]; then
+      echo "Finished. Worktrees with content teardown_untracked: refuse protects were kept; see above."
     elif [[ $found -eq 0 ]]; then
       dx_info "No worktrees or branches found."
     elif [[ $skipped_active_in_place -eq 1 || $last_session_active_in_place -eq 1 ]]; then
@@ -5323,9 +5372,15 @@ dxrm() {
   local wt_dir="${worktrees_dir}/${wt_name}"
   local branch_name="worktree-${wt_name}"
 
-  # Detect actual branch name (may have been renamed by ticket instructions)
-  local actual_branch=""
-  [[ -d "$wt_dir" ]] && actual_branch=$(dx_wt_branch "$wt_dir")
+  # Detect actual branch name (may have been renamed by ticket instructions).
+  # With the directory already gone, the session's records still know it.
+  local actual_branch="" session_id
+  session_id=$(dx_session_id "$wt_name")
+  if [[ -d "$wt_dir" ]]; then
+    actual_branch=$(dx_wt_branch "$wt_dir")
+  else
+    actual_branch=$(dx_session_known_branch "$session_id")
+  fi
 
   local has_dir=0 has_branch=0
   [[ -d "$wt_dir" ]] && has_dir=1
@@ -5361,7 +5416,12 @@ dxrm() {
 
   if [[ $has_dir -eq 1 ]]; then
     dx_cleanup_checkpoints "$wt_dir"
-    if ! dx_wt_remove "$wt_dir" "$repo_root"; then
+    local remove_result=0
+    dx_wt_remove "$wt_dir" "$repo_root" || remove_result=$?
+    if [[ "$remove_result" -eq 3 ]]; then
+      dx_warn "Kept worktree ${wt_name}; its branch and session state were left intact."
+      return 1
+    elif [[ "$remove_result" -ne 0 ]]; then
       dx_error "Failed to remove worktree ${wt_name}; its branch and session state were left intact."
       return 1
     fi
@@ -5372,19 +5432,17 @@ dxrm() {
 
   if [[ $has_branch -eq 1 ]]; then
     echo "  Deleting branch ${branch_name}..."
-    if git branch -D "$branch_name" 2>/dev/null && [[ $has_dir -eq 0 ]]; then
+    if dx_lifecycle_branch_release "$repo_root" "$branch_name" && [[ $has_dir -eq 0 ]]; then
       __dx_cleanup_lifecycle_state_for_branch "$branch_name"
     fi
   fi
 
   if [[ $has_actual_branch -eq 1 ]]; then
     echo "  Deleting renamed branch ${actual_branch}..."
-    git branch -D "$actual_branch" 2>/dev/null || true
+    dx_lifecycle_branch_release "$repo_root" "$actual_branch" || true
   fi
 
   # Clean up state files and last-session pointer
-  local session_id
-  session_id=$(dx_session_id "$wt_name")
   dx_cleanup_session "$session_id"
   dx_cleanup_last_session "$wt_name"
 
@@ -5563,6 +5621,85 @@ dxcd() {
   fi
 }
 
+# ─── Deferred teardown sweep ──────────────────────────────────────────────────
+
+# __dx_sweep_deferred_teardowns <repo_root>
+# Finish the teardown of lifecycles that completed with worktree_teardown:
+# on_merge once GitHub confirms their pull request merged. An open pull
+# request, or one Dex cannot ask about, keeps everything: nothing is removed
+# without a confirmed merge. caller records are left for whoever launched Dex,
+# and a lifecycle that was reopened (phase 0-6) is not touched. Prints the
+# number of lifecycles it finished.
+{ unalias __dx_sweep_deferred_teardowns; unfunction __dx_sweep_deferred_teardowns; } 2>/dev/null || true
+__dx_sweep_deferred_teardowns() {
+  local repo_root="$1" sid wt_name wt_dir workspace_mode branch deferral
+  local phase_val merged_oid merge_result current default_branch finished=0
+  [[ -n "$repo_root" ]] || { echo 0; return 0; }
+  while IFS=$'\t' read -r sid wt_name wt_dir workspace_mode branch deferral; do
+    [[ -n "$sid" && "$deferral" == "on_merge" && -n "$branch" ]] || continue
+    phase_val=$(cat "$(dx_state_file "$sid")" 2>/dev/null || echo "")
+    [[ ! "$phase_val" =~ ^[0-6]$ ]] || continue
+    merge_result=0
+    merged_oid=$(dx_pr_merged_head "$repo_root" "$branch") || merge_result=$?
+    if [[ "$merge_result" -eq 1 ]]; then
+      continue
+    elif [[ "$merge_result" -ne 0 ]]; then
+      dx_info "Could not confirm whether ${branch} has merged; kept ${wt_name} (worktree_teardown: on_merge)." >&2
+      continue
+    fi
+    dx_info "The pull request for ${branch} merged; removing ${wt_name}." >&2
+    if [[ "$workspace_mode" == "worktree" ]]; then
+      # dxrm changes directory; keep the caller where it was.
+      ( cd "$repo_root" && dxrm "$wt_name" ) >&2 || continue
+    else
+      current=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+      if [[ "$current" == "$branch" ]]; then
+        if git -C "$wt_dir" status --porcelain 2>/dev/null | head -1 | grep -q .; then
+          dx_info "Kept ${branch}: the checkout at ${wt_dir} has uncommitted changes." >&2
+          continue
+        fi
+        default_branch=$(dx_default_branch "$wt_dir")
+        git -C "$wt_dir" switch --quiet "$default_branch" >&2 || continue
+      fi
+      dx_lifecycle_branch_release "$repo_root" "$branch" "$merged_oid" >&2 || true
+      dx_cleanup_session "$sid" || true
+    fi
+    finished=$((finished + 1))
+  done < <(dx_teardown_deferred_list "$repo_root")
+  echo "$finished"
+}
+
+# __dx_clean_skip_recorded_branch <branch> <session_id> <deferral>
+# Whether dxclean's branch passes must leave a branch alone because of what
+# Dex recorded about it: a deferred teardown (the sweep or the caller owns it)
+# or a lifecycle that is still running. Prints the reason.
+{ unalias __dx_clean_skip_recorded_branch; unfunction __dx_clean_skip_recorded_branch; } 2>/dev/null || true
+__dx_clean_skip_recorded_branch() {
+  local branch="$1" sid="$2" deferral="$3" phase_val
+  if [[ -n "$deferral" ]]; then
+    echo "  Skipping branch ${branch} (teardown deferred: worktree_teardown: ${deferral})"
+    return 0
+  fi
+  [[ -n "$sid" ]] || return 1
+  phase_val=$(cat "$(dx_state_file "$sid")" 2>/dev/null || echo "")
+  if [[ "$phase_val" =~ ^[0-6]$ ]]; then
+    echo "  Skipping branch ${branch} (active phase ${phase_val}/6: $(__dx_phase_name "$phase_val"))"
+    return 0
+  fi
+  return 1
+}
+
+# __dx_clean_recorded_session <session_id> <wt_name> <worktrees_dir>
+# After dxclean deleted a recorded branch, drop its session state unless a
+# worktree of that name still exists.
+{ unalias __dx_clean_recorded_session; unfunction __dx_clean_recorded_session; } 2>/dev/null || true
+__dx_clean_recorded_session() {
+  local sid="$1" wt_name="$2" worktrees_dir="$3"
+  [[ -n "$sid" ]] || return 0
+  [[ -n "$wt_name" && -d "$worktrees_dir/$wt_name" ]] && return 0
+  dx_cleanup_session "$sid" || true
+}
+
 # ─── dxclean — prune stale worktrees + gone branches ─────────────────────────
 
 { unalias dxclean; unfunction dxclean; } 2>/dev/null || true
@@ -5582,6 +5719,12 @@ dxclean() {
   if [[ $clean_help -eq 1 ]]; then
     echo "Usage: dxclean [--apply]"
     echo "Remove stale Dex worktrees, branches, and session files."
+    echo ""
+    echo "First, finish the teardown of lifecycles that completed with"
+    echo "worktree_teardown: on_merge whose pull request has merged. Worktrees"
+    echo "kept for a merge or for the caller are skipped. A branch that holds"
+    echo "commits nothing else does is kept, and removal still rescues or"
+    echo "refuses per teardown_untracked (docs/worktree-teardown.md)."
     echo ""
     echo "Then report what sessions that are gone have left on this host: their"
     echo "temp roots and process tokens, the browser profiles Dex minted inside"
@@ -5610,7 +5753,22 @@ dxclean() {
   local cleaned=0 cleanup_failed=0
   local wt_dir wt_name session_id phase_file phase_val wt_branch branch
   local active_in_place_phase active_in_place_result has_worktree ticket_name
-  local old_files old_phase_files
+  local old_files old_phase_files deferral unique_count merged_oid swept
+  local -A branch_sids branch_wt_names branch_deferrals
+  local record_branch record_sid record_wt_name record_wt_dir record_deferral
+
+  # 0. Finish deferred teardowns whose pull request has merged.
+  swept=$(__dx_sweep_deferred_teardowns "$repo_root")
+  [[ "$swept" =~ ^[0-9]+$ ]] && cleaned=$((cleaned + swept))
+
+  # Branches Dex recorded for this repository's sessions, so passes 2 and 3
+  # also find lifecycle branches that were renamed away from worktree-*.
+  while IFS=$'\t' read -r record_branch record_sid record_wt_name record_wt_dir record_deferral; do
+    [[ -n "$record_branch" ]] || continue
+    branch_sids[$record_branch]="$record_sid"
+    branch_wt_names[$record_branch]="$record_wt_name"
+    branch_deferrals[$record_branch]="$record_deferral"
+  done < <(dx_session_branch_records "$repo_root")
 
   # 1. Prune stale worktrees (no uncommitted changes)
   local worktrees_dir="${repo_root}/.dex/worktrees"
@@ -5630,22 +5788,44 @@ dxclean() {
         fi
       fi
 
+      # Skip worktrees whose teardown waits for a merge or for the caller
+      deferral=$(dx_meta_read "$session_id" teardown_deferred)
+      if [[ "$deferral" == "on_merge" ]]; then
+        echo "  Skipping ${wt_name} (waiting for its pull request to merge)"
+        continue
+      elif [[ "$deferral" == "caller" ]]; then
+        echo "  Skipping ${wt_name} (kept for the caller: worktree_teardown: caller)"
+        continue
+      fi
+
       # Skip worktrees with uncommitted changes
       if git -C "$wt_dir" status --porcelain 2>/dev/null | head -1 | grep -q .; then
         echo "  Skipping ${wt_name} (has uncommitted changes)"
         continue
       fi
 
-      # Skip worktrees with unpushed commits
+      # Skip worktrees with unpushed commits. Once GitHub deletes a merged
+      # branch there is no origin/<branch> to compare with, so a merged pull
+      # request stands in for it, provided nothing was committed after its head.
       wt_branch=$(dx_wt_branch "$wt_dir")
+      merged_oid=""
       if [[ -n "$wt_branch" ]]; then
-        if ! git -C "$wt_dir" rev-parse "origin/${wt_branch}" &>/dev/null; then
-          echo "  Skipping ${wt_name} (branch not pushed to remote)"
-          continue
-        fi
-        if git -C "$wt_dir" log --oneline "origin/${wt_branch}..HEAD" 2>/dev/null | head -1 | grep -q .; then
-          echo "  Skipping ${wt_name} (has unpushed commits)"
-          continue
+        if git -C "$wt_dir" rev-parse "origin/${wt_branch}" &>/dev/null; then
+          if git -C "$wt_dir" log --oneline "origin/${wt_branch}..HEAD" 2>/dev/null | head -1 | grep -q .; then
+            echo "  Skipping ${wt_name} (has unpushed commits)"
+            continue
+          fi
+        else
+          merged_oid=$(dx_pr_merged_head "$repo_root" "$wt_branch") || merged_oid=""
+          if [[ -z "$merged_oid" ]]; then
+            echo "  Skipping ${wt_name} (branch not pushed to remote)"
+            continue
+          fi
+          unique_count=$(dx_branch_unpushed_count "$repo_root" "$wt_branch" "$merged_oid") || unique_count=""
+          if [[ "$unique_count" != 0 ]]; then
+            echo "  Skipping ${wt_name} (has commits after its merged pull request)"
+            continue
+          fi
         fi
       fi
 
@@ -5657,7 +5837,7 @@ dxclean() {
       fi
 
       # Delete the branch (wt_branch captured above; handles renamed branches too)
-      [[ -n "$wt_branch" ]] && git branch -D "$wt_branch" 2>/dev/null || true
+      [[ -z "$wt_branch" ]] || dx_lifecycle_branch_release "$repo_root" "$wt_branch" "$merged_oid" || true
 
       # Clean up state files and last-session pointer
       dx_cleanup_session "$session_id"
@@ -5668,13 +5848,18 @@ dxclean() {
   fi
 
   # 2. Prune dex branches whose remote tracking branch is gone.
-  # Only targets worktree-* branches to avoid deleting non-dex feature branches.
+  # Only targets Dex lifecycle branches: worktree-* names, and branches this
+  # repository's sessions recorded (renamed tracker branches). Never anything else.
   git fetch --prune 2>/dev/null || true
 
   while IFS= read -r branch; do
     [[ -z "$branch" ]] && continue
-    # Only clean dex-managed branches (worktree-ticket-* or worktree-task-*)
-    if [[ "$branch" != worktree-ticket-* ]] && [[ "$branch" != worktree-task-* ]]; then
+    if [[ "$branch" != worktree-ticket-* ]] && [[ "$branch" != worktree-task-* ]] \
+      && [[ -z "${branch_sids[$branch]:-}" ]]; then
+      continue
+    fi
+    if __dx_clean_skip_recorded_branch "$branch" "${branch_sids[$branch]:-}" \
+      "${branch_deferrals[$branch]:-}"; then
       continue
     fi
     active_in_place_result=0
@@ -5706,15 +5891,25 @@ dxclean() {
     fi
 
     echo "  Deleting gone branch: ${branch}"
-    if git branch -D "$branch" 2>/dev/null; then
+    if dx_lifecycle_branch_release "$repo_root" "$branch"; then
       __dx_cleanup_lifecycle_state_for_branch "$branch"
+      __dx_clean_recorded_session "${branch_sids[$branch]:-}" "${branch_wt_names[$branch]:-}" "$worktrees_dir"
       cleaned=$((cleaned + 1))
     fi
   done < <(git branch -vv 2>/dev/null | grep ': gone]' | sed 's/^[*+ ]*//' | awk '{print $1}')
 
-  # 3. Prune worktree branches that have no worktree directory
+  # 3. Prune worktree branches that have no worktree directory, including
+  # recorded branches renamed away from worktree-*.
   while IFS= read -r branch; do
     [[ -z "$branch" ]] && continue
+    git show-ref --verify --quiet "refs/heads/${branch}" 2>/dev/null || continue
+    if __dx_clean_skip_recorded_branch "$branch" "${branch_sids[$branch]:-}" \
+      "${branch_deferrals[$branch]:-}"; then
+      continue
+    fi
+    # Checked out somewhere (an in-place lifecycle, or a worktree under
+    # another name): not an orphan.
+    __dx_ticket_branch_worktree "$repo_root" "$branch" >/dev/null && continue
     active_in_place_result=0
     active_in_place_phase=$(__dx_active_in_place_phase_for_branch "$branch") \
       || active_in_place_result=$?
@@ -5726,7 +5921,8 @@ dxclean() {
       continue
     fi
     ticket_name="${branch#worktree-}"
-    if [[ ! -d "$worktrees_dir/$ticket_name" ]]; then
+    [[ "$branch" == worktree-* ]] || ticket_name="${branch_wt_names[$branch]:-}"
+    if [[ -n "$ticket_name" && ! -d "$worktrees_dir/$ticket_name" ]]; then
       # In-place lifecycles and manually removed worktrees leave these
       # branches behind while still holding unpushed work; mirror the
       # push-safety guards from the stale-worktree pass above.
@@ -5739,12 +5935,14 @@ dxclean() {
         continue
       fi
       echo "  Deleting orphan branch: ${branch}"
-      if git branch -D "$branch" 2>/dev/null; then
+      if dx_lifecycle_branch_release "$repo_root" "$branch"; then
         __dx_cleanup_lifecycle_state_for_branch "$branch"
+        __dx_clean_recorded_session "${branch_sids[$branch]:-}" "$ticket_name" "$worktrees_dir"
         cleaned=$((cleaned + 1))
       fi
     fi
-  done < <(git branch --list 'worktree-ticket-*' 'worktree-task-*' 2>/dev/null | sed 's/^[*+ ]*//')
+  done < <({ git branch --list 'worktree-ticket-*' 'worktree-task-*' 2>/dev/null | sed 's/^[*+ ]*//'
+    printf '%s\n' "${(@k)branch_sids}"; } | awk 'NF && !seen[$0]++')
 
   dx_unlink_claude_from_gone_worktrees
   git worktree prune 2>/dev/null
