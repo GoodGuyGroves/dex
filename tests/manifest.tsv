@@ -143,6 +143,7 @@ test-timeout-test.sh	fast	all	600	hermetic
 ticket-branch-adoption-errors-test.sh	fast	all	600	hermetic
 ticket-branch-adoption-test.sh	fast	all	600	hermetic
 ticket-branch-instructions-test.sh	fast	all	600	hermetic
+ticket-close-contract-test.sh	fast	all	600	hermetic
 ticket-close-setting-test.sh	fast	all	600	hermetic
 ticket-close-sweep-test.sh	fast	all	600	hermetic
 ticket-id-test.sh	fast	all	600	hermetic

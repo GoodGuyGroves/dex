@@ -121,6 +121,7 @@ Optional fields:
 | `source.title` | Also names the run's Claude session `<workspace> <title>`, over an inherited `DEX_SESSION_TITLE`; `dx --title` overrides it. |
 | `workflow.requires_plan_approval` | Defaults to `true`. When `false`, the run spec authorizes Phase 1 after plan quality checks pass. |
 | `workflow.requires_ui_evidence` | `auto`, `always`, `never`, `true`, or `false`. |
+| `workflow.ticket_close` | `on_complete`, `on_merge`, or `never`: when Phase 6 moves the ticket to Done. Overrides `ticket_close` in the project's `.dex/dex.md` and an inherited `DEX_TICKET_CLOSE`; absent leaves the project setting in charge. Any other value fails validation. See [Ticket close](worktree-teardown.md#ticket-close). |
 | `sync.factory_url` | Enables Factory event sync unless `DEX_FACTORY_SYNC` disables it. |
 | `sync.events_endpoint` | Exact event endpoint. Takes precedence over `sync.factory_url`. |
 

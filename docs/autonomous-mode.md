@@ -69,7 +69,7 @@ Each phase has its own audit prompt in `prompts/phase-audits/`:
 | 3. Review | `3-review-loop.md` | Independent `/dxreviewloop` waves, accepted-fix checkpoints pushed, selected tier's global clean gate reached |
 | 4. Verify | `4-verify.md` | Final PR checks passing, verification repair checkpoints pushed, branch current on origin |
 | 5. PR | `5-pr.md` | Description quality, scope match, current visual media attached or handed off with a warning, PR ready with `request` reviewers attached |
-| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment, monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, close ticket, clean up local worktree/branch |
+| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment, monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, settle the ticket per `ticket_close`, clean up local worktree/branch |
 
 During Phase 0, `dx_ticket_branch_prepare` resolves the branch name supplied by
 the tracker. If that branch exists on `origin`, Dex fetches its current tip and
@@ -84,7 +84,14 @@ Phase 2 creates the first implementation commit.
 A ticket's sub-issues are scope. Phase 0 lists them (Linear: `list_issues`
 with `parentId`), Phase 1 plans a work package for each in the parent's stated
 order, the PR body reports every sub-issue's state, and Phase 6 marks each one
-Done when this PR meets its acceptance criteria. Giving Dex a parent ticket
+Done when this PR meets its acceptance criteria.
+
+When Phase 6 marks the ticket Done follows the project's `ticket_close`
+setting (`## Tickets` in `.dex/dex.md`). The default, `on_complete`, marks it
+Done at completion, before the merge. `on_merge` leaves the ticket open, and
+Dex closes it once the pull request merges. `never` leaves its status to the
+caller. A run can override the project with `workflow.ticket_close` or
+`DEX_TICKET_CLOSE`; see [Ticket close](worktree-teardown.md#ticket-close). Giving Dex a parent ticket
 means one lifecycle and one PR for all of its children; dropping a sub-issue is
 a scope change that needs the user's agreement, not a default.
 

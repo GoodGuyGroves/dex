@@ -1741,7 +1741,7 @@ __dx_cleanup_completed_workspace() {
   # ticket_close: on_merge leaves the ticket for the merge sweep. The record
   # goes into the same .meta as a deferred teardown and outlives the worktree.
   if [[ -n "$session_id" ]] && ! dx_ticket_close_defer "$session_id" "$teardown_repo" "$lifecycle_branch"; then
-    dx_warn "Ticket lifecycle completed, but Dex could not record the ticket close for the merge; close the ticket once the pull request merges."
+    dx_warn "Ticket lifecycle completed, but Dex could not record the ticket close for the merge; move the ticket to Done by hand after the pull request merges."
   fi
   teardown_timing=$(dx_teardown_setting "$teardown_repo" worktree_teardown)
   if [[ "$teardown_timing" != "on_complete" ]]; then
