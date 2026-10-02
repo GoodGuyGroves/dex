@@ -21,6 +21,7 @@ PATHS = {
     'DX_RUN_ROOT': ('runs', '.dex/runs'),
     'DX_MAINTENANCE_DIR': ('maintenance', '.claude/.dex-maintenance'),
     'DX_LOG_DIR': ('logs', '.dex/logs'),
+    'DX_RESCUE_DIR': ('rescue', '.dex/rescue'),
     'DEX_ROUTER_HOME': ('router', '.dex/router'),
     'DX_PROVIDER_GLOBAL_CONFIG': ('providers.json', '.dex/providers.json'),
     'DX_SETUP_FILE': ('setup.json', '.dex/setup.json'),

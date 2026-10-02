@@ -28,7 +28,7 @@ it.
 | `pr-threads.sh` | The review-thread policy: per-outcome replies, reactions and resolves, open-thread listing for Phase 6, and backup-then-delete of a stray pending review | `dx_pr_thread_policy()`, `dx_pr_thread_respond()`, `dx_pr_threads_open()`, `dx_pr_pending_review_clear()` |
 | `override.sh` | Session policy journal, validation, expiry, and effective-value resolution | `dx_override_set()`, `dx_override_clear()`, `dx_override_list()`, `dx_override_effective()` |
 | `provider.sh` | Provider/model profile resolution, launch wrapping (including the session PATH), and diagnostics | `dx_provider_apply()`, `dx_provider_claude()`, `dx_session_path()`, `dx_provider_command()`, `dx_provider_doctor()` |
-| `project-state.sh` | Init ownership snapshots, conservative project cleanup, and the machine-readable `.dex/dex.md` contract reader | `dx_project_state_begin()`, `dx_project_state_finalize()`, `dx_project_state_remove_managed()`, `dx_project_contract_values()`, `dx_project_worktree_hook()`, `dx_project_pr_template()`, `dx_project_pr_label_rules()`, `dx_pr_apply_label_rules()` |
+| `project-state.sh` | Init ownership snapshots, conservative project cleanup, and the machine-readable `.dex/dex.md` contract reader | `dx_project_state_begin()`, `dx_project_state_finalize()`, `dx_project_state_remove_managed()`, `dx_project_contract_values()`, `dx_project_worktree_hook()`, `dx_project_pr_template()`, `dx_project_pr_label_rules()`, `dx_pr_apply_label_rules()`, `dx_project_teardown_value()` |
 | `review.sh` | Scope-bound review selection/state, evidence, deterministic baselines, wrapper-clock metrics, retained proofs, ledgers, receipts, result parsing, churn detection, and telemetry JSON | `dx_review_evidence_valid()`, `dx_review_baseline_publish()`, `dx_review_metrics_mark()`, `dx_review_ledger_valid()`, `dx_review_write_receipt()`, `dx_review_event_json()` |
 | `review-capacity.sh` | Host-wide FIFO admission with named pools (`waves`, `checks`, `heavy`), PID-reuse-safe stale-owner recovery, and a per-pool limit | `dx_review_capacity_limit()`, `dx_review_capacity_wait()`, `dx_review_capacity_release()`, `dx_capacity_pool_wait()`, `dx_capacity_pool_release()`, `dx_capacity_pool_queue_status()` |
 | `review-loop.sh` | The review loop itself plus its helpers: wave orchestration, tier assessment, run telemetry, pause and interrupt handling, scope snapshots. `dxreviewloop` in dx.sh is a thin wrapper over it | `dx_review_loop_run()`, `__dx_review_emit_event()`, `__dx_review_scope_snapshot()` |
@@ -50,6 +50,7 @@ it.
 | `ticket.sh` | Ticket references: the optional `ticket_prefixes` list under `## Tickets` in `.dex/dex.md`, the canonical ticket ID (`ENG-1234` for a listed prefix, else the number), and the workspace names built from it | `dx_ticket_prefixes()`, `dx_ticket_parse()`, `dx_ticket_workspace_name()`, `dx_ticket_id_from_workspace_name()` |
 | `triage.sh` | Standalone ticket triage arguments, provider launch, and isolated cleanup | `dx_triage_run()`, `dx_triage_cleanup()` |
 | `worker.sh` | DexCode worker registration and the poll/claim/lease/settle daemon | `dx_worker_command()`, `dx_worker_register()`, `dx_worker_daemon()` |
+| `teardown.sh` | Safe worktree teardown: the `## Worktree Teardown` settings, the rescue copy and the gate `dx_wt_remove()` runs first, safe branch deletion, merged-PR lookup, and deferred teardown records. `dxrm`, `dxrm --all`, `dxclean` and `dx worktree audit --apply` all remove through that gate and keep a branch whose commits exist nowhere else; `dxclean` first finishes `on_merge` teardowns whose pull request merged, skips deferred ones, and follows lifecycle branches renamed away from `worktree-*` through session records, as `dxrm <name>` does once the directory is gone. See [docs/worktree-teardown.md](worktree-teardown.md) | `dx_teardown_setting()`, `dx_wt_teardown_gate()`, `dx_wt_rescue()`, `dx_branch_delete_safe()`, `dx_lifecycle_branch_release()`, `dx_pr_merged_head()`, `dx_teardown_deferred_list()` |
 | `worktree.sh` | Worktree management utilities, shared build-cache links, and the project's `## Worktree Hooks` lifecycle commands | `dx_wt_branch()`, `dx_wt_remove()`, `dx_worktree_hook_run()`, `dx_worktree_orphan_resources()`, `dx_cleanup_last_session()`, `dx_cleanup_stale_files()` |
 
 ## `dx install` flags
@@ -147,6 +148,7 @@ the gate map.
 | `DX_RUN_ROOT` | Dex run directories, event journals, summaries, and run artifacts | `$DEX_HOME/runs`, else `~/.dex/runs` |
 | `DX_MAINTENANCE_DIR` | `dx maintain` locks and last-success stamps | `$DEX_HOME/maintenance`, else `~/.claude/.dex-maintenance` |
 | `DX_LOG_DIR` | `dx worker` service logs | `$DEX_HOME/logs`, else `~/.dex/logs` |
+| `DX_RESCUE_DIR` | Untracked files and uncommitted edits saved from a removed worktree; see [Worktree teardown](worktree-teardown.md) | `$DEX_HOME/rescue`, else `~/.dex/rescue` |
 | `DX_PROVIDER_GLOBAL_CONFIG` | Global provider profiles and default (`dx provider use`) | `$DEX_HOME/providers.json`, else `~/.dex/providers.json` |
 | `DX_SETUP_FILE` | The `dx setup` routing choice | `$DEX_HOME/setup.json`, else `~/.dex/setup.json` |
 | `DX_INSTALL_STATE_FILE` | Install state: managed worktree directories, the session-messaging answer | `$DEX_HOME/install-state.json`, else `~/.claude/.dex-install-state.json` |
@@ -250,6 +252,7 @@ the gate map.
 | `DEX_UI_MCP_SCOPE` | Where `dx ui-capture install` puts the browser servers: `dex` (Dex's MCP registry, loaded by Dex launches only, for Claude and Codex), or `user`, `project` or `local` to register them with the Claude and Codex CLIs as before, same as its `--user`/`--project`/`--local` flags; `project` writes the repository's tracked `.mcp.json` at the checkout root and falls back to `user` outside a checkout | `dex` |
 | `DEX_SESSION_RSS_SAMPLE_SECONDS` | How often the runtime supervisor samples the peak resident size of the session's token-carrying process tree, on the heartbeat it already runs. Clamped to 1..3600; a malformed value falls back to the default rather than refusing to supervise | 30 |
 | `DEX_WORKTREE_HOOK_TIMEOUT` | Seconds one `## Worktree Hooks` command (`after_create`, `before_remove`, `on_session_end`, `orphan_resources`) may run before its process tree is stopped; `0` removes the deadline, except for `on_session_end`, which is capped at 5 s whatever this says because the host gives the whole SessionEnd hook ten seconds. A hook that is stopped, or that fails, warns and never blocks the create or remove. See [docs/worktree-hooks.md](worktree-hooks.md) | 300 (5m 0s) |
+| `DEX_TEARDOWN_GH_TIMEOUT` | Seconds Dex waits for `gh` when checking whether a lifecycle's pull request merged, and for `git ls-remote`/`git push --delete` when deleting a merged remote branch. A timeout counts as "could not confirm", which keeps everything. See [docs/worktree-teardown.md](worktree-teardown.md) | 30 (10 for the check at `dx` start) |
 | `DEX_REVIEW_CHECK_TIMEOUT` | Seconds one deterministic check may run before `bin/review-check.sh` reports it `over-budget`. It no longer stops the command: a late result keeps its real exit code and duration and is cached like any other | 900 (15m 0s) |
 | `DEX_REVIEW_CHECK_HARD_TIMEOUT` | The only deadline that stops a check. Reaching it is exit 124 with no reusable result, the way the execution budget used to behave | 4 × `DEX_REVIEW_CHECK_TIMEOUT` (3600) |
 | `DEX_REVIEW_CHECK_QUEUE_TIMEOUT` | Seconds a check may wait for the host check pool before it gives up with the `queued` status — exit 75, nothing ran, ask again later. `0` waits with a heartbeat, because waiting is not a failure | `0` |
@@ -272,6 +275,7 @@ $DEX_HOME/
   router/              DEX_ROUTER_HOME
   dexcode/             DEXCODE_CONFIG_DIR
   logs/                DX_LOG_DIR
+  rescue/              DX_RESCUE_DIR
   providers.json       DX_PROVIDER_GLOBAL_CONFIG
   setup.json           DX_SETUP_FILE
   install-state.json   DX_INSTALL_STATE_FILE

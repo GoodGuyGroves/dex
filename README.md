@@ -119,7 +119,9 @@ alias. See [ticket triage](docs/triage.md) for write permissions and re-triage.
 - **Higher trust:** Each phase has a Stop-hook audit. Claude cannot simply claim
   completion; it must satisfy the gate for the current phase.
 - **Cleaner branches:** Work runs in `.dex/worktrees/` by default, keeping your
-  main checkout usable while tickets progress independently.
+  main checkout usable while tickets progress independently. Removing a
+  worktree saves its untracked files first, and the removal can wait for the
+  merge; see [worktree teardown](docs/worktree-teardown.md).
 - **Review before PR:** Phase 3 runs independent full-scope review waves until
   the agent-selected risk tier's clean-pass gate succeeds.
 - **Real verification:** Dex discovers and runs the repo's format, lint,

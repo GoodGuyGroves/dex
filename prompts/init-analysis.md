@@ -129,6 +129,15 @@ Optional. Include it only when the tracker's ticket IDs carry team prefixes.
 ticket_prefixes: [ENG, OPS]
 ```
 
+## Worktree Teardown
+
+```yaml
+# Optional; see $DEX_DIR/docs/worktree-teardown.md. Defaults shown.
+worktree_teardown: on_complete        # or on_merge, or caller (the launcher runs dxrm)
+teardown_untracked: rescue            # or refuse
+delete_remote_branch_on_merge: false
+```
+
 ## Project Structure
 [Brief description of directory layout and what each area contains]
 
