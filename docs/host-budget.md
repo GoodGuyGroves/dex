@@ -176,7 +176,8 @@ Phase 2, which is where UI proof is captured. Setup, Implement and Review keep
 them in every mode. Nothing is rewritten — the registrations are read, an
 interactive `claude` session is unaffected, and `DEX_LIFECYCLE_MINIMAL_MCP=0`
 restores the old launch for a project whose planning or completion work
-genuinely needs an MCP server. The one gap is a `dx control jump` backwards
+genuinely needs an MCP server. A project that needs only some servers in a
+phase can name them in `## MCP` instead ([docs/mcp-phases.md](mcp-phases.md)). The one gap is a `dx control jump` backwards
 into Implement from Verify or later, which lands in a process that has already
 dropped them. The plan (Item 6) also asked for the browser servers to move out
 of user scope; Dex tried project scope as the default and reverted it, because

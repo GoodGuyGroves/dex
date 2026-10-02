@@ -14,7 +14,7 @@ it.
 |--------|---------|---------------|
 | `common.sh` | Bootstrap, constants, sources all others | `dx_repo_root()` |
 | `lock.sh` | Advisory directory locks with owner records and serialized stale recovery | `dx_lock_acquire()`, `dx_lock_release()`, `dx_lock_with()` |
-| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap, Dex's MCP registry and per-launch plugins, opt-in global hooks and skill links | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_mcp_registry_set()`, `dx_dex_launch_mcp_config()`, `dx_dex_launch_plugin_dirs()`, `dx_claude_global_skills_state()`, `dx_remove_claude_skill_links()` |
+| `agent-tools.sh` | Conservative Claude/Codex tooling bootstrap, Dex's MCP registry and per-launch plugins, per-phase MCP servers (`## MCP`), opt-in global hooks and skill links | `dx_bootstrap_agent_tooling()`, `dx_install_safe_official_claude_plugins()`, `dx_mcp_registry_set()`, `dx_dex_launch_mcp_config()`, `dx_mcp_launch_config()`, `dx_mcp_phase_report()`, `dx_dex_launch_plugin_dirs()`, `dx_claude_global_skills_state()`, `dx_remove_claude_skill_links()` |
 | `attribution.sh` | Commit/PR attribution installation, hook chaining, and restoration | `dx_install_repo_attribution()`, `dx_uninstall_repo_attribution()`, `dx_commit_attribution_message()` |
 | `codex.sh` | Codex CLI skill installation helpers | `dx_install_codex_skills()`, `dx_count_dex_skills()`, `dx_codex_dex_skills_complete()`, `dx_uninstall_codex_skills()` |
 | `completion.sh` | Generation-bound completion expectations, receipts, validation, and cleanup | `dx_completion_issue()`, `dx_completion_write_receipt()`, `dx_completion_consume()` |
@@ -69,7 +69,7 @@ turns every install off.
 
 | What | Where | How a launch gets it |
 |------|-------|----------------------|
-| MCP registry (`playwright`, `chrome-devtools`, `openaiDeveloperDocs`, and any `.mcp.json` server `dx config` adds) | `$DX_TOOL_DIR/mcp-registry.json` | Claude: one `--mcp-config` file, not strict, so your own servers still load. Codex (interactive sessions): `-c mcp_servers.<name>.<field>=…`. Claude skips a name you configured (user, local or project scope) or disabled, so yours wins. Codex skips a name your `config.toml` defines. Codex values, `env` included, appear in its argv. Phases that launch with no MCP servers, and review waves, keep their strict empty config |
+| MCP registry (`playwright`, `chrome-devtools`, `openaiDeveloperDocs`, and any `.mcp.json` server `dx config` adds) | `$DX_TOOL_DIR/mcp-registry.json` | Claude: one `--mcp-config` file, not strict, so your own servers still load. Codex (interactive sessions): `-c mcp_servers.<name>.<field>=…`. Claude skips a name you configured (user, local or project scope) or disabled, so yours wins. Codex skips a name your `config.toml` defines. Codex values, `env` included, appear in its argv. Phases that launch with no MCP servers or with a project's `## MCP` list, and review waves, keep their strict config ([docs/mcp-phases.md](mcp-phases.md)) |
 | Plugin marketplaces (`claude-plugins-official`, and `openai-codex` when Codex is installed) | `$DX_TOOL_DIR/plugins/marketplaces/<name>`, a clone at the commit Dex pins | not loaded directly |
 | Plugins (`codex`, `frontend-design`, and the TypeScript, Pyright, rust-analyzer and gopls LSP plugins) | `$DX_TOOL_DIR/plugins/resolved/<plugin>`: a link to a plugin with its own manifest, or a generated `plugin.json` for a `strict: false` marketplace entry | one `--plugin-dir` per plugin the repository's languages select, after Dex's own; a plugin named in `enabledPlugins` in your user, project or local settings, true or false, is left to you |
 
@@ -88,7 +88,8 @@ a heuristic; the real control is the short allowlist of plugins, from
 marketplaces pinned to reviewed commits.
 
 Through the router, the registry joins its MCP scope as the lowest layer, so
-`mcp_scope.include` still decides.
+`mcp_scope.include` still decides. A phase whose `## MCP` value is `none` or a list hands the router
+a strict configuration as its own, so the router's scope does not replace it.
 
 Codex has no per-launch skills path. Dex's skill links in `$CODEX_HOME/skills`
 and its RTK instructions (`RTK.md`, an import line in `AGENTS.md`) are the one
@@ -198,7 +199,7 @@ the gate map.
 | `DEX_REVIEW_PROFILE` | Legacy review-depth alias (`light`, `standard`, or `thorough`) | unset |
 | `DX_REVIEW_PROFILE` | Older spelling of `DEX_REVIEW_PROFILE`, still read as a fallback | unset |
 | `DEX_REVIEW_CLEAN_PASSES` | Optional higher clean-wave requirement; cannot lower the selected tier's global policy gate | global policy (1/1/2/3 for trivial/small/normal/complex) |
-| `DEX_REVIEW_DISABLE_MCP` | Disable inherited MCP servers in review waves (`0` restores them); read-only assessors always disable them | `1` |
+| `DEX_REVIEW_DISABLE_MCP` | Disable inherited MCP servers in review waves (`0` restores them); read-only assessors always disable them. When set, it wins over a project's `review_waves` in `## MCP` ([docs/mcp-phases.md](mcp-phases.md)) | `1` |
 | `DEX_REVIEW_PASS_TIMEOUT` | Seconds a review wave or risk assessment may run before its provider process tree is stopped and review pauses; `0` disables it | Profile-based: 15m assessment/light, 30m standard, 60m thorough |
 | `DEX_REVIEW_PASS_RECHECK_SECONDS` | Seconds the Stop hook holds a busy Phase 3 wait before waking the session; capped at 1740 | 270 (4m 30s); 1500 with `DEX_PROMPT_CACHE_TTL=1h` |
 | `DEX_PROMPT_CACHE_TTL` | Set by Dex at launch, not by you: `1h` for lifecycle sessions (also exported as `CLAUDE_CODE_PROMPT_CACHE_TTL`, which you may set yourself to override), `5m` for review waves and assessments. The Stop hook reads it to size its Phase 3 hold | set per launch |
@@ -248,7 +249,7 @@ the gate map.
 | `DX_ALLOW_API_BILLED_AUTH` | Allow `dx provider doctor` to tolerate API/gateway env vars | `0` |
 | `DX_ALLOW_REPO_GATEWAY_PROVIDER` | Explicitly allow a trusted repo-local gateway/API provider profile for the current invocation | `0` |
 | `DX_ALLOW_FORK_PR_CHECKOUT` | Skill-level opt-in letting `/dxprreview` check out fork PRs | `0` |
-| `DEX_LIFECYCLE_MINIMAL_MCP` | Launch the lifecycle phases that never open a browser (4 Verify, 5 PR, 6 Complete, and 1 Plan when the launch ends with the phase) with no MCP servers, the way review waves already launch; `0` keeps whatever the session inherited. Phases 0, 2 and 3, standalone sessions, and interactive `claude` are untouched | `1` |
+| `DEX_LIFECYCLE_MINIMAL_MCP` | Launch the lifecycle phases that never open a browser (4 Verify, 5 PR, 6 Complete, and 1 Plan when the launch ends with the phase) with no MCP servers, the way review waves already launch; `0` keeps whatever the session inherited, and also turns off a project's `## MCP` phase lists. A project can name each phase's servers instead ([docs/mcp-phases.md](mcp-phases.md)). Phases 0, 2 and 3, standalone sessions, and interactive `claude` are untouched | `1` |
 | `DEX_UI_MCP_SCOPE` | Where `dx ui-capture install` puts the browser servers: `dex` (Dex's MCP registry, loaded by Dex launches only, for Claude and Codex), or `user`, `project` or `local` to register them with the Claude and Codex CLIs as before, same as its `--user`/`--project`/`--local` flags; `project` writes the repository's tracked `.mcp.json` at the checkout root and falls back to `user` outside a checkout | `dex` |
 | `DEX_SESSION_RSS_SAMPLE_SECONDS` | How often the runtime supervisor samples the peak resident size of the session's token-carrying process tree, on the heartbeat it already runs. Clamped to 1..3600; a malformed value falls back to the default rather than refusing to supervise | 30 |
 | `DEX_WORKTREE_HOOK_TIMEOUT` | Seconds one `## Worktree Hooks` command (`after_create`, `before_remove`, `on_session_end`, `orphan_resources`) may run before its process tree is stopped; `0` removes the deadline, except for `on_session_end`, which is capped at 5 s whatever this says because the host gives the whole SessionEnd hook ten seconds. A hook that is stopped, or that fails, warns and never blocks the create or remove. See [docs/worktree-hooks.md](worktree-hooks.md) | 300 (5m 0s) |

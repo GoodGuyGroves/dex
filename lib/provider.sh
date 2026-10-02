@@ -763,9 +763,9 @@ EOF
 }
 
 # Which MCP servers a lifecycle launch loads. Without a `## MCP` section in the
-# project's .dex/dex.md, the phases that never open a browser — 1 (Plan), 4
-# (Verify), 5 (PR) and 6 (Complete) — launch with no MCP servers, and 0
-# (Setup), 2 (Implement) and 3 (Review) keep whatever the user configured:
+# project's .dex/dex.md, the phases that never open a browser (1 Plan, 4
+# Verify, 5 PR and 6 Complete) launch with no MCP servers, and 0 Setup, 2
+# Implement and 3 Review keep whatever the user configured:
 # Phase 2 is where UI proof is captured, and a review wave sets its own
 # (lib/review-loop.sh). A project's `## MCP` section can name the servers per
 # phase instead; scripts/mcp-scope.py resolves it. Nothing outside a Dex
@@ -775,7 +775,7 @@ EOF
 # What a launch may drop depends on how far it runs. An MCP configuration is
 # fixed for the life of the process, and an inline lifecycle advances phases
 # inside one provider session (hooks/phase-loop.sh), so an inline launch gets
-# the servers of its own phase and every later one — a Phase 1 launch there
+# the servers of its own phase and every later one. A Phase 1 launch there
 # goes on to run Phase 2 and must keep the browser. The case an inline session
 # cannot cover is a `dx control jump` backwards into an earlier phase.
 #
