@@ -388,7 +388,10 @@ LOGINS
 # Dex runs as the user, so a pending review may be the user's own unfinished
 # review. Before each delete, the review body and every draft comment (path,
 # line, body) are saved to the run's artifacts as pending-review-<id>.json. No
-# copy, no delete. Reviews by anyone else are never touched.
+# complete copy, no delete. Reviews by anyone else are never touched.
+#
+# The drafts come from GraphQL: the REST review-comments endpoint reports
+# `line: null` for a pending review's comments.
 #
 # Prints, per deleted review: deleted<TAB><review_id><TAB><draft_count><TAB><backup_path>
 # Returns 0; 2 on a usage error; 1 when the pending reviews cannot be listed;
@@ -396,13 +399,14 @@ LOGINS
 # when a delete failed.
 dx_pr_pending_review_clear() {
   [[ $# -eq 3 ]] || return 2
-  local pend_session="$1" pend_repo="$2" pend_pr="$3" pend_list pend_rc=0
-  local pend_id pend_run pend_comments pend_backup pend_tmp pend_count
-  local pend_backup_failed=0 pend_delete_failed=0 pend_body pend_ids
+  local pend_session="$1" pend_repo="$2" pend_pr="$3" pend_list pend_dir
+  local pend_ids pend_id pend_count pend_run pend_backup pend_tmp pend_rc=0
+  local pend_backup_failed=0 pend_delete_failed=0
   __dx_pr_threads_repo_ok "$pend_repo" || return 2
   [[ "$pend_pr" =~ ^[0-9]+$ ]] || return 2
 
-  pend_list=$(mktemp "${TMPDIR:-/tmp}/dex-pr-pending.XXXXXX") || return 1
+  pend_dir=$(mktemp -d "${TMPDIR:-/tmp}/dex-pr-pending.XXXXXX") || return 1
+  pend_list="$pend_dir/reviews.json"
   # shellcheck disable=SC2016 # GraphQL variables are expanded by GitHub, not the shell.
   if ! __dx_reviewers_gh "$pend_session" api graphql \
     -f "owner=${pend_repo%%/*}" \
@@ -413,104 +417,90 @@ query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviews(states: [PENDING], first: 50) {
-        nodes { databaseId viewerDidAuthor body }
+        nodes {
+          databaseId
+          viewerDidAuthor
+          body
+          comments(first: 100) {
+            nodes { path line originalLine body }
+            pageInfo { hasNextPage }
+          }
+        }
       }
     }
   }
 }' > "$pend_list"; then
-    rm -f "$pend_list"
+    rm -rf "$pend_dir"
     return 1
   fi
-  # One line per pending review the viewer wrote: id<TAB>body as JSON string.
-  if ! pend_ids=$(python3 - "$pend_list" <<'PY'
+  # Writes <id>.json (the backup) or <id>.incomplete (more than 100 drafts)
+  # per pending review the viewer wrote, and prints the ids.
+  if ! pend_ids=$(python3 - "$pend_list" "$pend_dir" "$pend_repo" "$pend_pr" <<'PY'
 import json
+import os
 import sys
 
+source, out_dir, repo, pr = sys.argv[1:5]
 try:
-    doc = json.load(open(sys.argv[1], encoding="utf-8", errors="replace"))
-    pull = doc["data"]["repository"]["pullRequest"]
-    nodes = pull["reviews"]["nodes"]
+    doc = json.load(open(source, encoding="utf-8", errors="replace"))
+    nodes = doc["data"]["repository"]["pullRequest"]["reviews"]["nodes"]
 except (ValueError, KeyError, TypeError):
     raise SystemExit(1)
 for node in nodes or []:
-    if isinstance(node, dict) and node.get("viewerDidAuthor") and node.get("databaseId"):
-        print("%d\t%s" % (int(node["databaseId"]), json.dumps(node.get("body") or "")))
+    if not (isinstance(node, dict) and node.get("viewerDidAuthor") and node.get("databaseId")):
+        continue
+    review_id = int(node["databaseId"])
+    comments = node.get("comments") or {}
+    if (comments.get("pageInfo") or {}).get("hasNextPage"):
+        open(os.path.join(out_dir, "%d.incomplete" % review_id), "w").close()
+    else:
+        drafts = []
+        for item in comments.get("nodes") or []:
+            if isinstance(item, dict):
+                line = item.get("line")
+                drafts.append({
+                    "path": item.get("path"),
+                    "line": line if line is not None else item.get("originalLine"),
+                    "body": item.get("body"),
+                })
+        backup = {"review_id": review_id, "repo": repo, "pr": int(pr),
+                  "body": node.get("body") or "", "comments": drafts}
+        with open(os.path.join(out_dir, "%d.json" % review_id), "w", encoding="utf-8") as handle:
+            json.dump(backup, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+    print(review_id)
 PY
   ); then
-    rm -f "$pend_list"
+    rm -rf "$pend_dir"
     return 1
   fi
-  rm -f "$pend_list"
-  [[ -n "$pend_ids" ]] || return 0
 
-  while IFS=$'\t' read -r pend_id pend_body; do
+  while IFS= read -r pend_id; do
     [[ "$pend_id" =~ ^[0-9]+$ ]] || continue
-    pend_backup=""
-    pend_tmp=""
-    pend_comments=$(mktemp "${TMPDIR:-/tmp}/dex-pr-pending-comments.XXXXXX") || return 1
-    if ! __dx_reviewers_gh "$pend_session" api --paginate \
-      "repos/${pend_repo}/pulls/${pend_pr}/reviews/${pend_id}/comments?per_page=100" \
-      > "$pend_comments"; then
-      printf 'dex: could not read the draft comments of pending review %s; keeping it\n' "$pend_id" >&2
-      rm -f "$pend_comments"
+    if [[ -f "$pend_dir/$pend_id.incomplete" ]]; then
+      printf 'dex: pending review %s has more than 100 draft comments; keeping it\n' "$pend_id" >&2
       pend_backup_failed=1
       continue
     fi
+    pend_backup=""
+    pend_tmp=""
     if pend_run=$(dx_run_resolve "$pend_session" 2>/dev/null) \
       && pend_backup=$(dx_run_artifact_file "$pend_run" "pending-review-${pend_id}.json") \
       && mkdir -p "$(dirname "$pend_backup")" \
       && pend_tmp="${pend_backup}.tmp.$$" \
-      && pend_count=$(python3 - "$pend_comments" "$pend_tmp" "$pend_repo" "$pend_pr" "$pend_id" "$pend_body" <<'PY'
-import json
-import sys
-
-source, target, repo, pr, review_id, body = sys.argv[1:7]
-text = open(source, encoding="utf-8", errors="replace").read()
-decoder = json.JSONDecoder()
-comments, index = [], 0
-try:
-    while index < len(text):
-        while index < len(text) and text[index].isspace():
-            index += 1
-        if index >= len(text):
-            break
-        page, index = decoder.raw_decode(text, index)
-        if not isinstance(page, list):
-            raise SystemExit(1)
-        for item in page:
-            if isinstance(item, dict):
-                comments.append({
-                    "path": item.get("path"),
-                    "line": item.get("line"),
-                    "body": item.get("body"),
-                })
-except ValueError:
-    raise SystemExit(1)
-backup = {
-    "review_id": int(review_id),
-    "repo": repo,
-    "pr": int(pr),
-    "body": json.loads(body),
-    "comments": comments,
-}
-with open(target, "w", encoding="utf-8") as handle:
-    json.dump(backup, handle, indent=2, ensure_ascii=False)
-    handle.write("\n")
-print(len(comments))
-PY
-      ) \
+      && command cp "$pend_dir/$pend_id.json" "$pend_tmp" \
       && command mv -f "$pend_tmp" "$pend_backup"; then
       dx_run_register_artifact_safe "$pend_run" pending-review \
         "pending-review-${pend_id}.json" "Pending review ${pend_id} saved before delete" \
         "{\"producer\":\"dx_pr_pending_review_clear\",\"pr\":${pend_pr}}"
     else
-      [[ -z "${pend_tmp:-}" ]] || rm -f "$pend_tmp"
+      [[ -z "$pend_tmp" ]] || rm -f "$pend_tmp"
       printf 'dex: could not save pending review %s before deleting it; keeping it\n' "$pend_id" >&2
-      rm -f "$pend_comments"
       pend_backup_failed=1
       continue
     fi
-    rm -f "$pend_comments"
+    pend_count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["comments"]))' \
+      "$pend_backup" 2>/dev/null) || pend_count="?"
     if __dx_reviewers_gh "$pend_session" api --method DELETE \
       "repos/${pend_repo}/pulls/${pend_pr}/reviews/${pend_id}" >/dev/null; then
       printf 'deleted\t%s\t%s\t%s\n' "$pend_id" "$pend_count" "$pend_backup"
@@ -521,6 +511,7 @@ PY
   done <<IDS
 $pend_ids
 IDS
+  rm -rf "$pend_dir"
 
   if [[ "$pend_backup_failed" -eq 1 ]]; then
     pend_rc=5

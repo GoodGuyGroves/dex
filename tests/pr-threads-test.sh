@@ -92,11 +92,6 @@ case "$method $path" in
     [[ ! -f "$GH_FAKE_DIR/reaction.fail" ]] || exit 1
     printf '{}\n'
     ;;
-  "GET repos/example/repo/pulls/7/reviews/"*"/comments")
-    log "GET $path"
-    id="${path%/comments}"; id="${id##*/}"
-    fixture "review-comments-$id.json"
-    ;;
   "DELETE repos/example/repo/pulls/7/reviews/"*)
     id="${path##*/}"
     backup=missing
@@ -473,6 +468,8 @@ assert_rejected "open threads usage" dx_pr_threads_open "$SESSION" "$REPO" x
 
 # --- dx_pr_pending_review_clear -----------------------------------------------------
 
+# pending_fixture <id:mine|theirs[:more]>...: the PENDING reviews GraphQL reports.
+# `more` means the review has more than 100 draft comments.
 pending_fixture() {
   python3 - "$@" > "$GH_FAKE_DIR/pending.json" <<'PY'
 import json
@@ -480,9 +477,20 @@ import sys
 
 nodes = []
 for spec in sys.argv[1:]:
-    rid, mine = spec.split(":")
-    nodes.append({"databaseId": int(rid), "viewerDidAuthor": mine == "mine",
-                  "body": "Draft summary for %s" % rid})
+    parts = spec.split(":")
+    rid, mine = int(parts[0]), parts[1] == "mine"
+    nodes.append({
+        "databaseId": rid,
+        "viewerDidAuthor": mine,
+        "body": "Draft summary for %d" % rid,
+        "comments": {
+            "nodes": [
+                {"path": "lib/a.sh", "line": 12, "originalLine": 12, "body": "first draft"},
+                {"path": "lib/b.sh", "line": None, "originalLine": 7, "body": "outdated draft"},
+            ],
+            "pageInfo": {"hasNextPage": len(parts) > 2 and parts[2] == "more"},
+        },
+    })
 print(json.dumps({"data": {"repository": {"pullRequest": {"reviews": {"nodes": nodes}}}}}))
 PY
 }
@@ -507,18 +515,14 @@ assert_eq "graphql pending" "$(calls)" "no pending calls"
 # The viewer's pending review is saved, then deleted; another user's is kept.
 reset_gh
 pending_fixture 501:mine 502:theirs
-cat > "$GH_FAKE_DIR/review-comments-501.json" <<'JSON'
-[{"path": "lib/a.sh", "line": 12, "body": "first draft"}]
-[{"path": "lib/b.sh", "line": null, "body": "outdated draft", "id": 9}]
-JSON
 RC=0
 pend_out=$(dx_pr_pending_review_clear "$SESSION" "$REPO" 7) || RC=$?
 assert_eq 0 "$RC" "pending clear rc"
 backup=$(backup_of 501)
 [[ -n "$backup" ]] || assert_at $LINENO
 assert_eq $'deleted\t501\t2\t'"$backup" "$pend_out" "pending clear output"
+# The fake gh saw the backup on disk when the DELETE arrived.
 assert_eq "graphql pending
-GET repos/example/repo/pulls/7/reviews/501/comments
 DELETE repos/example/repo/pulls/7/reviews/501 backup=present" "$(calls)" "pending clear calls"
 python3 - "$backup" <<'PY'
 import json
@@ -527,9 +531,10 @@ import sys
 data = json.load(open(sys.argv[1]))
 assert data["review_id"] == 501 and data["pr"] == 7 and data["repo"] == "example/repo", data
 assert data["body"] == "Draft summary for 501", data
+# A draft on an outdated line keeps its original line rather than null.
 assert data["comments"] == [
     {"path": "lib/a.sh", "line": 12, "body": "first draft"},
-    {"path": "lib/b.sh", "line": None, "body": "outdated draft"},
+    {"path": "lib/b.sh", "line": 7, "body": "outdated draft"},
 ], data
 PY
 [[ -z "$(backup_of 502)" ]] || assert_at $LINENO
@@ -538,22 +543,22 @@ for leftover in "$(dirname "$backup")"/*.tmp.*; do
   [[ ! -e "$leftover" ]] || assert_at $LINENO
 done
 
-# Draft comments that cannot be read: no copy, so no delete; rc 5.
+# More than 100 drafts: the copy would be partial, so no delete; rc 5.
 reset_gh
 rm -rf "$DX_RUN_ROOT"
-pending_fixture 503:mine
+pending_fixture 503:mine:more
 RC=0
 pend_out=$(dx_pr_pending_review_clear "$SESSION" "$REPO" 7 2>"$TMP_DIR/err") || RC=$?
-assert_eq 5 "$RC" "unreadable drafts rc"
-assert_eq "" "$pend_out" "unreadable drafts output"
+assert_eq 5 "$RC" "too many drafts rc"
+assert_eq "" "$pend_out" "too many drafts output"
 [[ "$(calls)" != *DELETE* ]] || assert_at $LINENO
+[[ -z "$(backup_of 503)" ]] || assert_at $LINENO
 assert_contains 'keeping it' "$TMP_DIR/err"
 
 # The backup cannot be written: no delete; rc 5.
 reset_gh
 rm -rf "$DX_RUN_ROOT"
 pending_fixture 504:mine
-printf '[]\n' > "$GH_FAKE_DIR/review-comments-504.json"
 run_id=$(dx_run_resolve "$SESSION")
 mkdir -p "$(dx_run_dir "$run_id")"
 chmod a-w "$(dx_run_dir "$run_id")"
@@ -567,7 +572,6 @@ assert_contains 'could not save pending review 504' "$TMP_DIR/err"
 # No session to own a run: no backup, so no delete.
 reset_gh
 pending_fixture 505:mine
-printf '[]\n' > "$GH_FAKE_DIR/review-comments-505.json"
 RC=0
 dx_pr_pending_review_clear "" "$REPO" 7 >/dev/null 2>&1 || RC=$?
 assert_eq 5 "$RC" "no session rc"
@@ -577,18 +581,22 @@ assert_eq 5 "$RC" "no session rc"
 reset_gh
 rm -rf "$DX_RUN_ROOT"
 pending_fixture 506:mine
-printf '[]\n' > "$GH_FAKE_DIR/review-comments-506.json"
 : > "$GH_FAKE_DIR/delete.fail"
 RC=0
 pend_out=$(dx_pr_pending_review_clear "$SESSION" "$REPO" 7 2>/dev/null) || RC=$?
 assert_eq 3 "$RC" "delete failure rc"
 [[ -n "$(backup_of 506)" ]] || assert_at $LINENO
 
-# The pending list cannot be read: rc 1.
+# The pending list cannot be read, or is not a review payload: rc 1.
 reset_gh
 RC=0
 dx_pr_pending_review_clear "$SESSION" "$REPO" 7 >/dev/null 2>&1 || RC=$?
 assert_eq 1 "$RC" "pending query failure"
+printf '{"errors":[{"message":"boom"}]}\n' > "$GH_FAKE_DIR/pending.json"
+RC=0
+dx_pr_pending_review_clear "$SESSION" "$REPO" 7 >/dev/null 2>&1 || RC=$?
+assert_eq 1 "$RC" "pending error payload"
+[[ "$(calls)" != *DELETE* ]] || assert_at $LINENO
 assert_rejected "pending usage" dx_pr_pending_review_clear "$SESSION" "$REPO"
 
 printf 'pr-threads-test: ok\n'
