@@ -5755,7 +5755,7 @@ dxclean() {
   local active_in_place_phase active_in_place_result has_worktree ticket_name
   local old_files old_phase_files deferral unique_count merged_oid swept
   local -A branch_sids branch_wt_names branch_deferrals
-  local record_branch record_sid record_wt_name record_wt_dir record_deferral
+  local record_branch record_sid record_wt_name record_deferral
 
   # 0. Finish deferred teardowns whose pull request has merged.
   swept=$(__dx_sweep_deferred_teardowns "$repo_root")
@@ -5763,7 +5763,7 @@ dxclean() {
 
   # Branches Dex recorded for this repository's sessions, so passes 2 and 3
   # also find lifecycle branches that were renamed away from worktree-*.
-  while IFS=$'\t' read -r record_branch record_sid record_wt_name record_wt_dir record_deferral; do
+  while IFS=$'\t' read -r record_branch record_sid record_wt_name _ record_deferral; do
     [[ -n "$record_branch" ]] || continue
     branch_sids[$record_branch]="$record_sid"
     branch_wt_names[$record_branch]="$record_wt_name"
