@@ -149,6 +149,10 @@ answer:
 
 A lifecycle reopened on the same ticket is left alone until it completes
 again. `dx sessions forget` drops a pending close along with the session.
+Once the worktree is gone, `dx sessions` no longer lists the record, but
+`dx sessions forget <name or session ID>` still drops it without closing
+anything: use it for a close Dex can never confirm, such as one whose
+pull request it cannot ask about.
 
 On GitHub Issues the pull request body follows the mode as well. Under
 `on_merge` it carries `Closes #N`. GitHub honours that keyword only for a

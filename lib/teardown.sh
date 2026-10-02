@@ -684,3 +684,32 @@ __dx_ticket_close_settled() {
   fi
   return 0
 }
+
+# dx_ticket_close_record_match <repo-root> <selector>
+# The session ID of the one pending ticket close in this repository that is
+# all that is left of its lifecycle (its worktree went at completion) and
+# whose session ID or workspace name is <selector>. The session catalog does
+# not list such a record, so `dx sessions forget` looks it up here. Returns 1
+# when none or more than one matches.
+dx_ticket_close_record_match() {
+  local repo_root="$1" selector="$2" sid wt_name wt_dir workspace_mode branch deferral ticket_pending
+  local match_sid="" match_count=0
+  [[ -n "$selector" ]] || return 1
+  while IFS=$'\037' read -r sid wt_name wt_dir workspace_mode branch deferral ticket_pending; do
+    [[ "$ticket_pending" == "on_merge" && -z "$wt_dir" && -z "$deferral" ]] || continue
+    [[ "$sid" == "$selector" || "$wt_name" == "$selector" ]] || continue
+    match_sid="$sid"
+    match_count=$((match_count + 1))
+  done < <(dx_teardown_deferred_list "$repo_root")
+  [[ "$match_count" -eq 1 ]] || return 1
+  printf '%s\n' "$match_sid"
+}
+
+# dx_ticket_close_forget <session-id>
+# Drop a pending ticket close without closing anything, and the record with it.
+dx_ticket_close_forget() {
+  local sid="$1"
+  [[ -n "$sid" ]] || return 1
+  __dx_ticket_close_clear "$sid" || return 1
+  dx_cleanup_session "$sid"
+}

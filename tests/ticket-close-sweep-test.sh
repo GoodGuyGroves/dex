@@ -330,6 +330,24 @@ sweep >/dev/null 2>&1
 assert_contains "issue close 10 --reason completed" "$GH_STUB_DIR/calls"
 [[ ! -e "$(meta_file ticket-10)" ]] || fail "in-place record kept after the merge"
 
+# 11. dx sessions does not list a ticket-only record, but dx sessions forget
+#     drops it by name, closing nothing. A selector that matches nothing still
+#     fails.
+reset_gh
+lifecycle ticket-11 feat/eleven 11
+open_pr 111 feat/eleven
+complete ticket-11 >/dev/null 2>&1 || fail "ticket-11 completion failed"
+assert_eq on_merge "$(meta ticket-11 ticket_close_pending)" "ticket-11 record kept"
+dxz 'dx sessions forget ticket-11' >"$TMP_DIR/forget" 2>&1 \
+  || fail "forget of a ticket-only record failed: $(cat "$TMP_DIR/forget")"
+assert_contains "Dropped the pending ticket close" "$TMP_DIR/forget"
+[[ ! -e "$(meta_file ticket-11)" ]] || fail "forget kept the ticket-only record"
+assert_eq 0 "$(issue_calls)" "forget closes nothing"
+if dxz 'dx sessions forget ticket-99' >"$TMP_DIR/forget" 2>&1; then
+  fail "forget of an unknown selector succeeded"
+fi
+assert_contains "No session matches 'ticket-99'" "$TMP_DIR/forget"
+
 # Nothing landed outside the sandbox: Dex state stays under DEX_HOME and the
 # work in the repository; HOME is untouched.
 if find "$HOME" -mindepth 1 | grep -q .; then
