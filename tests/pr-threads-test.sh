@@ -195,6 +195,15 @@ write_dex "[resolve-all, keep-disagreements-open]"
 policy=$(dx_pr_thread_policy "$repo" 2>"$TMP_DIR/err")
 assert_eq keep-disagreements-open "$policy" "list value"
 assert_contains 'must be one value' "$TMP_DIR/err"
+# A one-item list prints like a scalar, but it is still a list.
+write_dex "[resolve-all]"
+policy=$(dx_pr_thread_policy "$repo" 2>"$TMP_DIR/err")
+assert_eq keep-disagreements-open "$policy" "one-item inline list"
+assert_contains 'must be one value' "$TMP_DIR/err"
+printf '# T\n\n## Resources\n\n```yaml\nthread_policy:\n  - resolve-all\n```\n' > "$repo/.dex/dex.md"
+policy=$(dx_pr_thread_policy "$repo" 2>"$TMP_DIR/err")
+assert_eq keep-disagreements-open "$policy" "one-item block list"
+assert_contains 'must be one value' "$TMP_DIR/err"
 printf '# T\n\n## Resources\n\n```yaml\nthread_policy:\n  nested: resolve-all\n```\n' > "$repo/.dex/dex.md"
 assert_eq keep-disagreements-open "$(dx_pr_thread_policy "$repo" 2>/dev/null)" "malformed block"
 assert_rejected "policy needs a repo" dx_pr_thread_policy

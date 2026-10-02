@@ -33,7 +33,7 @@ dx_pr_thread_policy() {
     printf '%s\n' "$DX_PR_THREAD_POLICY_DEFAULT"
     return 0
   fi
-  if [[ "$policy_lines" -ne 1 ]]; then
+  if [[ "$policy_lines" -ne 1 ]] || __dx_pr_threads_policy_is_list "$1"; then
     printf 'dex: thread_policy must be one value; using %s\n' \
       "$DX_PR_THREAD_POLICY_DEFAULT" >&2
     printf '%s\n' "$DX_PR_THREAD_POLICY_DEFAULT"
@@ -50,6 +50,25 @@ dx_pr_thread_policy() {
       printf '%s\n' "$DX_PR_THREAD_POLICY_DEFAULT"
       ;;
   esac
+}
+
+# dx_project_contract_values prints a one-item list the same way as a scalar,
+# so ask the same parser whether thread_policy was written as a list.
+__dx_pr_threads_policy_is_list() {
+  python3 - "$DEX_DIR/scripts/project-contract.py" "$1/.dex/dex.md" 2>/dev/null <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("dex_project_contract", sys.argv[1])
+contract = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(contract)
+text = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+lines = contract.section_lines(text, "Resources")
+body = contract.fenced_block(lines) if lines is not None else None
+mapping = contract.parse_mapping(body) if body is not None else None
+raise SystemExit(0 if isinstance((mapping or {}).get("thread_policy"), list) else 1)
+PY
 }
 
 __dx_pr_threads_repo_ok() {
