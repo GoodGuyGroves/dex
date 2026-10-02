@@ -187,7 +187,9 @@ If a lesson cannot be verified, reject it or mark existing memory
 Promote only verified lessons:
 
 - `.dex/dex.md`: current project shape, tech stack, quality gates,
-  integrations, and links to generated rules/memory.
+  integrations, and links to generated rules/memory. Keep its
+  `## Attribution` block exactly as written: the project's choices there
+  decide what `dx sync` installs.
 - `.dex/memory/domains/*.md`: durable context, decision framework, repeated
   review or verification lesson.
 - `.dex/rules/*.md`: active instruction future agents should follow.

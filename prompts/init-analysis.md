@@ -54,8 +54,10 @@ Write these files:
 
 ### `.dex/dex.md`
 
-Read the existing `.dex/dex.md` before rewriting it. Preserve its Maintenance
-section as is — custom values, `_none_`, omitted settings (a missing
+Read the existing `.dex/dex.md` before rewriting it. Keep its
+`## Attribution` section exactly as written, including commented lines; the
+project's choices there decide what `dx init` and `dx sync` install. Preserve
+its Maintenance section as is — custom values, `_none_`, omitted settings (a missing
 `issue_label` deliberately leaves legacy ticket intake paused), or its absence.
 Use the defaults below only for a file that did not exist; the init launcher
 already wrote them for a new repository. Create no labels and enable no GitHub
@@ -153,6 +155,20 @@ the project's `.mcp.json` or its documented setup defines.
 # inherit, none, or a list of server names. Unnamed phases keep Dex's defaults.
 plan: [server-name]
 review_waves: none
+```
+
+## Attribution
+
+Optional. Keep an existing block unchanged; never add one the project did not have.
+
+```yaml
+# dex | claude | both | none: whose attribution commits and PRs carry.
+attribution: dex
+# Adds "AI-Model: <model>" to commits made in a Dex session.
+model_trailer: AI-Model
+pr_models: false    # list the models used in the PR description
+hooks: true         # dx init and dx sync install the commit-msg attribution hooks
+pr_template: true   # dx init and dx sync install .github/pull_request_template.md
 ```
 
 ## Project Structure
