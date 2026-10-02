@@ -186,6 +186,20 @@ depend on one roll-up check, set `readiness_check: <check name>` in the
 
 If the table is empty or only contains `_none_` rows, Phase 6 skips review-request and mention steps. Edit rows directly or rerun `dx config`.
 
+## Pull Requests
+
+Optional, like `## Resources`. Omit the section unless the project has its own
+PR template file or path-based label conventions.
+
+```yaml
+# template replaces Dex's default PR description structure in Phase 5.
+template: [repo-relative path to the PR template]
+# Each rule is "<glob> => <label>". Phase 5 adds the label when the PR changes
+# a matching path; the label must already exist in the repository.
+labels_when:
+  - "[glob] => [label]"
+```
+
 ## Rules
 [Reference any rule files generated in .dex/rules/]
 [Reference `.dex/review-rules.md` if generated]

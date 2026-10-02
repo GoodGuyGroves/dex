@@ -44,6 +44,123 @@ dx_project_worktree_hook() {
   dx_project_contract_values "$hook_repo" "Worktree Hooks" "$hook_key"
 }
 
+# dx_project_pr_template <repo-dir>
+# The real path of the PR template a project declared as `template:` under
+# `## Pull Requests`. prompts/pr-template-resolution.md decides what happens
+# when there is none.
+#
+# Returns 1 when nothing is declared and 2, with the reason on stderr, when the
+# block is malformed or the path is absolute, leaves the repository, or is not
+# a readable, non-empty regular file. Phase 5 then falls back to the next
+# template source rather than stopping.
+dx_project_pr_template() {
+  [[ $# -eq 1 && -n "$1" ]] || return 2
+  local pr_repo="$1" declared="" read_rc=0
+  declared=$(dx_project_contract_values "$pr_repo" "Pull Requests" template) \
+    || read_rc=$?
+  [[ "$read_rc" -eq 0 ]] || return "$read_rc"
+  if [[ "$declared" == *$'\n'* ]]; then
+    printf 'PR template must be one path, not a list\n' >&2
+    return 2
+  fi
+  python3 "$DEX_DIR/scripts/pr-contract.py" template "$pr_repo" "$declared"
+}
+
+# dx_project_pr_label_rules <repo-dir>
+# The `labels_when` rules under `## Pull Requests`, one `glob<TAB>label` line
+# each. Returns 1 when none are declared and 2, with the reason on stderr, when
+# the block or any one rule is malformed.
+dx_project_pr_label_rules() {
+  [[ $# -eq 1 && -n "$1" ]] || return 2
+  __dx_pr_label_rules_run rules "$1"
+}
+
+# dx_pr_labels_for_paths <repo-dir>
+# Read NUL-separated paths on stdin and print each label whose rule matches one
+# of them, once, in rule order. Same return codes as dx_project_pr_label_rules;
+# a declared rule set that matches nothing prints nothing and returns 0.
+dx_pr_labels_for_paths() {
+  [[ $# -eq 1 && -n "$1" ]] || return 2
+  __dx_pr_label_rules_run match "$1"
+}
+
+__dx_pr_label_rules_run() {
+  local rules_mode="$1" pr_repo="$2" raw_rules="" read_rc=0 rule
+  local rule_args=()
+  raw_rules=$(dx_project_contract_values "$pr_repo" "Pull Requests" labels_when) \
+    || read_rc=$?
+  [[ "$read_rc" -eq 0 ]] || return "$read_rc"
+  while IFS= read -r rule; do
+    rule_args+=("$rule")
+  done <<< "$raw_rules"
+  python3 "$DEX_DIR/scripts/pr-contract.py" "$rules_mode" "${rule_args[@]}"
+}
+
+# dx_pr_changed_files <repo-dir> [pr-number]
+# The paths a PR changes, NUL-separated. With a PR number the diff is against
+# the PR's own base branch, so a PR stacked on another branch is not charged
+# with its parent's files; otherwise, or when gh cannot say, it is against the
+# default branch. --no-renames lists both sides of a rename, so a file moved
+# out of a matched directory still counts.
+dx_pr_changed_files() {
+  [[ $# -ge 1 && -n "$1" ]] || return 2
+  local pr_repo="$1" pr_number="${2:-}" base_name="" base_ref=""
+  if [[ -n "$pr_number" ]]; then
+    base_name=$(cd "$pr_repo" && gh pr view "$pr_number" --json baseRefName \
+      -q .baseRefName 2>/dev/null </dev/null) || base_name=""
+  fi
+  if [[ -n "$base_name" && "$base_name" != -* && "$base_name" != *[[:space:]]* ]]; then
+    git -C "$pr_repo" fetch origin "$base_name" --quiet 2>/dev/null || true
+    if git -C "$pr_repo" rev-parse --verify --quiet "refs/remotes/origin/$base_name" >/dev/null 2>&1; then
+      base_ref="origin/$base_name"
+    fi
+  fi
+  if [[ -z "$base_ref" ]]; then
+    base_ref=$(dx_default_branch_base_ref "$pr_repo") || return 1
+  fi
+  git -C "$pr_repo" diff --name-only --no-renames -z "${base_ref}...HEAD" --
+}
+
+# dx_pr_apply_label_rules <pr-number> [repo-dir]
+# Add every label the project's rules select for the PR's changed paths. Labels
+# are only added: one a person put on the PR stays, and one the repository does
+# not have is reported, never created. A project with no rules gets no gh call.
+#
+# Returns 0 when every label was added or there was nothing to add, 1 when at
+# least one could not be added or the changed paths could not be listed, and 2
+# for a usage error or a malformed rule set, which applies nothing.
+dx_pr_apply_label_rules() {
+  local pr_number="${1:-}" pr_repo="${2:-$PWD}" rules_rc=0 labels="" label failed=0
+  if [[ -z "$pr_number" ]]; then
+    dx_warn "dx_pr_apply_label_rules needs a PR number"
+    return 2
+  fi
+  dx_project_pr_label_rules "$pr_repo" >/dev/null || rules_rc=$?
+  case "$rules_rc" in
+    0) ;;
+    1) return 0 ;;
+    *)
+      dx_warn "Not applying PR labels: fix labels_when under '## Pull Requests' in .dex/dex.md"
+      return 2
+      ;;
+  esac
+  if ! labels=$(set -o pipefail; dx_pr_changed_files "$pr_repo" "$pr_number" \
+    | dx_pr_labels_for_paths "$pr_repo"); then
+    dx_warn "Not applying PR labels: could not list the files PR #${pr_number} changes"
+    return 1
+  fi
+  [[ -n "$labels" ]] || return 0
+  while IFS= read -r label; do
+    if (cd "$pr_repo" && gh pr edit "$pr_number" --add-label "$label") >/dev/null 2>&1 </dev/null; then
+      dx_ok "Labelled PR #${pr_number}: ${label}"
+    else
+      dx_warn "Could not add label '${label}' to PR #${pr_number}; the repository may not have it"
+      failed=1
+    fi
+  done <<< "$labels"
+  [[ "$failed" -eq 0 ]] || return 1
+}
+
 dx_project_state_file() {
   local repo_root="$1"
   local git_dir

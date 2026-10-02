@@ -72,6 +72,7 @@ plugin-resolve-test.sh	fast	all	600	hermetic
 plugin-skills-probe-test.sh	fast	all	1500	shared
 portability-test.sh	fast	all	600	hermetic
 post-commit-guard-test.sh	fast	all	600	hermetic
+pr-contract-test.sh	fast	all	300	hermetic
 pr-threads-test.sh	fast	all	600	hermetic
 private-file-test.sh	fast	all	600	hermetic
 prompt-session-test.sh	fast	all	600	hermetic
