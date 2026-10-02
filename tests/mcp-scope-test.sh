@@ -321,4 +321,16 @@ rc=0
 python3 "$SCOPE" nope 2>/dev/null || rc=$?
 assert_eq 2 "$rc" "unknown command"
 
+# `dx context scope` names: a trailing newline is not a valid name or tool.
+scope_json() {
+  python3 "$SCOPE" scope-json <<< "{\"policy\": $1, \"home\": \"$HOME\", \"cwd\": \"$REPO\", \"root\": \"$REPO\"}"
+}
+[[ "$(scope_json '{"include": ["github\n"]}')" == *'Invalid MCP server name in scope.'* ]] || assert_at $LINENO
+[[ "$(scope_json '{"include": ["github"], "builtin_tools": ["Read\n"]}')" == *'Invalid builtin_tools in MCP scope.'* ]] || assert_at $LINENO
+[[ "$(scope_json '{"include": ["github"], "builtin_tools": ["Read"]}')" == *'"selected": ["github"]'* ]] || assert_at $LINENO
+
+# The temporary file a scoped write goes through is one the launch-settings
+# sweep (`launch.*`) collects.
+grep -q 'prefix="launch\.' "$SCOPE" || assert_at $LINENO
+
 echo "mcp-scope-test: ok"

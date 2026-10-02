@@ -66,8 +66,10 @@ BUILTIN = {
     "pr": "none",
     "complete": "none",
 }
-NAME = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
-TOOL = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,80}$")
+# \Z, not $: Python's $ also matches before a trailing newline, which the
+# router's JavaScript patterns these replace never accepted.
+NAME = re.compile(r"^[A-Za-z0-9_.-]{1,120}\Z")
+TOOL = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,80}\Z")
 ENV_REFERENCE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
 MAX_CONFIG_BYTES = 4 * 1024 * 1024
 
@@ -314,7 +316,9 @@ def _resolve(repo, value, registry):
 
 def _write_private(path, document):
     directory = os.path.dirname(os.path.abspath(path))
-    handle, temporary = tempfile.mkstemp(prefix=".mcp-scope.", dir=directory)
+    # A `launch.` name, so the launch-settings sweep also collects a temporary
+    # file a killed resolver leaves behind; it holds copied server entries.
+    handle, temporary = tempfile.mkstemp(prefix="launch.tmp-", dir=directory)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             json.dump(document, stream, ensure_ascii=False)
