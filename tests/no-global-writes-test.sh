@@ -217,10 +217,13 @@ new_sandbox() {
   printf 'print("hi")\n' > "$SB_REPO/main.py"
   printf '%s\n' '{"mcpServers":{"repoServer":{"command":"repo-mcp"}}}' > "$SB_REPO/.mcp.json"
   # A project session-end hook: the plain session firing it is a global hook
-  # running a repository's command in a session Dex did not launch.
+  # running a repository's command in a session Dex did not launch. The
+  # `## MCP` list sends dxcomplete down the scoped-configuration path, whose
+  # per-launch file must stay under DEX_HOME.
   mkdir -p "$SB_REPO/.dex"
   printf '%s\n' '# Dex' '' '## Worktree Hooks' '' '```yaml' \
-    'on_session_end: touch "$HOME/.gw-on-session-end"' '```' > "$SB_REPO/.dex/dex.md"
+    'on_session_end: touch "$HOME/.gw-on-session-end"' '```' '' \
+    '## MCP' '' '```yaml' 'complete: [repoServer]' '```' > "$SB_REPO/.dex/dex.md"
   git -C "$SB_REPO" add -A
   git -C "$SB_REPO" commit -q -m "chore: init"
   git -C "$SB_REPO" branch -M main
