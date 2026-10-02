@@ -4004,18 +4004,30 @@ __dx_show_header() {
 
   # Phase progress line (Phase 0 setup + 6 autonomous phases)
   local progress="  "
-  local i label outcome symbol
-  local has_skipped=0 has_waived=0 has_unknown=0
+  local i label outcome symbol legend_entry legend_actor
+  local legend_entries="" has_unknown=0
   for i in 0 1 2 3 4 5 6; do
     label=$(__dx_phase_name "$i")
     if [[ $i -lt $step ]]; then
       outcome=$(dx_phase_outcome_latest "$session_id" "$i")
+      legend_entry=""
       case "$outcome" in
         completed) symbol="✓" ;;
-        skipped) symbol="↷"; has_skipped=1 ;;
-        waived) symbol="◇"; has_waived=1 ;;
+        skipped) symbol="↷"; legend_entry="↷ skipped" ;;
+        waived) symbol="◇"; legend_entry="◇ marked done" ;;
         *) symbol="?"; has_unknown=1 ;;
       esac
+      if [[ -n "$legend_entry" ]]; then
+        # Name whoever the ledger recorded; an agent's waiver is not a human's.
+        case "$(dx_phase_outcome_latest_source "$session_id" "$i")" in
+          agent) legend_actor="by agent" ;;
+          user-prompt|terminal) legend_actor="by human" ;;
+          *) legend_actor="under a policy override" ;;
+        esac
+        legend_entry+=" ${legend_actor}  "
+        [[ "$legend_entries" == *"$legend_entry"* ]] \
+          || legend_entries+="$legend_entry"
+      fi
       progress+="${symbol} ${label}"
     elif [[ $i -eq $step ]]; then
       progress+="→ ${label}"
@@ -4029,10 +4041,8 @@ __dx_show_header() {
     progress+="  ✓ ticket complete"
   fi
   echo "$progress"
-  if [[ $has_skipped -eq 1 || $has_waived -eq 1 || $has_unknown -eq 1 ]]; then
-    local legend="  "
-    [[ $has_skipped -eq 1 ]] && legend+="↷ skipped by human  "
-    [[ $has_waived -eq 1 ]] && legend+="◇ marked done by human  "
+  if [[ -n "$legend_entries" || $has_unknown -eq 1 ]]; then
+    local legend="  ${legend_entries}"
     [[ $has_unknown -eq 1 ]] && legend+="? outcome not recorded"
     echo "$legend"
   fi

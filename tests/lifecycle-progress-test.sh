@@ -182,6 +182,23 @@ grep -Fq "◇ marked done by human" "$DISPLAY_OUTPUT"
 grep -Fq "? outcome not recorded" "$DISPLAY_OUTPUT"
 grep -Fq "Controls: /dxpause  /dxskip  /dxresume  /dxrecover" "$DISPLAY_OUTPUT"
 
+# The legend names whoever the ledger recorded. An agent's waiver never reads
+# as a human's, and a review-policy waiver is credited to the override.
+ACTOR_SESSION="lifecycle-progress-actors"
+dx_phase_outcome_record "$ACTOR_SESSION" 0 completed phase-loop actor-0 gates-passed
+dx_phase_outcome_record "$ACTOR_SESSION" 1 waived agent actor-1 agent-complete
+dx_phase_outcome_record "$ACTOR_SESSION" 2 skipped user-prompt actor-2 human-jump
+dx_phase_outcome_record "$ACTOR_SESSION" 3 waived phase-loop actor-3 review-clean-passes-overridden
+dx_phase_outcome_record "$ACTOR_SESSION" 4 waived agent actor-4 agent-complete
+ACTOR_OUTPUT="$TMP_DIR/actors.out"
+ACTOR_SESSION="$ACTOR_SESSION" TEST_REPO="$TEST_REPO" zsh -fc '
+  source "$DEX_DIR/dx.sh"
+  __dx_show_header ticket-progress 7 "$TEST_REPO" main "$ACTOR_SESSION" worktree
+' > "$ACTOR_OUTPUT" 2>&1
+assert_contains "  ◇ marked done by agent  ↷ skipped by human  ◇ marked done under a policy override  ? outcome not recorded" \
+  "$ACTOR_OUTPUT"
+assert_not_contains "marked done by human" "$ACTOR_OUTPUT"
+
 # A phase finished through a control gets a phase-log row, as a gated phase
 # does: waived for a done, skipped for each phase a jump passes over. A
 # replayed receipt adds no second row.
