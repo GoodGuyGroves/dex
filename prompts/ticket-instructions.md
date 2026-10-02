@@ -70,7 +70,7 @@ without an issue, treat ticket-specific steps as N/A and keep the task branch.
      ```
      Use the tracker's key (e.g. `ENG-999`). If no tracker is configured, only the `current_branch` field is required.
 
-3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip. Leave sub-issues as they are: Phase 6 marks each Done once its acceptance criteria pass.
+3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip. Leave sub-issues as they are: Phase 6 settles each one per the project's `ticket_close` setting once its acceptance criteria pass (Done at completion by default).
 
 4. Check the ticket description (if a ticket was found):
    - If the description is empty, unclear, or missing acceptance criteria:

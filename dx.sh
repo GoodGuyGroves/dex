@@ -232,7 +232,7 @@ __dx_cli() {
       echo "  dx refine [ticket]        Alias for dx triage"
       echo ""
       echo "Standalone completion (recovery / non-dx PRs):"
-      echo "  dxcomplete             Monitor CI/reviews, address comments, close ticket"
+      echo "  dxcomplete             Monitor CI/reviews, address comments, settle ticket"
       echo ""
       echo "Standalone review (agent-selected risk tier with a global clean-pass gate):"
       echo "  dxreviewloop           Review current changes, or whole codebase if clean"
@@ -246,7 +246,7 @@ __dx_cli() {
       echo "  3. Review          Adaptive adversarial code review"
       echo "  4. Verify          Run the final PR gate; commit and push coherent repair checkpoints"
       echo "  5. PR              Create PR, attach reviewers, mark ready, prepare visual handoff"
-      echo "  6. Complete        Verify readiness, request reviewers, monitor CI/reviews, close ticket"
+      echo "  6. Complete        Verify readiness, request reviewers, monitor CI/reviews, settle ticket"
       ;;
     revert)
       # dx revert <ticket> [phase] — revert worktree to a phase checkpoint
@@ -407,7 +407,7 @@ For headless dx run sessions with workflow.requires_plan_approval=false, the run
   "Begin Phase 3: Review. Invoke the Skill tool with skill: \"dxreviewloop\". Use the current Phase 2 risk selection: trivial and small require 1, normal 2, and complex 3 consecutive independent clean waves (CLEAN or NOTES:N). Each fresh wave builds its own context pack, runs deterministic checks and its domain lenses in sequence with the coherence lens — scouts only when the wrapper offers them — verifies findings, batch-fixes safe issues, and rechecks. Any fix, MECHANICAL:N included, resets the clean streak; residual findings, blockers, churn, invalid results, and provider failures pause the loop. Phase focus: review and fixes. Commit and push accepted review fixes as small coherent checkpoints from the active wave; do not wait for Phase 4 or final verification, and keep failed or pending checks explicit. Do not switch branches or create or update a PR. When the loop writes a valid success receipt, stop — the audit loop will verify." \
   "Invoke the Skill tool with skill: \"dxverify\" to run the quality pipeline (format, lint, typecheck, test). This is the final PR gate. Fix failures and rerun until green; as repairs form natural coherent checkpoints, invoke skill: \"dxcommit\" to commit and push each coherent repair checkpoint immediately without waiting for the rest of the pipeline. Keep failing checks explicit. When the complete pipeline passes, confirm the working tree is clean and local HEAD matches origin. A newly created local branch with no branch-specific commits cannot enter the ordinary PR flow; return to Phase 2's user-direction path instead of publishing it. PR creation and broader implementation fixes remain available when useful. When the branch is verified and current, stop — the audit loop will verify." \
   "Invoke the Skill tool with skill: \"dxpr\" to generate the PR description, create or update the PR, attach current UI proof media when GitHub CLI supports it, attach the configured 'request' reviewers from dex.md § Reviewers, and mark the PR ready for review. Phase focus: PR creation, description, automatic visual attachment with a warned local fallback, reviewer attachment, and readiness. Do not stop while the PR is still a draft. Posting @mentions, implementation changes, commits, and pushes remain available when useful; Phase 6 still performs the normal completion workflow. When done, stop — the audit loop will verify." \
-  "Invoke the Skill tool with skill: \"dxcomplete\". Phase 6 follows the cycle-loop audit prompt: verify the PR is ready and repair any remaining draft state, request reviewers from dex.md § Reviewers, post @mention comments for mention-type reviewers, launch /loop 5m /dxwatchpr, re-read the current completion wait/cycle defaults, address CI failures and review comments via the PR watcher, re-request reviewers after each push, and close the ticket when CI is green and all successfully requested reviewers have approved. If the current bounded wait expires, pause with manual follow-up instructions. Stop — the audit loop will verify." \
+  "Invoke the Skill tool with skill: \"dxcomplete\". Phase 6 follows the cycle-loop audit prompt: verify the PR is ready and repair any remaining draft state, request reviewers from dex.md § Reviewers, post @mention comments for mention-type reviewers, launch /loop 5m /dxwatchpr, re-read the current completion wait/cycle defaults, address CI failures and review comments via the PR watcher, re-request reviewers after each push, and settle the ticket per ticket_close when CI is green and all successfully requested reviewers have approved. If the current bounded wait expires, pause with manual follow-up instructions. Stop — the audit loop will verify." \
 )
 
 DX_PHASE_0_TIMEOUT="0"
@@ -1245,7 +1245,7 @@ __dx_build_system_context() {
 - @mention comments, implementation changes, commits, and pushes remain available; Phase 6 still performs the normal completion workflow" ;;
     6) scope_lines="- Do NOT modify implementation code unless fixing CI/review failures
 - DO verify the PR is ready and repair any remaining draft state, request reviewers (request type), post @mention comment (mention type),
-- DO launch /loop 5m /dxwatchpr, address CI/review failures, close ticket only when checks and approvals are green" ;;
+- DO launch /loop 5m /dxwatchpr, address CI/review failures, settle the ticket per ticket_close only when checks and approvals are green" ;;
   esac
 
   local phase_label
@@ -4900,7 +4900,7 @@ dxcomplete() {
   echo "  DEX — dxcomplete (Phase 6: monitor, address, close)"
   echo ""
   echo "  PR:    #${pr_num}"
-  echo "  Phase: Monitor CI → Address reviews → Close ticket"
+  echo "  Phase: Monitor CI → Address reviews → Settle ticket"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
 
@@ -5007,7 +5007,7 @@ __dxcomplete_run() {
   fi
 
   local completion_prompt
-  completion_prompt="Invoke the Skill tool with skill: \"$(dx_skill_ref dxcomplete)\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments, monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and close the ticket when all checks pass and all successfully requested reviewers have approved.
+  completion_prompt="Invoke the Skill tool with skill: \"$(dx_skill_ref dxcomplete)\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments, monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and settle the ticket per ticket_close when all checks pass and all successfully requested reviewers have approved.
 When the Stop hook prints the exact command after the audit threshold, run this literal command only if every completion criterion is met, then stop again: bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"${session_id}\" \"${completion_generation}\"
 $(__dx_provider_prompt)"
 

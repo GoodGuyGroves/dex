@@ -1,6 +1,6 @@
 ---
 name: "dxcomplete"
-description: "Run Phase 6 of the Dex lifecycle: verify PR readiness, request reviewers, monitor CI and reviews through the PR watcher, address failures, and close the ticket."
+description: "Run Phase 6 of the Dex lifecycle: verify PR readiness, request reviewers, monitor CI and reviews through the PR watcher, address failures, and settle the ticket per ticket_close."
 ---
 
 # Skill: dxcomplete
@@ -234,13 +234,33 @@ If any condition is not met, return to Step 5 (do not advance to closure).
 
 Before closure, apply `$DEX_DIR/prompts/issue-hygiene.md` to accepted CI and review
 findings. Update the working issue and PR when their descriptions are stale;
-create deduplicated linked follow-up issues for concrete distinct work. Then
-mark the ticket as Done via the configured tracker (see `dex.md §
-Integrations`) and add a final summary covering implementation, decisions, and
-follow-up identifiers. Mark each sub-issue Done as well when its acceptance
-criteria are met by this PR; a sub-issue that is not met stays open with a
-comment saying what is missing and which follow-up carries it. Skip tracker
-writes if no tracker is configured.
+create deduplicated linked follow-up issues for concrete distinct work. Skip
+tracker writes if no tracker is configured.
+
+Then settle the ticket the way the lifecycle's `ticket_close` setting says.
+Read it from the session, not from the tracker's current state:
+
+```bash
+source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
+SESSION_ID="${DEX_SESSION_ID:-$(dx_session_id)}"
+TICKET_CLOSE=$(dx_ticket_close_mode "$(git rev-parse --show-toplevel)" "$SESSION_ID")
+```
+
+- `on_complete` (the default): mark the ticket as Done via the configured
+  tracker (see `dex.md § Integrations`) and add a final summary covering
+  implementation, decisions, and follow-up identifiers.
+  Mark each sub-issue Done as well when its acceptance criteria are met by
+  this PR.
+- `on_merge`: post the same final summary, but leave the ticket and its
+  sub-issues open. Record each sub-issue this PR completes with
+  `dx_ticket_close_items_add "$SESSION_ID" <id>...`. Dex records the ticket
+  itself when the lifecycle completes, and closes them all once the PR merges.
+  The summary says that the ticket moves to Done on merge.
+- `never`: post the same final summary and leave every status as it is. The
+  caller owns ticket state; the summary says so.
+
+In every mode, a sub-issue that this PR does not complete stays open with a
+comment saying what is missing and which follow-up carries it.
 
 Invoke the `dex:humanizer` skill on the final ticket summary before posting it. Keep commit SHAs, PR links, ticket IDs, reviewer handles, and verification details exact.
 
@@ -251,6 +271,7 @@ Ticket: <id> — <title>       (or "No ticket — <branch name>")
 URL:    <ticket-url>          (if available)
 PR:     <pr-url>
 Status: Ticket complete — PR ready for maintainer merge
+Ticket close: <on_complete: marked Done | on_merge: closes when the PR merges | never: left to the caller>
 
 Files changed: X
 Lines: +Y / -Z
@@ -303,8 +324,11 @@ Do not emit `DEX_TICKET_COMPLETE` on this timeout path.
   issue when it matches, automatically create a linked issue for concrete
   distinct work, and ask only when the classification or product choice is
   genuinely ambiguous.
-- The ticket, and each sub-issue whose acceptance criteria this PR meets, should
-  be marked "Done" (if a tracker is available) once CI is
-  green and actionable review feedback is resolved. A missing review or approval
-  does not block Phase 6; the maintainer handles any merge-time approval rule.
+- Under `ticket_close: on_complete` (the default), the ticket,
+  and each sub-issue whose acceptance criteria this PR meets, should be marked
+  "Done" (if a tracker is available) once CI is green and actionable review
+  feedback is resolved. Under `on_merge` they stay open and Dex closes them after the
+  merge; under `never` the caller owns their status. A missing review or
+  approval does not block Phase 6; the maintainer handles any merge-time
+  approval rule.
 - Hard escalations (secrets, scope conflict, architectural disagreement, 3+ CI failures on the same check) stop the loop and surface a structured escalation to the user — never auto-resolve these.

@@ -295,7 +295,7 @@ Then output:
 ```
 Phase 5 complete. PR state: READY. Request reviewers are attached.
 Phase 6 (Complete) will verify readiness, reconcile reviewer notifications,
-monitor CI/reviews, address comments, and close the ticket.
+monitor CI/reviews, address comments, and settle the ticket per ticket_close.
 ```
 
 `@mention` comments and `/loop` monitoring normally begin in Phase 6. Record
@@ -309,4 +309,15 @@ or pre-existing draft PRs.
 - Run PR titles and body copy through `dex:humanizer` before publishing.
 - PR bodies should attribute lifecycle generation to Dex, not Claude Code. GitHub will still show the authenticated account as the actor that created the PR; Dex controls the body attribution.
 - If a ticket link is available, include it in the PR body for auto-linking.
+  How the body references the ticket follows the lifecycle's `ticket_close`
+  (`dx_ticket_close_mode "$(git rev-parse --show-toplevel)" "${DEX_SESSION_ID:-$(dx_session_id)}"`):
+  - `on_complete` (the default): reference the ticket as you do today; this
+    setting adds nothing.
+  - `on_merge` on GitHub Issues: add a `Closes #N` line for the ticket and one
+    for each sub-issue this PR completes, so a merge into the default branch
+    closes them. Dex also closes them after the merge, which covers a PR into
+    any other branch, where GitHub ignores closing keywords.
+  - `never` on GitHub Issues: reference the ticket as `Refs #N` and use no
+    closing keyword (`close`, `fix` or `resolve`, in any form) for it or its
+    sub-issues, so the merge leaves their status to the caller.
 - A new PR may be created as a draft while Phase 5 prepares its metadata and reviewer requests, but Phase 5 must mark it ready before handoff.
