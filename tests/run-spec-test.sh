@@ -325,6 +325,55 @@ if dx_run_spec_normalize "$BAD_EFFORT_SPEC" "$TMP_DIR/bad-effort-normalized.json
 fi
 assert_contains "harness.effort must be one of" "$TMP_DIR/bad-effort.out"
 
+# workflow.ticket_close is optional. A present value is normalized to lower
+# case and becomes the run's DEX_TICKET_CLOSE; an absent one is omitted, so the
+# project's .dex/dex.md setting applies; anything else fails the run.
+set_ticket_close() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+spec = json.loads(path.read_text(encoding="utf-8"))
+spec["workflow"]["ticket_close"] = json.loads(sys.argv[2])
+path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+TICKET_CLOSE_SPEC="$TMP_DIR/ticket-close-spec.json"
+write_spec "$TICKET_CLOSE_SPEC" "run_test_ticket_close" "$REPO_DIR"
+set_ticket_close "$TICKET_CLOSE_SPEC" '" On_Merge "'
+dx_run_spec_normalize "$TICKET_CLOSE_SPEC" "$TMP_DIR/ticket-close-normalized.json" \
+  > "$TMP_DIR/ticket-close.out" 2>&1
+[[ "$(dx_run_spec_field "$TMP_DIR/ticket-close-normalized.json" workflow.ticket_close)" == on_merge ]] || assert_at $LINENO
+if grep -q '"ticket_close"' "$TMP_DIR/absent-normalized.json"; then assert_at $LINENO; fi
+[[ -z "$(dx_run_spec_field "$TMP_DIR/absent-normalized.json" workflow.ticket_close)" ]] || assert_at $LINENO
+
+for bad_ticket_close in '"on-merge"' '"sometimes"' 'true' '["on_merge"]'; do
+  BAD_TICKET_CLOSE_SPEC="$TMP_DIR/bad-ticket-close-spec.json"
+  write_spec "$BAD_TICKET_CLOSE_SPEC" "run_test_bad_ticket_close" "$REPO_DIR"
+  set_ticket_close "$BAD_TICKET_CLOSE_SPEC" "$bad_ticket_close"
+  if dx_run_spec_normalize "$BAD_TICKET_CLOSE_SPEC" "$TMP_DIR/bad-ticket-close-normalized.json" \
+    > "$TMP_DIR/bad-ticket-close.out" 2>&1; then
+    printf 'workflow.ticket_close %s unexpectedly passed\n' "$bad_ticket_close" >&2
+    exit 1
+  fi
+  assert_contains "workflow.ticket_close must be on_complete, on_merge, or never" "$TMP_DIR/bad-ticket-close.out"
+done
+
+# The run spec beats an inherited DEX_TICKET_CLOSE; without the field the
+# inherited value stands.
+spec_ticket_close() {
+  DEX_TICKET_CLOSE="$2" zsh -fc '
+    source "$DEX_DIR/dx.sh"
+    __dx_run_spec_apply_env "$1" >/dev/null || exit 1
+    printf "%s" "${DEX_TICKET_CLOSE:-}"
+  ' _ "$1"
+}
+[[ "$(spec_ticket_close "$TMP_DIR/ticket-close-normalized.json" never)" == on_merge ]] || assert_at $LINENO
+[[ "$(spec_ticket_close "$TMP_DIR/absent-normalized.json" never)" == never ]] || assert_at $LINENO
+[[ -z "$(spec_ticket_close "$TMP_DIR/absent-normalized.json" "")" ]] || assert_at $LINENO
+
 RELATIVE_SPEC="$TMP_DIR/relative-run-spec.json"
 write_spec "$RELATIVE_SPEC" "run_test_relative" "relative/repo"
 if dx_run_spec_normalize "$RELATIVE_SPEC" "$TMP_DIR/relative-normalized.json" > "$TMP_DIR/relative.out" 2>&1; then

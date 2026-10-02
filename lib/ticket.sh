@@ -114,3 +114,116 @@ dx_ticket_id_from_workspace_name() {
   [[ "$ticket_rest" =~ ^[a-z][a-z0-9]{1,9}-[0-9]+$ ]] || return 1
   printf '%s\n' "$ticket_rest" | tr '[:lower:]' '[:upper:]'
 }
+
+# ─── ticket_close: when Dex moves the ticket to Done ─────────────────────────
+#
+# `ticket_close` under `## Tickets` in `.dex/dex.md`:
+#   on_complete  Phase 6 marks the ticket Done before merge (the default)
+#   on_merge     Phase 6 posts the summary; the ticket closes once the pull
+#                request merges (the deferred-teardown sweep does it)
+#   never        Phase 6 posts the summary and leaves the status to the caller
+# A run overrides the project with DEX_TICKET_CLOSE, which `dx run` sets from
+# the run spec's workflow.ticket_close. See $DEX_DIR/docs/worktree-teardown.md.
+
+# __dx_ticket_close_normalize <value>
+# Print <value> in lower case when it is one of the three modes; return 1
+# otherwise, printing nothing.
+__dx_ticket_close_normalize() {
+  local ticket_mode
+  ticket_mode=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')
+  case "$ticket_mode" in
+    on_complete | on_merge | never) printf '%s\n' "$ticket_mode" ;;
+    *) return 1 ;;
+  esac
+}
+
+# dx_ticket_close_setting <repo-dir>
+# The project's ticket_close. An absent file, section or key gives
+# on_complete. A value Dex does not recognise, or a `## Tickets` block that is
+# not a flat mapping, gives never with a warning: a typo must not close a
+# ticket earlier than the project asked for.
+dx_ticket_close_setting() {
+  local ticket_repo="${1:-}" ticket_value="" ticket_rc=0 ticket_mode
+  # Most repositories never set this: spare them the python3 start.
+  if [[ -z "$ticket_repo" ]] || ! grep -q 'ticket_close' "$ticket_repo/.dex/dex.md" 2>/dev/null \
+    || ! command -v dx_project_contract_values >/dev/null 2>&1; then
+    printf 'on_complete\n'
+    return 0
+  fi
+  ticket_value=$(dx_project_contract_values "$ticket_repo" Tickets ticket_close 2>/dev/null) \
+    || ticket_rc=$?
+  if [[ "$ticket_rc" -eq 1 ]]; then
+    printf 'on_complete\n'
+    return 0
+  fi
+  if [[ "$ticket_rc" -ne 0 ]]; then
+    dx_warn "Ignoring '## Tickets' in ${ticket_repo}/.dex/dex.md: it is not a flat mapping. Using ticket_close: never."
+    printf 'never\n'
+    return 0
+  fi
+  if ticket_mode=$(__dx_ticket_close_normalize "$ticket_value"); then
+    printf '%s\n' "$ticket_mode"
+    return 0
+  fi
+  dx_warn "Ignoring ticket_close: '${ticket_value}' in ${ticket_repo}/.dex/dex.md (expected on_complete, on_merge or never). Using never."
+  printf 'never\n'
+}
+
+# dx_ticket_close_mode <repo-dir> [session-id]
+# The ticket_close in force for a lifecycle: the value recorded in the
+# session's .meta when it launched, then DEX_TICKET_CLOSE (a run override; an
+# invalid value is ignored with a warning), then the project setting.
+dx_ticket_close_mode() {
+  local ticket_repo="${1:-}" ticket_sid="${2:-}" ticket_mode
+  if [[ -n "$ticket_sid" ]] \
+    && ticket_mode=$(__dx_ticket_close_normalize "$(dx_meta_read "$ticket_sid" ticket_close 2>/dev/null)"); then
+    printf '%s\n' "$ticket_mode"
+    return 0
+  fi
+  if [[ -n "${DEX_TICKET_CLOSE:-}" ]]; then
+    if ticket_mode=$(__dx_ticket_close_normalize "$DEX_TICKET_CLOSE"); then
+      printf '%s\n' "$ticket_mode"
+      return 0
+    fi
+    dx_warn "Ignoring DEX_TICKET_CLOSE='${DEX_TICKET_CLOSE}' (expected on_complete, on_merge or never)."
+  fi
+  dx_ticket_close_setting "$ticket_repo"
+}
+
+# dx_ticket_tracker_kind <repo-dir>
+# github when the `## Integrations` table in .dex/dex.md has an enabled
+# "Ticket tracker" row naming GitHub Issues, other for any other enabled
+# tracker, none otherwise. The ticket_close sweep closes only github tickets
+# itself; Dex has no shell client for the others.
+dx_ticket_tracker_kind() {
+  local ticket_repo="${1:-}"
+  [[ -n "$ticket_repo" && -f "$ticket_repo/.dex/dex.md" ]] || { printf 'none\n'; return 0; }
+  awk -F'|' '
+    /^[[:space:]]*##[[:space:]]/ { in_table = ($0 ~ /^[[:space:]]*##[[:space:]]+Integrations[[:space:]]*$/); next }
+    in_table && $2 ~ /^[[:space:]]*[Tt]icket [Tt]racker[[:space:]]*$/ {
+      tool = tolower($3); state = tolower($4)
+      if (state !~ /enabled/ || state ~ /not/) { print "none"; found = 1; exit }
+      print (tool ~ /github/ ? "github" : "other"); found = 1; exit
+    }
+    END { if (!found) print "none" }
+  ' "$ticket_repo/.dex/dex.md"
+}
+
+# dx_ticket_close_snapshot <session-id> <repo-dir>
+# Record the lifecycle's ticket_close in its .meta at launch, so Phase 6 and
+# the merge sweep read the value the run started with after its environment
+# is gone. A valid DEX_TICKET_CLOSE always replaces the record; otherwise a
+# resume keeps the value it already has.
+dx_ticket_close_snapshot() {
+  local ticket_sid="${1:-}" ticket_repo="${2:-}" ticket_mode=""
+  [[ -n "$ticket_sid" ]] || return 0
+  if [[ -n "${DEX_TICKET_CLOSE:-}" ]]; then
+    ticket_mode=$(__dx_ticket_close_normalize "$DEX_TICKET_CLOSE") \
+      || dx_warn "Ignoring DEX_TICKET_CLOSE='${DEX_TICKET_CLOSE}' (expected on_complete, on_merge or never)."
+  fi
+  if [[ -z "$ticket_mode" ]]; then
+    __dx_ticket_close_normalize "$(dx_meta_read "$ticket_sid" ticket_close)" >/dev/null && return 0
+    ticket_mode=$(dx_ticket_close_setting "$ticket_repo")
+  fi
+  dx_meta_write "$ticket_sid" "ticket_close=${ticket_mode}"
+}

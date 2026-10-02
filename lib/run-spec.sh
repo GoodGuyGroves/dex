@@ -254,6 +254,7 @@ BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 VALID_HARNESS_NAMES = {"claude-code", "claude", "codex"}
 VALID_UI_EVIDENCE = {"auto", "always", "never"}
+VALID_TICKET_CLOSE = {"on_complete", "on_merge", "never"}
 
 
 def fail(message):
@@ -464,6 +465,12 @@ else:
     fail("workflow.requires_ui_evidence must be auto, always, never, true, or false")
 if requires_ui_evidence not in VALID_UI_EVIDENCE:
     fail("workflow.requires_ui_evidence must be auto, always, or never")
+# Optional: absent means the project's .dex/dex.md setting applies.
+ticket_close = workflow.get("ticket_close")
+if ticket_close is not None:
+    if not isinstance(ticket_close, str) or ticket_close.strip().lower() not in VALID_TICKET_CLOSE:
+        fail("workflow.ticket_close must be on_complete, on_merge, or never")
+    ticket_close = ticket_close.strip().lower()
 
 factory_url = string_at(sync, "factory_url", "sync", required=False)
 events_endpoint = string_at(sync, "events_endpoint", "sync", required=False)
@@ -538,6 +545,8 @@ normalized["workflow"] = {
     "requires_ui_evidence": requires_ui_evidence,
     "auto_merge": auto_merge,
 }
+if ticket_close is not None:
+    normalized["workflow"]["ticket_close"] = ticket_close
 normalized["sync"] = {
     **sync,
     "factory_url": factory_url,

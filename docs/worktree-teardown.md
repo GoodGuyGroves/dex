@@ -92,6 +92,74 @@ Dex checks this when it releases a branch in `dxrm`, `dxclean` and the
 `on_merge` sweep. A failed push only warns. It is off by default because many
 repositories already delete merged branches on GitHub.
 
+## Ticket close
+
+When Phase 6 moves the ticket to Done is a setting too. It goes in the
+`## Tickets` block of `.dex/dex.md`:
+
+```yaml
+ticket_close: on_complete   # on_complete | on_merge | never
+```
+
+| Value | What Phase 6 does with the ticket |
+|-------|-----------------------------------|
+| `on_complete` | Marks the ticket, and each sub-issue the pull request completes, Done once CI is green and review feedback is resolved, before the merge. This is the default and what Dex always did. |
+| `on_merge` | Posts the final summary and leaves the ticket and its sub-issues open. Dex closes them once the pull request merges. |
+| `never` | Posts the final summary and leaves every status to whoever launched Dex. A ticket with several deliverables, or a parent whose children close separately, is the caller's to close. |
+
+The key is optional. A value Dex does not recognise, or a `## Tickets` block
+that is not a flat mapping, is ignored with a warning and Dex uses `never`,
+so a typo cannot close a ticket before its merge.
+
+A run can override the project. `dx run` takes `workflow.ticket_close` from
+the run spec (see [run specs](run-specs.md)), and any launch takes
+`DEX_TICKET_CLOSE`. The run spec beats the environment variable, and both
+beat `.dex/dex.md`. Dex records the mode in the session's `.meta` when the
+lifecycle starts. A resume keeps that value unless the override is passed
+again.
+
+### How `on_merge` closes the ticket
+
+`on_merge` uses the same record and sweep as `worktree_teardown: on_merge`.
+At completion, Dex writes these keys into the session's `.meta`:
+
+- the ticket, plus the sub-issues Phase 6 registered;
+- the tracker kind, read from the "Ticket tracker" row of `## Integrations`;
+- the pull request's number and head.
+
+If the worktree is removed at completion, Dex keeps only those keys in the
+`.meta`, so the record survives the teardown.
+
+`dxclean`, and the next `dx` run in that repository, handle the record. They
+ask GitHub about the recorded pull request (`gh pr view <number>`) under the
+same time limits as the teardown check. What happens next depends on the
+answer:
+
+- **Merged, GitHub Issues tracker.** Each recorded issue that is still open is
+  closed with `gh issue close --reason completed` and a comment naming the
+  pull request. One already closed by a `Closes #N` line is left as it is.
+- **Merged, any other tracker.** Dex has no client for other trackers, so it
+  prints which tickets to move to Done and drops the record. Linear and Jira
+  usually move a ticket on merge through their own GitHub integration.
+- **Open, or the answer is unknown.** The record is kept. That includes a
+  `gh` that is missing, fails or times out. So is a failed close, which the
+  next sweep retries.
+- **Closed without merging.** The record is dropped and the ticket stays
+  open.
+
+A lifecycle reopened on the same ticket is left alone until it completes
+again. `dx sessions forget` drops a pending close along with the session.
+Once the worktree is gone, `dx sessions` no longer lists the record, but
+`dx sessions forget <name or session ID>` still drops it without closing
+anything: use it for a close Dex can never confirm, such as one whose
+pull request it cannot ask about.
+
+On GitHub Issues the pull request body follows the mode as well. Under
+`on_merge` it carries `Closes #N`. GitHub honours that keyword only for a
+pull request into the default branch, which is why Dex also closes the ticket
+itself. Under `never` the body uses `Refs #N` and no closing keyword. Under
+`on_complete` the body is unchanged.
+
 ## The rescue directory
 
 `DX_RESCUE_DIR` is `$DEX_HOME/rescue` when `DEX_HOME` is set, and

@@ -120,13 +120,16 @@ orphan_resources: [exact command]  # names `dx worktree audit` and `dxclean` han
 
 ## Tickets
 
-Optional. Include it only when the tracker's ticket IDs carry team prefixes.
+Optional. Include it only when the tracker's ticket IDs carry team prefixes,
+or when the team closes tickets some other way than at Phase 6 completion.
 
 ```yaml
 # Listed prefixes become part of the ticket ID: ENG-1234 and OPS-1234 get
 # separate workspaces, and lowercase tracker branches (user/eng-1234-title)
 # are detected. Without this, every ticket is its number.
 ticket_prefixes: [ENG, OPS]
+# When Phase 6 moves the ticket to Done; see $DEX_DIR/docs/worktree-teardown.md.
+ticket_close: on_complete            # or on_merge, or never (the caller closes it)
 ```
 
 ## Worktree Teardown

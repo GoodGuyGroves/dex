@@ -240,7 +240,7 @@ disagreement threads do not count):**
    - Comments addressed: N
    - Source breakdown: automated vs human
    - Disagreements left open for the maintainer: each `reported` thread's URL and reviewer, or none
-3. Proceed to `/dxcomplete` so Phase 6 can run final verification, close the ticket, and end the session.
+3. Proceed to `/dxcomplete` so Phase 6 can run final verification, settle the ticket per `ticket_close`, and end the session.
 
 Invoke the `dex:humanizer` skill on any free-form PR comments or status prose before publishing or printing them. Preserve reviewer handles, check names, counts, SHAs, and commands exactly.
 

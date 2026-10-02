@@ -187,8 +187,10 @@ line, including when all fields are unchanged or N/A.
 6. After the current `dx_complete_max_cycles` value (default 3) is reached with no progress, escalate to the user. A cycle spent waiting for pending CI or a `wait: yes` reviewer does not count; those waits are bounded by `dx_complete_pending_minutes` and `dx_complete_reviewer_wait_minutes`.
 7. When CI is green (honouring `readiness_check`), every `wait: yes` reviewer has finished on the head or timed out (`dx_reviewer_gate`), and actionable review feedback is resolved, run
    `/dxcomplete`'s final verification. Reviewer requests and GitHub's
-   merge-time approval state do not gate Phase 6. Update the tracker to Done,
-   report review state for the maintainer, and print the summary.
+   merge-time approval state do not gate Phase 6. Update the tracker per
+   `ticket_close` (Done under `on_complete`; under `on_merge` or `never`, the
+   final summary only), report review state for the maintainer, and print the
+   summary.
 8. Apply `$DEX_DIR/prompts/issue-hygiene.md` once to accepted CI or review discoveries;
    scheduled watcher cycles must not create duplicate follow-ups.
 9. Output `DEX_TICKET_COMPLETE` once verification passes.
@@ -261,7 +263,9 @@ The phase audit loop continues until:
    - All tasks completed
    - All PR checks green
    - All actionable review feedback addressed; no review or approval is required
-   - Ticket updated to Done (if tracker configured)
+   - Ticket settled per `ticket_close` (if tracker configured): Done under
+     `on_complete`; final summary posted and status left alone under
+     `on_merge` or `never`
 2. **Max audit iterations reached** (default: 30) — safety net for the phase
    Stop-hook audit, separate from `/dxreviewloop`'s clean-pass loop
 3. **User interrupts** — the user can always take over
@@ -276,7 +280,9 @@ result, user interruption, or direct intervention.
 Only output `DEX_TICKET_COMPLETE` when you have verified:
 - `gh pr view --json state,statusCheckRollup` shows the PR is open/ready and all checks passed
 - No unresolved review threads
-- Ticket state is "Done" or "Closed" (if tracker configured)
+- Ticket state is "Done" or "Closed" under `ticket_close: on_complete`, or the
+  final summary is posted under `on_merge` or `never`, where the ticket stays
+  open on purpose (if tracker configured)
 
 ### Escalation in autonomous mode
 

@@ -1,9 +1,9 @@
 Phase 6 (Complete) is the bounded autonomous PR monitoring loop. Phase 5 should
 have left the PR ready for review; verify that state and repair it if an
 interrupted or pre-existing draft remains. Then request reviews, monitor CI and
-review comments through the PR watcher, address failures, and close the ticket
-once CI is green and actionable review feedback is resolved. Do not merge the
-PR.
+review comments through the PR watcher, address failures, and settle the
+ticket per `ticket_close` once CI is green and actionable review feedback is
+resolved. Do not merge the PR.
 
 When `.dex/dex.md` § Resources declares `full_gate: ci`, Phase 5 deliberately
 left the PR a draft and CI is this ticket's complete gate: fix and re-push
@@ -248,7 +248,7 @@ reported as "not reviewed" with its detail, never as a clean review. List every
 `reported` thread under **Disagreements left open for the maintainer**, or say
 there are none.
 
-Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `$DEX_DIR/skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
+Update the ticket (if a tracker is configured — see `dex.md § Integrations`) as the lifecycle's `ticket_close` says (`dx_ticket_close_mode`; see `$DEX_DIR/skills/dxcomplete/SKILL.md`, the Reconcile and Update Ticket step): mark it Done under `on_complete`; under `on_merge` or `never`, post the final summary and leave its status alone. Print the completion summary (per `$DEX_DIR/skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
 
 ### Case B — Pending checks or unresolved feedback, but progress was made
 
@@ -328,8 +328,10 @@ same exact escalation command, and stop without writing a completion receipt.
 
 Cycle ends successfully only when **Case A** is reached: CI is green, every
 `wait: yes` reviewer has finished on the head or timed out, and actionable
-review feedback is resolved. Completion means the ticket is closed
-and the local Dex worktree/branch can be removed; it never means merging the PR.
+review feedback is resolved. Completion means the ticket is settled per
+`ticket_close` (Done under `on_complete`; left open for the merge under
+`on_merge`; left to the caller under `never`) and the local Dex
+worktree/branch can be removed; it never means merging the PR.
 
 Cycle pauses with escalation when:
 - `CYCLE >= MAX_CYCLES` and checks are not green or actionable feedback remains
@@ -358,7 +360,9 @@ or `/dxcomplete` to resume completion.
   (`dx_pr_threads_open` succeeded and lists no `open` thread that still needs a
   decision; `reported` disagreement threads are listed in the summary under
   **Disagreements left open for the maintainer** and do not block),
-  and the ticket is marked Done if a tracker is configured. A missing review,
+  and, if a tracker is configured, the ticket is handled per `ticket_close`:
+  marked Done under `on_complete`, or summary posted with its status left
+  alone under `on_merge` or `never`. A missing review,
   pending request, absent approval, or `REVIEW_REQUIRED` merge decision does not
   block Phase 6. Report merge-review state in the maintainer handoff.
 - Material CI and review findings were handled under

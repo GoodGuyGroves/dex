@@ -3016,6 +3016,23 @@ dx_review_work_files_cleanup() {
   return 0
 }
 
+# __dx_meta_keep_ticket_close <session-id>
+# Rewrite a session's .meta down to its pending ticket close: the
+# ticket_close_* keys, plus wt_name and ticket_id, which the merge sweep lists
+# and reports it by. Everything else about the lifecycle is gone.
+__dx_meta_keep_ticket_close() {
+  local meta_file tmp_file
+  meta_file=$(dx_meta_file "$1")
+  [[ -f "$meta_file" ]] || return 1
+  tmp_file="${meta_file}.tmp.$$"
+  if awk -F= '$1 ~ /^ticket_close_/ || $1 == "wt_name" || $1 == "ticket_id" || $1 == "created_at" || $1 == "updated_at"' \
+    "$meta_file" > "$tmp_file" 2>/dev/null && mv -f "$tmp_file" "$meta_file"; then
+    return 0
+  fi
+  rm -f "$tmp_file" 2>/dev/null || true
+  return 1
+}
+
 # dx_cleanup_session <session_id>
 # Remove all loop and phase state files for a session. Safe to call when dirs don't exist.
 dx_cleanup_session() {
@@ -3048,7 +3065,12 @@ dx_cleanup_session() {
   # `&&` here would make a missing state directory the function's exit status,
   # which contradicts the promise above and would abort a `set -e` caller.
   if [[ -d "$DX_STATE_DIR" ]]; then
-    rm -f "$(dx_state_file "$sid")" "$(dx_times_file "$sid")" "$(dx_context_file "$sid")" "$(dx_log_file "$sid")" "$(dx_phase_outcomes_file "$sid")" "$(dx_branch_file "$sid")" "$(dx_meta_file "$sid")" "$(dx_agent_session_handle_file "$sid" claude)" "$(dx_agent_session_handle_file "$sid" codex)" "${DX_STATE_DIR}/${sid}.interventions" "${DX_STATE_DIR}/${sid}.human-complete" "${DX_STATE_DIR}/${sid}.terminal-commit" "${DX_STATE_DIR}/${sid}.overrides" 2>/dev/null || true
+    # A ticket close waiting for the merge (ticket_close: on_merge) outlives
+    # the lifecycle: keep that part of the .meta for the merge sweep.
+    if [[ -z "$(dx_meta_read "$sid" ticket_close_pending)" ]] || ! __dx_meta_keep_ticket_close "$sid"; then
+      rm -f "$(dx_meta_file "$sid")" 2>/dev/null || true
+    fi
+    rm -f "$(dx_state_file "$sid")" "$(dx_times_file "$sid")" "$(dx_context_file "$sid")" "$(dx_log_file "$sid")" "$(dx_phase_outcomes_file "$sid")" "$(dx_branch_file "$sid")" "$(dx_agent_session_handle_file "$sid" claude)" "$(dx_agent_session_handle_file "$sid" codex)" "${DX_STATE_DIR}/${sid}.interventions" "${DX_STATE_DIR}/${sid}.human-complete" "${DX_STATE_DIR}/${sid}.terminal-commit" "${DX_STATE_DIR}/${sid}.overrides" 2>/dev/null || true
     rm -f "${DX_STATE_DIR}/${sid}.override-lock/owner" 2>/dev/null || true
     rmdir "${DX_STATE_DIR}/${sid}.override-lock" 2>/dev/null || true
   fi

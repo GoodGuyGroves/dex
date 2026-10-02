@@ -424,31 +424,35 @@ dx_teardown_defer() {
 }
 
 # dx_teardown_deferred_list <repo-root>
-# One line per lifecycle in this repository whose teardown was deferred at
-# completion (worktree_teardown: on_merge or caller), fields separated by the
-# unit separator (\037), which, unlike a tab, read does not merge when a field
-# is empty:
-#   session_id wt_name wt_dir workspace_mode branch deferral
+# One line per lifecycle in this repository that left work for the merge
+# sweep: a teardown deferred at completion (worktree_teardown: on_merge or
+# caller), a ticket close waiting for the merge (ticket_close: on_merge), or
+# both. Fields are separated by the unit separator (\037), which, unlike a
+# tab, read does not merge when a field is empty:
+#   session_id wt_name wt_dir workspace_mode branch deferral ticket_close_pending
 dx_teardown_deferred_list() {
-  local repo_root="$1" repo_key meta_file sid deferral wt_name wt_dir workspace_mode branch
+  local repo_root="$1" repo_key meta_file sid deferral ticket_pending wt_name wt_dir workspace_mode branch
   [[ -d "$DX_STATE_DIR" ]] || return 0
   repo_key=$(cd "$repo_root" 2>/dev/null && dx_session_repo_key) || return 0
-  # Only the sidecars that carry a deferral are read key by key; this runs at
+  # Only the sidecars that carry a record are read key by key; this runs at
   # every `dx` start, and most repositories have none.
   while IFS= read -r meta_file; do
     [[ -n "$meta_file" && -f "$meta_file" ]] || continue
     sid=$(basename "$meta_file" .meta)
     deferral=$(dx_meta_read "$sid" teardown_deferred)
-    [[ "$deferral" == "on_merge" || "$deferral" == "caller" ]] || continue
+    [[ "$deferral" == "on_merge" || "$deferral" == "caller" ]] || deferral=""
+    ticket_pending=$(dx_meta_read "$sid" ticket_close_pending)
+    [[ "$ticket_pending" == "on_merge" ]] || ticket_pending=""
+    [[ -n "$deferral" || -n "$ticket_pending" ]] || continue
     wt_name=$(dx_meta_read "$sid" wt_name)
     wt_dir=$(dx_meta_read "$sid" wt_dir)
     workspace_mode=$(dx_meta_read "$sid" workspace_mode)
     branch=$(dx_meta_read "$sid" teardown_branch)
     [[ -n "$wt_name" ]] || continue
-    printf '%s\037%s\037%s\037%s\037%s\037%s\n' "$sid" "$wt_name" "$wt_dir" \
-      "${workspace_mode:-worktree}" "$branch" "$deferral"
+    printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$sid" "$wt_name" "$wt_dir" \
+      "${workspace_mode:-worktree}" "$branch" "$deferral" "$ticket_pending"
   done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" \
-    -exec grep -l '^teardown_deferred=' {} + 2>/dev/null)
+    -exec grep -l -E '^(teardown_deferred|ticket_close_pending)=.' {} + 2>/dev/null)
 }
 
 # dx_session_known_branch <session-id>
@@ -480,4 +484,232 @@ dx_session_branch_records() {
     printf '%s\037%s\037%s\037%s\037%s\n' "$branch" "$sid" "$(dx_meta_read "$sid" wt_name)" \
       "$(dx_meta_read "$sid" wt_dir)" "$(dx_meta_read "$sid" teardown_deferred)"
   done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" -print 2>/dev/null)
+}
+
+# ─── ticket_close: on_merge ──────────────────────────────────────────────────
+#
+# A lifecycle that completes under ticket_close: on_merge records the tickets
+# to close in its .meta, next to unit 12's teardown record, and the deferred
+# teardown sweep (__dx_sweep_deferred_teardowns: every `dx` start and
+# dxclean) closes them once the pull request merges. dx_cleanup_session keeps
+# that part of the .meta while a close is pending, so the record outlives a
+# worktree removed at completion.
+
+# dx_pr_merged_number <repo-dir> <pr-number>
+# Ask GitHub whether pull request <pr-number> merged. Prints its head commit
+# and returns 0 when it merged, 1 while it is open, 3 when it was closed
+# without merging, and 2 when the answer is unknown (no gh, an error, a
+# timeout, an unexpected reply).
+dx_pr_merged_number() {
+  local repo_dir="$1" pr_number="$2" pr_reply="" pr_state pr_head lookup_result=0
+  [[ "$pr_number" =~ ^[0-9]+$ ]] || return 2
+  command -v gh >/dev/null 2>&1 || return 2
+  pr_reply=$(__dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
+    __dx_ticket_branch_gh "$repo_dir" pr view "$pr_number" --json state,headRefOid \
+    --jq '.state + " " + .headRefOid' 2>/dev/null) || lookup_result=$?
+  [[ "$lookup_result" -eq 0 ]] || return 2
+  pr_state="${pr_reply%% *}"
+  pr_head="${pr_reply#* }"
+  case "$pr_state" in
+    MERGED)
+      [[ "$pr_head" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] || return 2
+      printf '%s\n' "$pr_head"
+      ;;
+    OPEN) return 1 ;;
+    CLOSED) return 3 ;;
+    *) return 2 ;;
+  esac
+}
+
+# __dx_ticket_close_item_list <comma-separated-ids>
+# One ticket ID per line, in order, without blanks or repeats.
+__dx_ticket_close_item_list() {
+  printf '%s\n' "${1:-}" | tr ',' '\n' | awk 'NF && !seen[$1]++ { print $1 }'
+}
+
+# dx_ticket_close_items_add <session-id> <ticket-id>...
+# Record more tickets for the merge to close: Phase 6 adds each sub-issue
+# this pull request completes. The parent is added at completion.
+dx_ticket_close_items_add() {
+  local sid="${1:-}" ticket_items
+  [[ -n "$sid" ]] || return 2
+  shift
+  ticket_items=$(dx_meta_read "$sid" ticket_close_items)
+  ticket_items=$(__dx_ticket_close_item_list "${ticket_items},$(printf '%s,' "$@")" | paste -sd, -)
+  dx_meta_write "$sid" "ticket_close_items=${ticket_items}"
+}
+
+# __dx_ticket_close_clear <session-id>
+__dx_ticket_close_clear() {
+  dx_meta_write "$1" "ticket_close_pending=" "ticket_close_items=" "ticket_close_tracker=" \
+    "ticket_close_pr=" "ticket_close_head=" "ticket_close_branch=" "ticket_close_at="
+}
+
+# dx_ticket_close_defer <session-id> <repo-dir> <branch>
+# At completion: under ticket_close: on_merge, record the lifecycle's ticket,
+# the sub-issues Phase 6 added, the tracker kind, and the pull request (its
+# number and head) so the sweep can close them once it merges. Under any other
+# mode, clear a record left by an earlier completion of the same lifecycle.
+# Returns non-zero only when the record could not be written.
+dx_ticket_close_defer() {
+  local sid="$1" repo_dir="$2" branch="$3" ticket_mode ticket_items ticket_tracker
+  local pr_reply="" pr_number="" pr_head=""
+  [[ -n "$sid" ]] || return 0
+  ticket_mode=$(dx_ticket_close_mode "$repo_dir" "$sid")
+  if [[ "$ticket_mode" != "on_merge" ]]; then
+    [[ -z "$(dx_meta_read "$sid" ticket_close_pending)$(dx_meta_read "$sid" ticket_close_items)" ]] \
+      || __dx_ticket_close_clear "$sid"
+    return 0
+  fi
+  ticket_tracker=$(dx_ticket_tracker_kind "$repo_dir")
+  ticket_items=$(__dx_ticket_close_item_list \
+    "$(dx_meta_read "$sid" ticket_id),$(dx_meta_read "$sid" ticket_close_items)" | paste -sd, -)
+  if [[ "$ticket_tracker" == "none" || -z "$ticket_items" ]]; then
+    dx_info "No ticket for the merge to close (ticket_close: on_merge)."
+    __dx_ticket_close_clear "$sid"
+    return 0
+  fi
+  if [[ -n "$branch" ]] && command -v gh >/dev/null 2>&1; then
+    pr_reply=$(__dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
+      __dx_ticket_branch_gh "$repo_dir" pr view "$branch" --json number,headRefOid \
+      --jq '(.number | tostring) + " " + .headRefOid' 2>/dev/null) || pr_reply=""
+  fi
+  pr_number="${pr_reply%% *}"
+  pr_head="${pr_reply#* }"
+  [[ "$pr_number" =~ ^[0-9]+$ ]] || pr_number=""
+  [[ -n "$pr_number" && "$pr_head" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] \
+    || pr_head=$(git -C "$repo_dir" rev-parse --verify --quiet "${branch:-HEAD}^{commit}" 2>/dev/null || echo "")
+  dx_meta_write "$sid" "ticket_close_pending=on_merge" "ticket_close_items=${ticket_items}" \
+    "ticket_close_tracker=${ticket_tracker}" "ticket_close_pr=${pr_number}" \
+    "ticket_close_head=${pr_head}" "ticket_close_branch=${branch}" "ticket_close_at=$(date +%s)" \
+    || return 1
+  if [[ -n "$pr_number" ]]; then
+    dx_info "Recorded ${ticket_items} to close when pull request #${pr_number} merges (ticket_close: on_merge)."
+  else
+    dx_info "Recorded ${ticket_items} to close when the pull request for ${branch:-this lifecycle} merges (ticket_close: on_merge)."
+  fi
+}
+
+# dx_ticket_close_settle <repo-dir> <session-id>
+# The sweep's ticket half: once the recorded pull request has merged, close
+# each recorded ticket that is still open (GitHub Issues), or say which to move
+# by hand (any other tracker), then drop the record. Returns 0 when the record
+# is settled and 1 when it is kept for the next sweep: the pull request is
+# still open, the answer is unknown, or a close failed.
+dx_ticket_close_settle() {
+  local repo_dir="$1" sid="$2" ticket_items ticket_tracker pr_number pr_head branch
+  local merged_oid="" merge_result=0 ancestor_result=0 ticket_item ticket_state close_failed=0 pr_label
+  ticket_items=$(dx_meta_read "$sid" ticket_close_items)
+  ticket_tracker=$(dx_meta_read "$sid" ticket_close_tracker)
+  pr_number=$(dx_meta_read "$sid" ticket_close_pr)
+  pr_head=$(dx_meta_read "$sid" ticket_close_head)
+  branch=$(dx_meta_read "$sid" ticket_close_branch)
+  pr_label="${pr_number:+pull request #${pr_number}}"
+  pr_label="${pr_label:-the pull request for ${branch:-this lifecycle}}"
+  if [[ -z "$ticket_items" ]]; then
+    __dx_ticket_close_settled "$sid"
+    return 0
+  fi
+  if [[ -n "$pr_number" ]]; then
+    merged_oid=$(dx_pr_merged_number "$repo_dir" "$pr_number") || merge_result=$?
+  elif [[ -n "$branch" ]]; then
+    merged_oid=$(dx_pr_merged_head "$repo_dir" "$branch") || merge_result=$?
+    # gh matches the head by name only: count the merge only when it holds
+    # the head this lifecycle recorded.
+    if [[ "$merge_result" -eq 0 ]]; then
+      if [[ -z "$pr_head" ]]; then
+        merge_result=2
+      else
+        git -C "$repo_dir" merge-base --is-ancestor "$pr_head" "$merged_oid" 2>/dev/null || ancestor_result=$?
+        if [[ "$ancestor_result" -eq 1 ]]; then
+          dx_info "Kept the ticket close for ${ticket_items}: the merged pull request for ${branch} does not contain this lifecycle's work (ticket_close: on_merge)."
+          return 1
+        fi
+        [[ "$ancestor_result" -eq 0 ]] || merge_result=2
+      fi
+    fi
+  else
+    merge_result=2
+  fi
+  case "$merge_result" in
+    0) ;;
+    1) return 1 ;;
+    3)
+      dx_info "${pr_label} was closed without merging; left ${ticket_items} open (ticket_close: on_merge)."
+      __dx_ticket_close_settled "$sid"
+      return 0
+      ;;
+    *)
+      dx_info "Could not confirm whether ${pr_label} merged; kept the ticket close for ${ticket_items} (ticket_close: on_merge)."
+      return 1
+      ;;
+  esac
+  if [[ "$ticket_tracker" == "github" ]]; then
+    while IFS= read -r ticket_item; do
+      [[ -n "$ticket_item" ]] || continue
+      if [[ ! "$ticket_item" =~ ^[0-9]+$ ]]; then
+        dx_warn "Skipped ${ticket_item}: not a GitHub issue number (ticket_close: on_merge)."
+        continue
+      fi
+      ticket_state=$(__dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
+        __dx_ticket_branch_gh "$repo_dir" issue view "$ticket_item" --json state --jq .state 2>/dev/null) \
+        || { close_failed=1; continue; }
+      [[ "$ticket_state" != "CLOSED" ]] || continue
+      if __dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
+        __dx_ticket_branch_gh "$repo_dir" issue close "$ticket_item" --reason completed \
+        --comment "Closed by Dex: ${pr_label} merged (ticket_close: on_merge)." >/dev/null 2>&1; then
+        dx_info "Closed #${ticket_item}: ${pr_label} merged (ticket_close: on_merge)."
+      else
+        close_failed=1
+      fi
+    done < <(__dx_ticket_close_item_list "$ticket_items")
+    if [[ "$close_failed" -ne 0 ]]; then
+      dx_warn "Could not close every ticket in ${ticket_items}; the next dx run or dxclean tries again (ticket_close: on_merge)."
+      return 1
+    fi
+  else
+    dx_info "${pr_label} merged: move ${ticket_items} to Done in your tracker (ticket_close: on_merge)."
+  fi
+  __dx_ticket_close_settled "$sid"
+}
+
+# __dx_ticket_close_settled <session-id>
+# Drop a settled ticket close. A record that was only kept for it (the
+# worktree went at completion, so the .meta holds nothing else) goes with it.
+__dx_ticket_close_settled() {
+  local sid="$1"
+  __dx_ticket_close_clear "$sid"
+  if [[ -z "$(dx_meta_read "$sid" teardown_deferred)" && -z "$(dx_meta_read "$sid" wt_dir)" ]]; then
+    dx_cleanup_session "$sid" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
+# dx_ticket_close_record_match <repo-root> <selector>
+# The session ID of the one pending ticket close in this repository that is
+# all that is left of its lifecycle (its worktree went at completion) and
+# whose session ID or workspace name is <selector>. The session catalog does
+# not list such a record, so `dx sessions forget` looks it up here. Returns 1
+# when none or more than one matches.
+dx_ticket_close_record_match() {
+  local repo_root="$1" selector="$2" sid wt_name wt_dir workspace_mode branch deferral ticket_pending
+  local match_sid="" match_count=0
+  [[ -n "$selector" ]] || return 1
+  while IFS=$'\037' read -r sid wt_name wt_dir workspace_mode branch deferral ticket_pending; do
+    [[ "$ticket_pending" == "on_merge" && -z "$wt_dir" && -z "$deferral" ]] || continue
+    [[ "$sid" == "$selector" || "$wt_name" == "$selector" ]] || continue
+    match_sid="$sid"
+    match_count=$((match_count + 1))
+  done < <(dx_teardown_deferred_list "$repo_root")
+  [[ "$match_count" -eq 1 ]] || return 1
+  printf '%s\n' "$match_sid"
+}
+
+# dx_ticket_close_forget <session-id>
+# Drop a pending ticket close without closing anything, and the record with it.
+dx_ticket_close_forget() {
+  local sid="$1"
+  [[ -n "$sid" ]] || return 1
+  __dx_ticket_close_clear "$sid" || return 1
+  dx_cleanup_session "$sid"
 }

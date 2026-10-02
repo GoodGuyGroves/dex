@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # shellcheck disable=SC2034  # read by lib/common.sh while it is sourced
-DX_COMMON_MODULES="lock git session completion session-runtime session-catalog output review lifecycle-control session-management"
+DX_COMMON_MODULES="lock git session completion session-runtime session-catalog output review lifecycle-control session-management teardown"
 source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh"
 
 usage() {
@@ -35,7 +35,8 @@ Commands:
       Relaunch one verified dead lifecycle in the current repository.
 
   forget <selector>
-      Forget one verified dead lifecycle in the current repository.
+      Forget one verified dead lifecycle in the current repository, or drop
+      a pending ticket close (ticket_close: on_merge) left after its worktree.
 
   cleanup [--dry-run]
       Remove every verified completed lifecycle in the current repository.
@@ -985,6 +986,23 @@ __dx_sessions_forget() {
     dx_error "dx sessions forget requires one selector."
     usage >&2
     return 1
+  fi
+
+  # A pending ticket close whose worktree went at completion (ticket_close:
+  # on_merge) is not a session, so the catalog does not list it. Forget it
+  # by session ID or name when no session matches.
+  if repo_root=$(dx_session_repo_root 2>/dev/null) \
+    && session_id=$(dx_ticket_close_record_match "$repo_root" "$selector_value"); then
+    cleanup_result=0
+    dx_session_catalog_select "$selector_value" --repo "${PWD:-.}" >/dev/null 2>&1 || cleanup_result=$?
+    if [[ "$cleanup_result" -eq 1 ]]; then
+      if dx_ticket_close_forget "$session_id"; then
+        dx_done "Dropped the pending ticket close of ${session_id}; no ticket was closed."
+        return 0
+      fi
+      dx_error "Could not drop the pending ticket close of ${session_id}."
+      return 1
+    fi
   fi
 
   selected_record=$(__dx_sessions_select_current "$selector_value" 0) || return $?
