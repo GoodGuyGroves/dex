@@ -228,16 +228,17 @@ check query failed: report it and treat the cycle as idle, never as green.
 
 Case A requires `CI_STATE` green, `GATE_RC` 0, `THREADS_RC` 0, and no
 unresolved actionable feedback. Threads `dx_pr_threads_open` reports as
-`reported` do not count against it. It applies regardless of whether there is a review, an approval, or
-a `REVIEW_REQUIRED` merge decision. Request and mention rows only route
+`reported` do not count against it. It applies regardless of whether there is
+a review, an approval, or a `REVIEW_REQUIRED` merge decision. Request and mention rows only route
 notifications; only `wait: yes` adapter rows hold completion, through the gate.
 Substantive comments should already have been addressed via `/dxprreview`,
 whose replies resolve or leave open each thread by the project's `thread_policy`.
 
 List every waited reviewer from `REVIEWER_WAITS` in the completion summary
-with its state on the head commit. List every `reported` thread under
-**Disagreements left open for the maintainer**, or say there are none. A `timeout` or `unavailable` reviewer is
-reported as "not reviewed" with its detail, never as a clean review.
+with its state on the head commit. A `timeout` or `unavailable` reviewer is
+reported as "not reviewed" with its detail, never as a clean review. List every
+`reported` thread under **Disagreements left open for the maintainer**, or say
+there are none.
 
 Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
 
