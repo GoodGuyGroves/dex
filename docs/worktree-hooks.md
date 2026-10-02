@@ -34,7 +34,7 @@ which hooks it answers; exiting 0 for one it has nothing to do for is fine.
 | Key | When Dex runs it |
 |-----|------------------|
 | `after_create` | Once, right after a new worktree is created and its shared caches are linked. Not on resume — an existing worktree was already stood up. |
-| `before_remove` | Before a worktree is removed, on every removal path Dex has. |
+| `before_remove` | Before a worktree is removed, on every removal path Dex has. It runs after the [teardown check](worktree-teardown.md), so a worktree that check keeps is not torn down. |
 | `on_session_end` | When a provider session ends — which in a lifecycle is once per phase, not once per ticket. It runs before the session reaps its processes, so whatever the hook starts is reaped with the rest. |
 | `orphan_resources` | On demand, by `dx worktree audit` and by `dxclean`. It prints one orphan per line and removes nothing. Scope what it enumerates to `DX_REPO_ROOT`: the live-worktree guard is checkout-scoped, so a probe that names another checkout's resources would offer them for teardown. |
 
