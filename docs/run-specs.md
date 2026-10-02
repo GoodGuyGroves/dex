@@ -122,11 +122,18 @@ Optional fields:
 | `workflow.requires_plan_approval` | Defaults to `true`. When `false`, the run spec authorizes Phase 1 after plan quality checks pass. |
 | `workflow.requires_ui_evidence` | `auto`, `always`, `never`, `true`, or `false`. |
 | `workflow.ticket_close` | `on_complete`, `on_merge`, or `never`: when Phase 6 moves the ticket to Done. Overrides `ticket_close` in the project's `.dex/dex.md` and an inherited `DEX_TICKET_CLOSE`; absent leaves the project setting in charge. Any other value fails validation. See [Ticket close](worktree-teardown.md#ticket-close). |
+| `workflow.auto_init` | Defaults to `false`. When `true`, a run in a repository without `.dex/` sets it up, without the commit-msg attribution hooks or the PR template. Without it, such a run stops with an error. |
 | `sync.factory_url` | Enables Factory event sync unless `DEX_FACTORY_SYNC` disables it. |
 | `sync.events_endpoint` | Exact event endpoint. Takes precedence over `sync.factory_url`. |
 
 Dex rejects keys whose names look like secrets, including token, secret,
 password, credential, and API-key fields.
+
+**Behaviour change: auto-init.** A run in a repository without `.dex/` used to
+set it up silently, with the commit-msg attribution hooks and a PR template.
+It now stops with an error unless the spec sets `workflow.auto_init: true`, the
+environment sets `DEX_AUTO_INIT=1`, or the repository runs `dx init` first. See
+[Auto-init](reference.md#auto-init).
 
 ## Runtime Behavior
 
