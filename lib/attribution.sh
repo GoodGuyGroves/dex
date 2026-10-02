@@ -98,12 +98,15 @@ dx_attribution_pr_template_enabled() { [[ "$(dx_attribution_setting "$1" pr_temp
 dx_attribution_pr_models_enabled() { [[ "$(dx_attribution_setting "$1" pr_models)" == "true" ]]; }
 
 # The model the provider configuration selects, or nothing when it leaves the
-# choice to the CLI's own default. Run in a subshell: dx_provider_apply sets
-# shell variables that must not leak into the caller.
+# choice to the CLI's own default. Under CCR the configured value is a router
+# alias such as `dex/active`, not a model, so it is not an answer. Run in a
+# subshell: dx_provider_apply sets shell variables that must not leak.
 __dx_attribution_configured_model() {
   (
     dx_provider_apply >/dev/null 2>&1 || exit 0
-    if [[ "${DX_PROVIDER_ENGINE:-}" == "codex-plugin" ]]; then
+    if [[ "${DX_PROVIDER_ENGINE:-}" == "ccr" ]]; then
+      exit 0
+    elif [[ "${DX_PROVIDER_ENGINE:-}" == "codex-plugin" ]]; then
       printf '%s\n' "${DX_CODEX_MODEL:-}"
     else
       printf '%s\n' "${DX_CLAUDE_MODEL:-}"
