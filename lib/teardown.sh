@@ -4,7 +4,7 @@
 # A worktree is removed only after anything git would lose with it has been
 # copied out (teardown_untracked: rescue) or the removal has been refused
 # (teardown_untracked: refuse). A lifecycle branch is deleted only when no
-# commit on it would become unreachable. See docs/worktree-teardown.md.
+# commit on it would become unreachable. See $DEX_DIR/docs/worktree-teardown.md.
 
 # dx_teardown_setting <repo-dir> <key>
 # Print the validated value of one `## Worktree Teardown` setting.

@@ -391,7 +391,7 @@ __dx_wt_repo_root() {
 # a new removal path can forget to call is a teardown that eventually does not
 # run. repo_root is derived from the path when the caller does not pass it.
 #
-# The teardown gate (lib/teardown.sh) runs first, for the same reason: it
+# The teardown gate ($DEX_DIR/lib/teardown.sh) runs first, for the same reason: it
 # rescues untracked files and uncommitted edits, or refuses, before anything is
 # deleted. Returns 3 when the gate refused, 1 when a rescue failed; in both
 # cases the worktree, its branch and the before_remove hook are left alone.

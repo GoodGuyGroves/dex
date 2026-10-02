@@ -5728,7 +5728,7 @@ dxclean() {
     echo "worktree_teardown: on_merge whose pull request has merged. Worktrees"
     echo "kept for a merge or for the caller are skipped. A branch that holds"
     echo "commits nothing else does is kept, and removal still rescues or"
-    echo "refuses per teardown_untracked (docs/worktree-teardown.md)."
+    echo "refuses per teardown_untracked (\$DEX_DIR/docs/worktree-teardown.md)."
     echo ""
     echo "Then report what sessions that are gone have left on this host: their"
     echo "temp roots and process tokens, the browser profiles Dex minted inside"

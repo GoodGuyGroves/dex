@@ -132,7 +132,7 @@ ticket_prefixes: [ENG, OPS]
 ## Worktree Teardown
 
 ```yaml
-# Optional; see docs/worktree-teardown.md. Defaults shown.
+# Optional; see $DEX_DIR/docs/worktree-teardown.md. Defaults shown.
 worktree_teardown: on_complete        # or on_merge, or caller (the launcher runs dxrm)
 teardown_untracked: rescue            # or refuse
 delete_remote_branch_on_merge: false
