@@ -199,8 +199,9 @@ dx_pr_apply_label_rules "$PR_NUM" "$(pwd)" || LABEL_RC=$?
 The helper only adds labels. It never removes one or creates one the
 repository lacks, and a project without rules gets no `gh` call. Record a
 `Labels:` line in the Phase 5 summary listing the labels added. Copy any
-warning the helper printed: a label the repository does not have (`1`) or a
-malformed rule set that applied nothing (`2`). A warned label does not block
+warning the helper printed: a label the repository does not have or a list of
+changed files it could not read (`1`), or a malformed rule set that applied
+nothing (`2`). A warned label does not block
 Phase 5.
 
 ### 5. Attach Request-Type Reviewers

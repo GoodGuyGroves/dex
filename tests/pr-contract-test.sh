@@ -225,10 +225,18 @@ assert_eq ".github/ci.yml child.md moved-ci.yml parent.txt " \
 assert_eq ".github/ci.yml child.md moved-ci.yml parent.txt " \
   "$(GH_STUB_BASE='--upload-pack=x' changed_list 7)" "option-like base is ignored"
 
-# No `## Pull Requests` section: nothing is computed and gh is never called.
+# No .dex/dex.md, then a dex.md without `## Pull Requests`: nothing is
+# computed and gh is never called.
 : > "$GH_LOG"
 dx_pr_apply_label_rules 7 "$WORK" >/dev/null 2>&1 || assert_at $LINENO
 [[ ! -s "$GH_LOG" ]] || assert_at $LINENO
+mkdir -p "$WORK/.dex"
+printf '# Project\n\n## Resources\n\n```yaml\nfull_gate: local\n```\n' > "$WORK/.dex/dex.md"
+dx_pr_apply_label_rules 7 "$WORK" >/dev/null 2>&1 || assert_at $LINENO
+[[ ! -s "$GH_LOG" ]] || assert_at $LINENO
+RC=0
+dx_project_pr_template "$WORK" >/dev/null 2>&1 || RC=$?
+[[ "$RC" == 1 ]] || assert_at $LINENO
 
 write_contract "$WORK" 'labels_when:
   - ".github/** => skip-ci"
