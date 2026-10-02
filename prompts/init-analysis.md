@@ -94,6 +94,10 @@ full_gate: local  # or ci: the PR stays a draft and CI is the gate Phase 6 fixes
 # The one check whose success means CI is green, for repositories without
 # required status checks; Phase 6 treats it as pending until it passes.
 readiness_check: [roll-up check name]
+# Optional. How /dxprreview closes review threads: keep-disagreements-open (the
+# default) leaves Dex's disagreements open for the merger and reacts on bot
+# comments; resolve-all resolves every thread Dex answers, with no reactions.
+thread_policy: keep-disagreements-open
 # Review-tier derivation: extra sensitive globs, the size bounds for `trivial`
 # and for a broad change, and the diff size above which thorough may use scouts.
 review_sensitive_paths: ["**/migrations/**", "**/auth*"]

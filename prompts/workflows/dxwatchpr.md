@@ -139,30 +139,21 @@ the reviewer gate when a Greptile reviewer row exists.
 ```bash
 dx_watch_run_command "$SESSION_ID" gh api "repos/$REPO/pulls/$PR_NUM/reviews"
 dx_watch_run_command "$SESSION_ID" gh api "repos/$REPO/pulls/$PR_NUM/comments"
-dx_watch_run_command "$SESSION_ID" gh api graphql --paginate \
-  -f owner="${REPO%%/*}" \
-  -f name="${REPO#*/}" \
-  -F number="$PR_NUM" \
-  -f query='
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100, after: $endCursor) {
-        nodes {
-          id
-          isResolved
-          comments(first: 100) { nodes { id } }
-        }
-        pageInfo { hasNextPage endCursor }
-      }
-    }
-  }
-}'
+THREADS_RC=0
+OPEN_THREADS=$(dx_pr_threads_open "$SESSION_ID" "$REPO" "$PR_NUM") || THREADS_RC=$?
 ```
+
+`OPEN_THREADS` lists each unresolved review thread, ending in `reported` or
+`open`. A `reported` thread is a disagreement Dex already answered and left open
+under the default `thread_policy`; it is not an unaddressed comment, so do not
+hand it to `/dxprreview` again. It becomes `open` when the reviewer replies after
+Dex, and then it needs a new decision. A non-zero `THREADS_RC` means the thread
+state is unknown: report it and keep watching.
 
 ### 4. Address Comments
 
-If there are unaddressed comments (comments not yet replied to or resolved):
+If there are unaddressed comments (comments not yet replied to or resolved, and
+`open` threads; `reported` threads are already answered):
 
 Run `/dxprreview` to critically evaluate and respond to each comment. `dxprreview` replies inline by default and does not pause to ask how replies should be delivered.
 
@@ -171,7 +162,7 @@ Run `/dxprreview` to critically evaluate and respond to each comment. `dxprrevie
 - Critically evaluate whether to fix, push back, answer, or escalate
 - Implement and push fixes for accepted comments
 - Reply to every comment inline with reasoning
-- Resolve each inline review thread after replying when the reply clearly closes the comment
+- Resolve or leave open each inline review thread by the project's `thread_policy` (disagreements stay open under the default)
 - Return a list of escalations (if any)
 
 If `/dxprreview` reports escalations, proceed to Step 7 (Escalation).
@@ -221,8 +212,8 @@ REVIEW_STATE=$(dx_maintenance_pr_review_state "$REVIEW_DECISION") || REVIEW_STAT
 The review state does not gate Phase 6. `review-required`, a pending reviewer
 request, no submitted review, and no approval are all valid handoff states.
 `changes-requested` triggers another check for actionable feedback, but a stale
-formal decision does not block after the feedback is handled and clear threads
-are resolved. An unknown value or query failure is reported, while the separate
+formal decision does not block after the feedback is handled and threads are
+resolved or left open by the project's `thread_policy`. An unknown value or query failure is reported, while the separate
 review/comment/thread queries must still succeed before feedback can be called
 resolved. Copilot's default `COMMENTED` review does not block completion; an
 `APPROVED` Copilot review is reported and may satisfy GitHub's merge rule when
@@ -239,14 +230,16 @@ REVIEWER_WAITS=$(dx_reviewer_gate "$SESSION_ID" "$(git rev-parse --show-toplevel
 yet. Its comments may still arrive, so the watcher must keep running. `GATE_RC`
 3 means the PR head could not be read; report it and keep watching.
 
-**CI green, `GATE_RC` 0, and no actionable comments or review threads remain
-unresolved, regardless of review or approval state:**
+**CI green, `GATE_RC` 0, `THREADS_RC` 0, and no actionable comments or `open`
+review threads remain, regardless of review or approval state (`reported`
+disagreement threads do not count):**
 1. Cancel the PR monitoring loop: use `CronDelete` with the job ID.
 2. Report:
    - Total checks: X (all passed)
    - Total reviews: X (Y approved, Z with comments)
    - Comments addressed: N
    - Source breakdown: automated vs human
+   - Disagreements left open for the maintainer: each `reported` thread's URL and reviewer, or none
 3. Proceed to `/dxcomplete` so Phase 6 can run final verification, close the ticket, and end the session.
 
 Invoke the `humanizer` skill on any free-form PR comments or status prose before publishing or printing them. Preserve reviewer handles, check names, counts, SHAs, and commands exactly.

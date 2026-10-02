@@ -126,7 +126,7 @@ Launch the PR watcher loop if it isn't already running. `/loop` is a built-in Cl
 /loop 5m /dxwatchpr
 ```
 
-This runs between turns and won't consume context. `/dxwatchpr` checks CI status, fixes CI failures when appropriate, reads review comments, hands them to `/dxprreview`, pushes fixes, replies inline, and resolves review threads when Dex's reply closes the comment.
+This runs between turns and won't consume context. `/dxwatchpr` checks CI status, fixes CI failures when appropriate, reads review comments, hands them to `/dxprreview`, pushes fixes, replies inline, and resolves or leaves open each review thread by the project's `thread_policy`.
 
 If the user sends a direct prompt while Phase 6 is active, the `UserPromptSubmit` hook writes a watcher-pause marker. Scheduled `/dxwatchpr` invocations must no-op while that marker is active and must not run GitHub/CI commands. Running `/dxcomplete` or explicitly asking to resume watchers clears the marker. The default pause TTL is `60m 0s`.
 
@@ -184,22 +184,22 @@ source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
 REVIEW_STATE=$(dx_maintenance_pr_review_state "$REVIEW_DECISION") || REVIEW_STATE=unknown
 gh api repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/$PR_NUM/reviews
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api graphql --paginate \
-  -f owner="${REPO%%/*}" \
-  -f name="${REPO#*/}" \
-  -F number="$PR_NUM" \
-  -f query='
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100, after: $endCursor) {
-        nodes { id isResolved }
-        pageInfo { hasNextPage endCursor }
-      }
-    }
-  }
-}'
+THREADS_RC=0
+OPEN_THREADS=$(dx_pr_threads_open "$SESSION_ID" "$REPO" "$PR_NUM") || THREADS_RC=$?
+# One line per unresolved review thread: thread id, root comment id, root
+# author, URL, then `reported` or `open`.
 ```
+
+`dx_pr_threads_open` marks a thread `reported` when Dex's reply carrying the
+disagreement marker is its last comment. Under the default `thread_policy`
+(`keep-disagreements-open`) Dex leaves those threads open on purpose so the
+person who merges the PR sees them. A `reported` thread is never actionable
+feedback: do not hand it back to `/dxprreview` and do not let it hold Phase 6
+open. List each one in the completion summary under **Disagreements left open
+for the maintainer**, with its URL and the reviewer. An `open` thread is
+unresolved feedback for the normal rules below. A non-zero `THREADS_RC` means
+the thread state is unknown: report it and treat the cycle as idle, never as
+resolved.
 
 Use `REVIEW_STATE` for reporting and feedback routing, not as a completion gate:
 
@@ -226,15 +226,17 @@ check query failed: report it and treat the cycle as idle, never as green.
 
 ### Case A — CI green, waited reviewers finished, and actionable review feedback is resolved
 
-Case A requires `CI_STATE` green, `GATE_RC` 0, and no unresolved actionable
-feedback. It applies regardless of whether there is a review, an approval, or
+Case A requires `CI_STATE` green, `GATE_RC` 0, `THREADS_RC` 0, and no
+unresolved actionable feedback. Threads `dx_pr_threads_open` reports as
+`reported` do not count against it. It applies regardless of whether there is a review, an approval, or
 a `REVIEW_REQUIRED` merge decision. Request and mention rows only route
 notifications; only `wait: yes` adapter rows hold completion, through the gate.
 Substantive comments should already have been addressed via `/dxprreview`,
-with clear review threads resolved after Dex replies.
+whose replies resolve or leave open each thread by the project's `thread_policy`.
 
 List every waited reviewer from `REVIEWER_WAITS` in the completion summary
-with its state on the head commit. A `timeout` or `unavailable` reviewer is
+with its state on the head commit. List every `reported` thread under
+**Disagreements left open for the maintainer**, or say there are none. A `timeout` or `unavailable` reviewer is
 reported as "not reviewed" with its detail, never as a clean review.
 
 Update the ticket (if a tracker is configured — see `dex.md § Integrations`). Print the completion summary (per `skills/dxcomplete/SKILL.md`, the Print Summary step). Cycle is done — proceed to Termination.
@@ -343,7 +345,10 @@ or `/dxcomplete` to resume completion.
   commit, timed out, or unavailable, and the summary reports each one; a
   timeout is reported as not reviewed
 - `dx_complete_ci_state` reports green (with `readiness_check`, that check
-  passed), no actionable review feedback remains unresolved,
+  passed), no actionable review feedback remains unresolved
+  (`dx_pr_threads_open` succeeded and lists no `open` thread that still needs a
+  decision; `reported` disagreement threads are listed in the summary under
+  **Disagreements left open for the maintainer** and do not block),
   and the ticket is marked Done if a tracker is configured. A missing review,
   pending request, absent approval, or `REVIEW_REQUIRED` merge decision does not
   block Phase 6. Report merge-review state in the maintainer handoff.

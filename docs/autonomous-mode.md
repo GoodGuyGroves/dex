@@ -351,6 +351,27 @@ partly registered check list can look green; declare the roll-up check in the
 `## Resources` block of `.dex/dex.md` (`readiness_check: <check name>`) and
 Phase 6 treats CI as green only when that check has passed.
 
+How `/dxprreview` closes review threads is the `thread_policy` key in the same
+`## Resources` block. The key is optional:
+
+- `keep-disagreements-open` (the default) resolves a thread after a fix or an
+  answer and adds 👍 on bot comments. When Dex disagrees, it replies with its
+  reasoning, adds 👎 on bot comments, and leaves the thread open so the person
+  who merges the PR sees it. On a Greptile comment, Dex's first reply in the
+  thread starts with the Greptile handle so Greptile re-reads the thread.
+  Phase 6 lists these threads under "Disagreements left open for the
+  maintainer" in the completion summary. They do not block completion.
+- `resolve-all` keeps the behaviour from before the policy existed: Dex
+  resolves every thread it has a clear answer for, disagreements included,
+  and adds no reactions.
+
+Reactions go only on bot comments, because bots such as Greptile and Copilot
+learn from them. Under the default policy, Dex also clears a pending
+(unsubmitted) review by the authenticated user before replying, because it
+hides Dex's replies. First it saves the review body and every draft comment to
+`pending-review-<id>.json` in the run's artifacts. If it cannot save them, it
+keeps the review. The helpers are in `lib/pr-threads.sh`.
+
 GitHub Copilot submits `COMMENTED` reviews by default. Its public-preview
 auto-approval can submit `APPROVED` reviews, and a separate policy decides
 whether those approvals satisfy merge requirements. Dex reports either state

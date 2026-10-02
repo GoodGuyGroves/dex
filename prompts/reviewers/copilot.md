@@ -53,5 +53,6 @@ an approval unless the repository allows Copilot approvals.
 
 Its inline comments are review feedback for `/dxprreview`. Copilot does not
 read replies to its comments, so a reply is for the humans reading the PR.
-👍 and 👎 reactions on its comments are its feedback channel. How threads are
-replied to and resolved is the review-thread policy (issue #12).
+👍 and 👎 reactions on its comments are its feedback channel. Under the
+default `thread_policy` (`keep-disagreements-open`), `dx_pr_thread_respond` adds
+them. See `/dxprreview` Step 6 for the policy table.

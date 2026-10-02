@@ -51,8 +51,32 @@ assert_contains 'no reviewer row has `wait: yes`' "$PHASE6"
 # The watcher must not cancel itself before waited reviewers report.
 assert_contains 'dx_complete_ci_state' "$WATCH"
 assert_contains 'dx_reviewer_gate' "$WATCH"
-assert_contains 'CI green, `GATE_RC` 0, and no actionable comments' "$WATCH"
+assert_contains 'CI green, `GATE_RC` 0, `THREADS_RC` 0, and no actionable comments' "$WATCH"
 assert_contains 'dx_reviewer_comment "$SESSION_ID" "$PR_NUM" "Updated:' "$WATCH"
+
+# The review-thread policy: /dxprreview replies through the helper, clears a
+# stray pending review only after saving it, and Phase 6 reads open threads
+# through the helper, reports disagreements and never blocks on them.
+REVIEW="$ROOT/prompts/workflows/dxprreview.md"
+assert_contains 'dx_pr_thread_policy' "$REVIEW"
+assert_contains 'dx_pr_thread_respond' "$REVIEW"
+assert_contains 'dx_pr_pending_review_clear' "$REVIEW"
+assert_contains 'draft-comment count and backup file path' "$REVIEW"
+assert_contains '**Left open for the maintainer (disagreements):**' "$REVIEW"
+assert_not_contains 'resolveReviewThread' "$REVIEW"
+for doc in "$PHASE6" "$COMPLETE" "$WATCH"; do
+  assert_contains 'dx_pr_threads_open "$SESSION_ID" "$REPO" "$PR_NUM"' "$doc"
+  assert_contains 'Disagreements left open for the maintainer' "$doc"
+  assert_contains 'THREADS_RC' "$doc"
+  assert_not_contains 'reviewThreads(first: 100' "$doc"
+done
+for doc in "$GREPTILE" "$COPILOT"; do
+  assert_contains 'thread_policy' "$doc"
+  assert_contains 'dx_pr_thread_respond' "$doc"
+  assert_not_contains 'issue #12' "$doc"
+done
+assert_contains 'thread_policy: keep-disagreements-open' "$ROOT/prompts/init-analysis.md"
+assert_contains '`thread_policy`' "$ROOT/docs/autonomous-mode.md"
 
 # Adapter bots post under their own logins; their comments are feedback.
 assert_contains 'dx_reviewer_adapter_logins' "$ROOT/prompts/workflows/dxprreview.md"

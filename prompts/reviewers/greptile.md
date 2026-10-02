@@ -77,6 +77,7 @@ as its mention handle. Its inline comments and the "Prompt to fix all with AI"
 section of its summary are review feedback for `/dxprreview`.
 
 Greptile learns from reactions: 👍 on a comment that led to a fix, 👎 on one
-that was wrong. How threads are replied to and resolved is the review-thread
-policy (issue #12); this adapter only notes that reactions are its feedback
-channel.
+that was wrong. Under the default `thread_policy` (`keep-disagreements-open`),
+`dx_pr_thread_respond` adds them, and starts Dex's first disagreement reply in a
+thread with the Greptile handle so Greptile re-reads the thread. See
+`/dxprreview` Step 6 for the policy table.
