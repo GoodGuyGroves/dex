@@ -16,7 +16,7 @@ discarding useful history. End the phase summary with the contract's exact
 
 ## Step 1: PR description
 
-Resolve the active template with `prompts/pr-template-resolution.md`, the same
+Resolve the active template with `$DEX_DIR/prompts/pr-template-resolution.md`, the same
 resolution `dxpr` used, and confirm the summary has its `PR template:` line.
 
 Read the PR description you generated and check, whatever the template:

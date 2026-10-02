@@ -117,8 +117,8 @@ assert_contains 'automatic attachment' "$ROOT/prompts/phase-audits/5-pr.md"
 assert_contains 'warned local handoff' "$ROOT/prompts/phase-audits/5-pr.md"
 # One definition of the active PR template, used by both the writer and the
 # audit; the default-template questions apply only to the default template.
-assert_contains 'pr-template-resolution.md' "$ROOT/prompts/workflows/dxpr.md"
-assert_contains 'pr-template-resolution.md' "$ROOT/prompts/phase-audits/5-pr.md"
+assert_contains '$DEX_DIR/prompts/pr-template-resolution.md' "$ROOT/prompts/workflows/dxpr.md"
+assert_contains '$DEX_DIR/prompts/pr-template-resolution.md' "$ROOT/prompts/phase-audits/5-pr.md"
 assert_contains 'dx_pr_apply_label_rules' "$ROOT/prompts/workflows/dxpr.md"
 assert_contains 'dx_pr_apply_label_rules' "$ROOT/prompts/phase-audits/5-pr.md"
 assert_contains 'dx_project_pr_template' "$ROOT/prompts/pr-template-resolution.md"
