@@ -248,7 +248,9 @@ def layers(cwd, root=None, registry=None, home=None, config_dir=None):
     shared = {}
     if common and os.path.basename(common) == ".git":
         shared = _object(projects.get(os.path.dirname(common))) or {}
-    here = _object(projects.get(cwd)) or _object(projects.get(root)) or {}
+    here = _object(projects.get(cwd))
+    if here is None:
+        here = _object(projects.get(root)) or {}
     available = {}
     for layer in (_servers(_read(registry), "mcpServers") if registry else {},
                   _servers(user, "mcpServers"), _servers(project, "mcpServers"),

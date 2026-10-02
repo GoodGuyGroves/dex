@@ -134,8 +134,8 @@ Codex launches ignore `## MCP`. Codex has no equivalent of
 `dx status` lists, under Project, what each phase and review waves load: the
 servers that resolve, any that are missing or disabled, and whether a value
 came from the block, from `default` or from the built-in table. `dx doctor`
-warns about missing, disabled and ignored entries for the repository it runs
-in.
+lists the same rows for the repository it runs in and warns about each
+missing, disabled and ignored entry.
 
 An unknown key, an invalid server name, or a block that is not a flat mapping
 is reported and ignored. The phases it would have set fall back as if it were
@@ -149,8 +149,9 @@ A list phase's configuration is written for that launch only. It is a private
 returns, and the launch-settings sweep removes one a killed launch left behind.
 It copies the selected server entries, including any headers or environment
 they carry, from the user's own configuration. Dex reads that configuration
-and never writes to it. Review waves use one such file per session in Dex's
-loop directory, and session cleanup removes it.
+and never writes to it. A `review_waves` list writes one such file per review
+loop in the same directory, removed when the loop exits and collected by the
+same sweep.
 
 The resolver is `scripts/mcp-scope.py`. `dx context scope` uses the same
 selection code, through `scripts/ccr/mcp-scope.cjs`.

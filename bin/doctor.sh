@@ -358,6 +358,11 @@ if [[ -n "$DOCTOR_REPO" ]] && dx_mcp_declared "$DOCTOR_REPO"; then
       doctor_kind="${doctor_line%%$'\t'*}"
       doctor_rest="${doctor_line#*$'\t'}"
       case "$doctor_kind" in
+        phase)
+          doctor_key="${doctor_rest%%$'\t'*}"
+          [[ "$doctor_key" == review_waves ]] && doctor_key="review waves"
+          printf '  %-14s%s\n' "${doctor_key}:" "${doctor_rest#*$'\t'}"
+          ;;
         missing|disabled)
           DOCTOR_MCP_PROBLEMS=$((DOCTOR_MCP_PROBLEMS + 1))
           if [[ "$doctor_kind" == missing ]]; then
@@ -373,7 +378,7 @@ if [[ -n "$DOCTOR_REPO" ]] && dx_mcp_declared "$DOCTOR_REPO"; then
       esac
     done <<< "$DOCTOR_MCP"
     if [[ "$DOCTOR_MCP_PROBLEMS" -eq 0 ]]; then
-      dx_ok "Every server ## MCP names resolves ('dx status' lists them per phase)."
+      dx_ok "Every server ## MCP names resolves."
     fi
   else
     dx_warn "## MCP could not be resolved: ${DOCTOR_MCP##*$'\n'}"

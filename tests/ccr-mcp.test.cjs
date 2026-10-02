@@ -89,6 +89,15 @@ test('linked worktrees retain servers disabled in the main checkout', t => {
   assert.ok(result.summary.omitted.includes('github'));
 });
 
+test('an empty entry for the working directory hides the checkout root entry', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-mcp-empty-')); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const root = path.join(home, 'repo'), cwd = path.join(root, 'sub');
+  fs.mkdirSync(cwd, { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { a: { command: 'x' } }, projects: { [cwd]: {}, [root]: { disabledMcpServers: ['a'] } } }));
+  const result = scope({ enabled: true, include: ['a'] }, { home, cwd, root, env: {} });
+  assert.deepEqual(result.summary.selected, ['a']);
+});
+
 test('a scope reports names it cannot find or that are disabled, and refuses unreadable configuration', t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-mcp-missing-')); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { github: { url: 'https://github' }, off: { command: 'x', disabled: true } } }));

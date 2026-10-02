@@ -264,6 +264,23 @@ write_mcp 'review_waves: none'
 assert_eq "$EMPTY_FLAGS" "$(wave_flags)" "review_waves: none"
 [[ ! -e "$TMP_DIR/wave.json" ]] || assert_at $LINENO
 
+# A loop's file sits with the per-launch files, so the launch-settings sweep
+# covers it, and the loop's exit cleanup removes it.
+write_mcp 'review_waves: [memory]'
+(
+  # shellcheck source=lib/common.sh
+  source "$ROOT/lib/common.sh"
+  cd "$REPO"
+  wave_file=$(__dx_review_wave_mcp_file wave-sid)
+  [[ "$wave_file" == "$DX_LOOP_DIR/launch-settings/launch.review-wave-sid.json" ]] || assert_at $LINENO
+  review_mcp_flags=()
+  __dx_review_wave_mcp_flags "$REPO" "$DX_LOOP_DIR/empty-mcp.json" "$wave_file" 2>/dev/null
+  [[ -f "$wave_file" ]] || assert_at $LINENO
+  [[ "$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777)[2:])' "$DX_LOOP_DIR/launch-settings")" == 700 ]] || assert_at $LINENO
+  __dx_review_runtime_cleanup "$REPO" "" wave-sid "$REPO" "" "" 0 2>/dev/null
+  [[ ! -e "$wave_file" ]] || assert_at $LINENO
+)
+
 write_mcp 'default: none' 'plan: [github, ghost]' 'implement: inherit'
 (cd "$REPO" && python3 "$SCOPE" report "$REPO" "$REGISTRY") > "$TMP_DIR/report"
 assert_eq "$(printf 'phase\tplan\tgithub (missing: ghost)')" "$(grep '^phase.plan' "$TMP_DIR/report")" "plan row"
@@ -281,6 +298,8 @@ assert_contains "    review waves: none [built-in]" "$TMP_DIR/status.out"
 assert_contains "An inline launch loads its own phase's servers and every later phase's." "$TMP_DIR/status.out"
 (cd "$REPO" && bash "$ROOT/bin/doctor.sh") > "$TMP_DIR/doctor.out" 2>&1
 assert_contains "MCP (this repo):" "$TMP_DIR/doctor.out"
+assert_contains "  plan:         github (missing: ghost)" "$TMP_DIR/doctor.out"
+assert_contains "  review waves: none [built-in]" "$TMP_DIR/doctor.out"
 assert_contains "[warn]  plan lists 'ghost', which no Claude MCP configuration or Dex's registry defines." "$TMP_DIR/doctor.out"
 write_mcp 'plan: [github]' 'phases: x'
 (cd "$REPO" && bash "$ROOT/bin/status.sh") > "$TMP_DIR/status.out" 2>&1
