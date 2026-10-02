@@ -120,6 +120,19 @@ on_session_end: [exact command]    # release what the session alone held
 orphan_resources: [exact command]  # names `dx worktree audit` and `dxclean` hand back
 ```
 
+## Context Providers
+
+Optional. Include it only when the team has a memory or knowledge tool with a
+command-line search Dex can call.
+
+```yaml
+# One shell command each, run in the worktree; see $DEX_DIR/docs/context-providers.md.
+session_start: [exact command]  # recall printed after the ticket context
+phase_handoff: [exact command]  # recall for the phase being handed to ($DX_PHASE)
+timeout_seconds: 20             # stopped after this; 1-45
+max_chars: 8000                 # longest output injected; 200-32000
+```
+
 ## Tickets
 
 Optional. Include it only when the tracker's ticket IDs carry team prefixes,

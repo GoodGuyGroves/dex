@@ -28,7 +28,8 @@ source "$DEX_DIR/lib/common.sh"
 ```
 
 Sourcing `common.sh` automatically sources every other module in `lib/`:
-`agent-tools.sh`, `attribution.sh`, `codex.sh`, `completion.sh`, `dexcode.sh`,
+`agent-tools.sh`, `attribution.sh`, `codex.sh`, `completion.sh`,
+`context-providers.sh`, `dexcode.sh`,
 `events.sh`, `factory.sh`, `git.sh`, `lifecycle-control.sh`, `lock.sh`,
 `maintenance.sh`, `output.sh`, `project-state.sh`, `provider.sh`, `review.sh`,
 `review-controller.sh`, `review-loop.sh`, `review-policy.sh`, `rtk.sh`,

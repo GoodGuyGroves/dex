@@ -759,6 +759,12 @@ Long-running sessions (especially Phase 2) can trigger conversation compaction w
 
 Phases hand off inside the same interactive provider session. The Stop hook updates the phase state/config files, injects the next phase instructions, and blocks the stop so the agent keeps working without requiring `/exit` or a manual resume.
 
+A project can add its own recall to each handoff with a `phase_handoff` command
+under `## Context Providers` in `.dex/dex.md`. Dex runs it for the phase being
+handed to, also when `dx control` moves the lifecycle, and appends its output
+labelled as unverified. Review waves never receive it. See
+[context providers](context-providers.md).
+
 Phase 3 still gets independent review coverage because `/dxreviewloop` spawns
 fresh full-scope review waves and keeps prior review history outside each
 reviewer's context.
