@@ -150,7 +150,7 @@ setup_attribution_lifecycle() {
 LAUNCH_SESSION="$(dx_session_repo_key)-launched-attribution"
 setup_attribution_lifecycle "$LAUNCH_SESSION"
 assert_rejected "$LINENO" env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
-  bash "$CONTROL" done > "$TMP_DIR/launched-done-no-reason.out" 2>&1
+  bash "$CONTROL" "done" > "$TMP_DIR/launched-done-no-reason.out" 2>&1
 assert_contains "recorded as --source agent" "$TMP_DIR/launched-done-no-reason.out"
 assert_no_file "$(dx_lifecycle_control_file "$LAUNCH_SESSION")"
 assert_rejected "$LINENO" env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
@@ -160,11 +160,11 @@ assert_contains "--source human needs --quote" "$TMP_DIR/launched-human-no-quote
 assert_no_file "$(dx_lifecycle_control_file "$LAUNCH_SESSION")"
 assert_no_file "$(dx_override_file "$LAUNCH_SESSION")"
 assert_rejected "$LINENO" env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
-  bash "$CONTROL" done --source agent --quote "skip it" \
+  bash "$CONTROL" "done" --source agent --quote "skip it" \
   --reason "Baseline failures only" > "$TMP_DIR/launched-agent-quote.out" 2>&1
 assert_contains "--quote records a human's words" "$TMP_DIR/launched-agent-quote.out"
 assert_rejected "$LINENO" env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
-  bash "$CONTROL" done --source human --quote "$(printf 'two\tparts')" \
+  bash "$CONTROL" "done" --source human --quote "$(printf 'two\tparts')" \
   > "$TMP_DIR/launched-bad-quote.out" 2>&1
 assert_contains "--quote must be" "$TMP_DIR/launched-bad-quote.out"
 assert_no_file "$(dx_lifecycle_control_file "$LAUNCH_SESSION")"
@@ -179,7 +179,7 @@ grep -Fq $'waive\tverification.required-gates\twaived\tphase\t2\tagent\t0\tOnly 
 dx_cleanup_session "$LAUNCH_SESSION"
 
 setup_attribution_lifecycle "$LAUNCH_SESSION"
-env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" done \
+env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" "done" \
   --reason "Phase 2 work is complete and pushed" > "$TMP_DIR/launched-done.out"
 assert_eq "agent" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
   "launched done defaults to agent"
@@ -189,11 +189,11 @@ dx_cleanup_session "$LAUNCH_SESSION"
 # A Codex lifecycle has no DEX_LAUNCHED, but its phase loop marks it the same.
 setup_attribution_lifecycle "$LAUNCH_SESSION"
 assert_rejected "$LINENO" env -u DEX_LAUNCHED DEX_LOOP_ACTIVE=1 \
-  DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" done \
+  DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" "done" \
   > "$TMP_DIR/loop-done-no-reason.out" 2>&1
 assert_contains "recorded as --source agent" "$TMP_DIR/loop-done-no-reason.out"
 env -u DEX_LAUNCHED DEX_LOOP_ACTIVE=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
-  bash "$CONTROL" done --reason "Codex finished the phase" > "$TMP_DIR/loop-done.out"
+  bash "$CONTROL" "done" --reason "Codex finished the phase" > "$TMP_DIR/loop-done.out"
 assert_eq "agent" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
   "a phase-loop done defaults to agent"
 dx_cleanup_session "$LAUNCH_SESSION"
@@ -201,7 +201,7 @@ dx_cleanup_session "$LAUNCH_SESSION"
 QUOTE_RUN_ID="run_20261003T000000Z_1_q00ted00"
 dx_run_write_for_session "$LAUNCH_SESSION" "$QUOTE_RUN_ID"
 setup_attribution_lifecycle "$LAUNCH_SESSION"
-env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" done \
+env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" "done" \
   --source human --quote 'Skip verification, the "baseline" is known' \
   > "$TMP_DIR/launched-human-quote.out"
 assert_eq "terminal" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
@@ -235,14 +235,14 @@ dx_cleanup_session "$LAUNCH_SESSION"
 # Outside a launch the defaults are unchanged: a bare done is the human's.
 OUTSIDE_SESSION="$(dx_session_repo_key)-terminal-attribution"
 setup_attribution_lifecycle "$OUTSIDE_SESSION"
-env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" done \
+env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" "done" \
   > "$TMP_DIR/terminal-done.out"
 assert_eq "terminal" "$(dx_lifecycle_control_read "$OUTSIDE_SESSION" source)" \
   "terminal done defaults to human"
 assert_contains "marked done by human override" "$TMP_DIR/terminal-done.out"
 dx_cleanup_session "$OUTSIDE_SESSION"
 setup_attribution_lifecycle "$OUTSIDE_SESSION"
-env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" done \
+env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" "done" \
   --source human > "$TMP_DIR/terminal-human-no-quote.out"
 assert_eq "terminal" "$(dx_lifecycle_control_read "$OUTSIDE_SESSION" source)" \
   "a terminal human needs no quote"
