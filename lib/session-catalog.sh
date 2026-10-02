@@ -499,6 +499,7 @@ def parse_metadata(session_id, families):
         "session_role",
         "parent_session_id",
         "child_kind",
+        "ticket_close_pending",
     }
     values = {}
     for raw_line in text.splitlines():
@@ -564,6 +565,7 @@ def parse_metadata(session_id, families):
         "session_role": session_role,
         "parent_session_id": parent_session_id,
         "child_kind": child_kind,
+        "ticket_close_pending": values.get("ticket_close_pending") or None,
         **timestamps,
     }, "valid"
 
@@ -1102,6 +1104,16 @@ def build_records():
         ):
             continue
         metadata, metadata_health = parse_metadata(session_id, artifacts["families"])
+        # A lifecycle that completed under ticket_close: on_merge leaves only
+        # its pending ticket close behind (no workspace, no other state) for
+        # the merge sweep. That record is not a session.
+        if (
+            artifacts["families"] - {"completion-lock", "runtime-lock"} == {"meta"}
+            and metadata_health == "valid"
+            and metadata.get("ticket_close_pending")
+            and metadata.get("workspace") is None
+        ):
+            continue
         child_match = CHILD_RE.fullmatch(session_id)
         is_explicit_child = bool(
             child_match

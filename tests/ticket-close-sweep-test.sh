@@ -171,6 +171,9 @@ if grep -Eqv '^(ticket_close_[a-z_]+|wt_name|ticket_id|created_at|updated_at)=' 
   fail "the kept .meta holds more than the ticket close: $(cat "$(meta_file ticket-3)")"
 fi
 assert_eq 0 "$(issue_calls)" "completion closes nothing"
+# The kept record is not a session: dx sessions does not list it.
+dxz 'dx sessions list' >"$TMP_DIR/sessions" 2>&1 || true
+assert_not_contains "ticket-3" "$TMP_DIR/sessions"
 
 # 3a. Pull request still open: the sweep keeps the record and closes nothing.
 sweep >/dev/null 2>&1
