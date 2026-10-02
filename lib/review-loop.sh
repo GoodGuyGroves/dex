@@ -885,6 +885,34 @@ $(__dx_provider_prompt)"
 # Provider seam. These are one-line passthroughs, but tests redefine
 # __dx_claude to stand in for the provider CLI, so the loop calls them by name
 # rather than calling lib/provider.sh directly.
+# __dx_review_wave_mcp_flags <repo> <empty-config> <scoped-file> — set, in the
+# caller's scope, review_mcp_flags: the MCP flags every review wave launches
+# with. Waves launch with no MCP servers unless DEX_REVIEW_DISABLE_MCP=0. A
+# project's `review_waves` in `## MCP` names them instead, but a
+# DEX_REVIEW_DISABLE_MCP set in the environment still wins. The risk assessor
+# always launches with none and is not affected.
+__dx_review_wave_mcp_flags() {
+  local wave_repo="$1" wave_empty="$2" wave_file="$3" wave_mode=""
+  review_mcp_flags=()
+  rm -f "$wave_file"
+  if [[ -z "${DEX_REVIEW_DISABLE_MCP+x}" && -n "$wave_repo" ]] && dx_mcp_declared "$wave_repo"; then
+    if wave_mode=$(dx_mcp_review_wave_config "$wave_repo" "$wave_file"); then
+      case "$wave_mode" in
+        inherit) return 0 ;;
+        scoped)
+          review_mcp_flags=(--strict-mcp-config --mcp-config "$wave_file")
+          return 0
+          ;;
+      esac
+    else
+      dx_warn "Dex could not resolve review_waves from .dex/dex.md; review waves launch without MCP servers."
+    fi
+  fi
+  if [[ "${DEX_REVIEW_DISABLE_MCP:-1}" != "0" ]]; then
+    review_mcp_flags=(--strict-mcp-config --mcp-config "$wave_empty")
+  fi
+}
+
 __dx_claude() {
   dx_provider_claude "$@"
 }
@@ -1264,9 +1292,8 @@ No ticket, plan, or acceptance criteria were supplied by this wrapper. Treat pla
     return 1
   }
   assessment_mcp_flags=(--strict-mcp-config --mcp-config "$review_empty_mcp")
-  if [[ "${DEX_REVIEW_DISABLE_MCP:-1}" != "0" ]]; then
-  review_mcp_flags=("${assessment_mcp_flags[@]}")
-  fi
+  __dx_review_wave_mcp_flags "$repo_root" "$review_empty_mcp" \
+    "$DX_LOOP_DIR/${session_id}.review-mcp.json"
 
   # Finish an interrupted handoff before risk selection can reset old state or
   # launch another assessor. The retained pass must still match this checkout.

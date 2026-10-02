@@ -231,6 +231,34 @@ assert_eq "memory" "$(servers_of)" "review wave servers"
 write_mcp 'review_waves: inherit'
 assert_eq inherit "$(cd "$REPO" && python3 "$SCOPE" review-waves "$REPO" "$REGISTRY" "$OUT")" "review_waves inherit"
 
+# The review loop's flags for its waves.
+wave_flags() { # <env assignments…> — prints review_mcp_flags, one per line
+  (
+    # shellcheck source=lib/common.sh
+    source "$ROOT/lib/common.sh"
+    local review_mcp_flags=()
+    cd "$REPO"
+    for assignment in "$@"; do export "${assignment?}"; done
+    __dx_review_wave_mcp_flags "$REPO" "$DX_LOOP_DIR/empty-mcp.json" "$TMP_DIR/wave.json"
+    printf '%s\n' ${review_mcp_flags[@]+"${review_mcp_flags[@]}"}
+  )
+}
+EMPTY_FLAGS=$'--strict-mcp-config\n--mcp-config\n'"$DX_LOOP_DIR/empty-mcp.json"
+write_mcp 'plan: [github]'
+assert_eq "$EMPTY_FLAGS" "$(wave_flags)" "undeclared review waves keep the empty default"
+assert_eq "" "$(wave_flags DEX_REVIEW_DISABLE_MCP=0)" "DEX_REVIEW_DISABLE_MCP=0 still inherits"
+write_mcp 'review_waves: inherit'
+assert_eq "" "$(wave_flags)" "review_waves: inherit"
+assert_eq "$EMPTY_FLAGS" "$(wave_flags DEX_REVIEW_DISABLE_MCP=1)" "a set DEX_REVIEW_DISABLE_MCP beats review_waves"
+write_mcp 'review_waves: [memory, ghost]'
+wave_flags > "$TMP_DIR/wave.flags" 2> "$TMP_DIR/wave.err"
+assert_eq $'--strict-mcp-config\n--mcp-config\n'"$TMP_DIR/wave.json" "$(cat "$TMP_DIR/wave.flags")" "review_waves list"
+assert_contains "MCP (review waves): 'ghost' is not defined" "$TMP_DIR/wave.err"
+assert_eq "memory" "$(OUT="$TMP_DIR/wave.json" servers_of)" "the wave servers"
+write_mcp 'review_waves: none'
+assert_eq "$EMPTY_FLAGS" "$(wave_flags)" "review_waves: none"
+[[ ! -e "$TMP_DIR/wave.json" ]] || assert_at $LINENO
+
 write_mcp 'default: none' 'plan: [github, ghost]' 'implement: inherit'
 (cd "$REPO" && python3 "$SCOPE" report "$REPO" "$REGISTRY") > "$TMP_DIR/report"
 assert_contains $'phase\tplan\tlist\tproject\tgithub\tghost\t' "$TMP_DIR/report"
