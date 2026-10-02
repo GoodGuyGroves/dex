@@ -355,7 +355,9 @@ one `--plugin-dir` per plugin your repository's languages select. Nothing is reg
 wins over Dex's copy. `dx sync` only checks this tooling; `dx sync --bootstrap`
 installs it. `DEX_SKIP_TOOL_BOOTSTRAP=1` turns every install off. `dx config`
 can add a repository's `.mcp.json` servers to the registry (it asks, default
-no); it no longer copies them into `~/.claude/settings.json`. See
+no); it no longer copies them into `~/.claude/settings.json`. A project can
+name the MCP servers each lifecycle phase loads in a `## MCP` section of
+`.dex/dex.md` ([docs/mcp-phases.md](docs/mcp-phases.md)). See
 [docs/reference.md](docs/reference.md#per-launch-mcp-servers-and-plugins).
 
 Dex's hooks are launch-scoped. Every Claude session Dex starts gets them

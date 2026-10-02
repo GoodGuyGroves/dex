@@ -361,6 +361,7 @@ __dx_review_runtime_cleanup() {
         ;;
     esac
   fi
+  rm -f "$(__dx_review_wave_mcp_file "$session_id")" 2>/dev/null || true
   dx_review_lock_release_checked "$repo_root" "$lock_token" \
     2>/dev/null || true
   builtin cd "$invocation_dir" 2>/dev/null || true
@@ -882,6 +883,45 @@ After publishing the report (or completing the manual artifact interface above),
 $(__dx_provider_prompt)"
 }
 
+# __dx_review_wave_mcp_file <session-id> — the private configuration a
+# project's `review_waves` list writes for one review loop. It lives with the
+# per-launch files, so the launch-settings sweep collects one a killed loop
+# leaves behind; the loop's exit cleanup removes it otherwise, and
+# dx_cleanup_session spells the same path out for callers that load fewer
+# modules.
+__dx_review_wave_mcp_file() {
+  printf '%s/launch.review-%s.json\n' "$(__dx_provider_launch_settings_dir)" "$1"
+}
+
+# __dx_review_wave_mcp_flags <repo> <empty-config> <scoped-file> — set, in the
+# caller's scope, review_mcp_flags: the MCP flags every review wave launches
+# with. Waves launch with no MCP servers unless DEX_REVIEW_DISABLE_MCP=0. A
+# project's `review_waves` in `## MCP` names them instead, but a
+# DEX_REVIEW_DISABLE_MCP set in the environment still wins. The risk assessor
+# always launches with none and is not affected.
+__dx_review_wave_mcp_flags() {
+  local wave_repo="$1" wave_empty="$2" wave_file="$3" wave_mode=""
+  review_mcp_flags=()
+  rm -f "$wave_file"
+  if [[ -z "${DEX_REVIEW_DISABLE_MCP+x}" && -n "$wave_repo" ]] && dx_mcp_declared "$wave_repo"; then
+    if (umask 077 && mkdir -p "$(dirname "$wave_file")") \
+      && wave_mode=$(dx_mcp_review_wave_config "$wave_repo" "$wave_file"); then
+      case "$wave_mode" in
+        inherit) return 0 ;;
+        scoped)
+          review_mcp_flags=(--strict-mcp-config --mcp-config "$wave_file")
+          return 0
+          ;;
+      esac
+    else
+      dx_warn "Dex could not resolve review_waves from .dex/dex.md; review waves launch without MCP servers."
+    fi
+  fi
+  if [[ "${DEX_REVIEW_DISABLE_MCP:-1}" != "0" ]]; then
+    review_mcp_flags=(--strict-mcp-config --mcp-config "$wave_empty")
+  fi
+}
+
 # Provider seam. These are one-line passthroughs, but tests redefine
 # __dx_claude to stand in for the provider CLI, so the loop calls them by name
 # rather than calling lib/provider.sh directly.
@@ -1264,9 +1304,8 @@ No ticket, plan, or acceptance criteria were supplied by this wrapper. Treat pla
     return 1
   }
   assessment_mcp_flags=(--strict-mcp-config --mcp-config "$review_empty_mcp")
-  if [[ "${DEX_REVIEW_DISABLE_MCP:-1}" != "0" ]]; then
-  review_mcp_flags=("${assessment_mcp_flags[@]}")
-  fi
+  __dx_review_wave_mcp_flags "$repo_root" "$review_empty_mcp" \
+    "$(__dx_review_wave_mcp_file "$session_id")"
 
   # Finish an interrupted handoff before risk selection can reset old state or
   # launch another assessor. The retained pass must still match this checkout.

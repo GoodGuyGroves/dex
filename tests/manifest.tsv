@@ -59,6 +59,7 @@ maintenance-intake-test.sh	fast	all	600	hermetic
 maintenance-state-test.sh	fast	all	600	hermetic
 maintenance-test.sh	slow	all	1200	hermetic
 mcp-registry-test.sh	fast	all	600	hermetic
+mcp-scope-test.sh	fast	all	300	hermetic
 no-global-writes-test.sh	slow	all	1200	hermetic
 output-format-test.sh	fast	all	600	hermetic
 override-policy-test.sh	fast	all	600	hermetic

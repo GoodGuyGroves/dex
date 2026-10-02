@@ -652,6 +652,12 @@ comma-separated list to bound the built-in tool set too; an explicit `--tools`
 argument takes precedence. The launch record contains server names and missing
 environment-variable names, never credentials or server configuration bodies.
 
+A project's `## MCP` section in `.dex/dex.md` ranks above this scope. A phase
+whose value is `none` or a list reaches the router with its own strict
+configuration, and the router keeps it; the scope applies only to phases that
+inherit. Both use the same selection code (`scripts/mcp-scope.py`). See
+[docs/mcp-phases.md](mcp-phases.md).
+
 Native sessions outside Dex keep their own MCP configuration. A provisioned host
 can register one worktree-aware database MCP instead of exposing every VM's
 database to every client. Keep that adapter and its registration in the host's

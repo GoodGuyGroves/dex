@@ -1,56 +1,27 @@
 'use strict';
-const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-function read(file) {
-  try {
-    const info = fs.statSync(file);
-    if (!info.isFile() || info.size > 4 * 1024 * 1024) throw new Error('invalid size');
-    const result = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('invalid object');
-    return result;
-  } catch (error) {
-    if (error.code === 'ENOENT') return {};
-    throw new Error(`Cannot read MCP configuration at ${file}. Correct it before launching a scoped session.`);
-  }
-}
+// The selection itself is scripts/mcp-scope.py, which every Dex launch path
+// shares, so `dx context scope` and a project's `## MCP` phases read the same
+// layers and disabled lists. This module keeps the router's interface.
+const SCRIPT = path.join(__dirname, '..', 'mcp-scope.py');
 
 // registry: the --mcp-config file dx_provider_claude built from Dex's MCP
 // registry. It is the lowest layer, so the user's own servers of the same name
 // win, and the scope's include list applies to it like any other.
 function scope(policy, { home = os.homedir(), cwd = process.cwd(), root, env = process.env, registry } = {}) {
   if (!policy?.enabled) return null;
-  if (!Array.isArray(policy.include)) throw new Error('MCP scope requires an include array of server names.');
-  if (policy.include.some(name => typeof name !== 'string' || !/^[A-Za-z0-9_.-]{1,120}$/.test(name))) throw new Error('Invalid MCP server name in scope.');
-  if (policy.builtin_tools !== undefined && (!Array.isArray(policy.builtin_tools) || policy.builtin_tools.some(name => typeof name !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,80}$/.test(name)))) throw new Error('Invalid builtin_tools in MCP scope.');
-  if (!root) {
-    const result = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 3000, maxBuffer: 8192 });
-    root = result.status === 0 ? result.stdout.trim() : cwd;
-  }
-  const globalFile = env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json');
-  const user = read(globalFile), project = read(path.join(root, '.mcp.json'));
-  const common = spawnSync('git', ['-C', root, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', timeout: 3000, maxBuffer: 8192 });
-  const commonDir = common.status === 0 ? path.resolve(root, common.stdout.trim()) : null;
-  const sharedState = commonDir && path.basename(commonDir) === '.git' ? user.projects?.[path.dirname(commonDir)] || {} : {};
-  const projectState = user.projects?.[cwd] || user.projects?.[root] || {};
-  const local = projectState.mcpServers || {};
-  const dex = registry ? read(registry) : {};
-  const available = { ...dex.mcpServers, ...user.mcpServers, ...project.mcpServers, ...local };
-  const included = new Set(policy.include), selected = Object.create(null), omitted = [], missing = new Set();
-  const disabled = new Set([...(Array.isArray(user.disabledMcpServers) ? user.disabledMcpServers : []),
-    ...(Array.isArray(sharedState.disabledMcpServers) ? sharedState.disabledMcpServers : []),
-    ...(Array.isArray(sharedState.disabledMcpjsonServers) ? sharedState.disabledMcpjsonServers : []),
-    ...(Array.isArray(projectState.disabledMcpServers) ? projectState.disabledMcpServers : []),
-    ...(Array.isArray(projectState.disabledMcpjsonServers) ? projectState.disabledMcpjsonServers : [])]);
-  if (available.linear && included.has('linear') && !disabled.has('linear') && available.linear.enabled !== false && available.linear.disabled !== true) included.delete('linear-server');
-  for (const [name, entry] of Object.entries(available)) {
-    if (!included.has(name) || disabled.has(name) || entry?.enabled === false || entry?.disabled === true) { omitted.push(name); continue; }
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error(`Invalid configuration for MCP server ${name}.`);
-    selected[name] = entry;
-    for (const match of JSON.stringify(entry).matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)) if (!env[match[1]]) missing.add(match[1]);
-  }
-  return { config: { mcpServers: selected }, summary: { selected: Object.keys(selected), omitted, missing_env: [...missing] }, builtin_tools: policy.builtin_tools };
+  // Only the names of set variables cross over: a server's ${VAR} references
+  // are checked against them, and no value leaves this process.
+  const request = { policy, home, cwd, root, registry, config_dir: env.CLAUDE_CONFIG_DIR || null,
+    env_names: Object.keys(env).filter(name => env[name]) };
+  const result = spawnSync('python3', [SCRIPT, 'scope-json'], { input: JSON.stringify(request), encoding: 'utf8', timeout: 10000, maxBuffer: 8 * 1024 * 1024 });
+  let reply;
+  try { reply = JSON.parse(result.stdout); } catch { reply = null; }
+  if (result.status !== 0 || !reply) throw new Error(`Could not resolve the MCP scope: ${(result.stderr || result.error?.message || 'python3 failed').trim()}`);
+  if (reply.error) throw new Error(reply.error);
+  return reply;
 }
 module.exports = { scope };

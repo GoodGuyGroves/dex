@@ -138,6 +138,20 @@ teardown_untracked: rescue            # or refuse
 delete_remote_branch_on_merge: false
 ```
 
+## MCP
+
+Optional. Include it only when the project uses MCP servers that a lifecycle
+phase needs, such as a tracker or memory server during planning. Without it,
+Plan, Verify, PR and Complete launch with no MCP servers. Name only servers
+the project's `.mcp.json` or its documented setup defines.
+
+```yaml
+# One key per phase; see $DEX_DIR/docs/mcp-phases.md. Each value is
+# inherit, none, or a list of server names. Unnamed phases keep Dex's defaults.
+plan: [server-name]
+review_waves: none
+```
+
 ## Project Structure
 [Brief description of directory layout and what each area contains]
 

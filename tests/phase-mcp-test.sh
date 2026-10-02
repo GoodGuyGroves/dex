@@ -488,4 +488,98 @@ registry_launch "$TMP_DIR/registry-none.argv" 2
 assert_not_contains "--mcp-config" "$TMP_DIR/registry-none.argv"
 rm -f "$HOME/.claude.json"
 
+# --- a project's `## MCP` section names a phase's servers --------------------
+
+mkdir -p "$TMP_DIR/home-repo/.dex"
+write_project_mcp() {
+  {
+    printf '# Project\n\n## MCP\n\n```yaml\n'
+    printf '%s\n' "$@"
+    printf '```\n'
+  } > "$TMP_DIR/home-repo/.dex/dex.md"
+}
+printf '%s\n' '{"mcpServers":{"tracker":{"command":"user-tracker"},"other":{"command":"o"}}}' > "$HOME/.claude.json"
+export DEX_HOME="$TMP_DIR/project-dex-home"
+LAUNCH_DIR="$DEX_HOME/launch-settings"
+
+# A declared list launches strict, with only those servers; a name that
+# resolves nowhere is reported, not dropped silently.
+write_project_mcp 'plan: [tracker, mine, ghost]'
+registry_launch "$TMP_DIR/project-1.argv" 1 2> "$TMP_DIR/project-1.err"
+assert_eq "--strict-mcp-config" "$(sed -n '5p' "$TMP_DIR/project-1.argv")" "a declared list is strict"
+assert_eq "1" "$(grep -cx -- '--mcp-config' "$TMP_DIR/project-1.argv" | tr -d '[:space:]')" "one scoped config"
+project_config="$(mcp_config_path "$TMP_DIR/project-1.argv")"
+[[ "$project_config" == "$LAUNCH_DIR"/launch.* ]] || assert_at $LINENO
+assert_eq '{"mcpServers": {"mine": {"command": "dex-copy"}, "tracker": {"command": "user-tracker"}}}' \
+  "$(cat "$TMP_DIR/project-1.argv.mcp")" "the registry and user layers, only the listed names"
+assert_no_file "$project_config"
+assert_contains "[warn]  MCP (Plan): 'ghost' is not defined" "$TMP_DIR/project-1.err"
+
+# Phases the section leaves out keep Dex's defaults; inherit keeps the registry.
+registry_launch "$TMP_DIR/project-4.argv" 4
+assert_eq "$DX_LOOP_DIR/empty-mcp.json" "$(mcp_config_path "$TMP_DIR/project-4.argv")" "verify keeps none"
+write_project_mcp 'implement: inherit' 'default: none'
+registry_launch "$TMP_DIR/project-2.argv" 2
+assert_not_contains "--strict-mcp-config" "$TMP_DIR/project-2.argv"
+assert_eq "1" "$(grep -cx -- '--mcp-config' "$TMP_DIR/project-2.argv" | tr -d '[:space:]')" "inherit adds the registry"
+
+# The environment and a caller's own flags still win.
+write_project_mcp 'implement: [tracker]'
+(
+  cd "$TMP_DIR/home-repo"
+  provider_fixture "$TMP_DIR/project-off.argv"
+  export DX_TOOL_DIR="$REGISTRY_TOOLS" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=2 DEX_LIFECYCLE_MINIMAL_MCP=0
+  dx_provider_claude -p "task"
+)
+assert_not_contains "--strict-mcp-config" "$TMP_DIR/project-off.argv"
+registry_launch "$TMP_DIR/project-caller.argv" 2 --strict-mcp-config --mcp-config "$TMP_DIR/caller-mcp.json"
+assert_eq "$TMP_DIR/caller-mcp.json" "$(mcp_config_path "$TMP_DIR/project-caller.argv")" "the caller's config wins"
+
+# A review pass runs as Phase 3 with its own configuration; phase policy leaves it alone.
+write_project_mcp 'verify: [tracker]'
+(
+  export DEX_REVIEW_PASS_ACTIVE=1
+  registry_launch "$TMP_DIR/project-pass.argv" 4
+)
+assert_not_contains "--strict-mcp-config" "$TMP_DIR/project-pass.argv"
+
+# A routed launch hands the router the strict config as the caller's own, so
+# `dx context scope` does not replace it; the registry marker is not set.
+(
+  cd "$TMP_DIR/home-repo"
+  provider_fixture "$TMP_DIR/project-ccr.argv"
+  export DX_TOOL_DIR="$REGISTRY_TOOLS" DX_PROVIDER_ENGINE=ccr DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=4
+  __dx_provider_claude_exec() {
+    printf '%s\n' "${DEX_MCP_LAUNCH_CONFIG:-unset}" > "$TMP_DIR/project-ccr.env"
+    printf '%s\n' "$@" > "$DX_TEST_ARGV_FILE"
+    cp "$(grep -A1 -Fx -- '--mcp-config' "$DX_TEST_ARGV_FILE" | tail -1)" "$DX_TEST_ARGV_FILE.mcp"
+  }
+  dx_provider_claude -p "task"
+)
+assert_contains "--strict-mcp-config" "$TMP_DIR/project-ccr.argv"
+assert_eq "unset" "$(cat "$TMP_DIR/project-ccr.env")" "no registry marker beside a scoped config"
+assert_eq '{"mcpServers": {"tracker": {"command": "user-tracker"}}}' "$(cat "$TMP_DIR/project-ccr.argv.mcp")" \
+  "the router receives the scoped servers"
+
+# Codex takes no MCP flags; the resolver is not consulted for it.
+(
+  cd "$TMP_DIR/home-repo"
+  provider_fixture "$TMP_DIR/project-codex.argv"
+  export DX_TOOL_DIR="$REGISTRY_TOOLS" DX_PROVIDER_ENGINE=codex-plugin DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=4
+  __dx_provider_claude_exec() { printf '%s\n' "$@" > "$DX_TEST_ARGV_FILE"; }
+  dx_provider_claude -p "task"
+)
+assert_not_contains "--mcp-config" "$TMP_DIR/project-codex.argv"
+
+# A Claude configuration the resolver cannot read: a warning, and Dex's own
+# default for the phase rather than a failed launch.
+write_project_mcp 'plan: [tracker]'
+printf '{not json' > "$HOME/.claude.json"
+registry_launch "$TMP_DIR/project-broken.argv" 1 2> "$TMP_DIR/project-broken.err"
+assert_eq "$DX_LOOP_DIR/empty-mcp.json" "$(mcp_config_path "$TMP_DIR/project-broken.argv")" "fallback to the built-in"
+assert_contains "using Dex's built-in default" "$TMP_DIR/project-broken.err"
+assert_eq "" "$(find "$LAUNCH_DIR" -type f -name 'launch.*' ! -name '*.json' -newer "$TMP_DIR/project-1.argv" -size 0 2>/dev/null)" \
+  "no empty scoped file is left behind"
+rm -f "$HOME/.claude.json" "$TMP_DIR/home-repo/.dex/dex.md"
+
 printf 'phase MCP and browser profile tests passed\n'
