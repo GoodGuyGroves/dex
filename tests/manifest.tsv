@@ -152,6 +152,7 @@ watch-lease-test.sh	fast	all	600	hermetic
 worktree-hooks-test.sh	fast	all	300	hermetic
 worktree-integrity-test.sh	slow	all	1200	hermetic
 worktree-shared-caches-test.sh	fast	all	600	hermetic
+worktree-teardown-lifecycle-test.sh	slow	all	1200	hermetic
 worktree-teardown-test.sh	fast	all	600	hermetic
 worktree-test.sh	slow	all	1200	hermetic
 worktree-ticket-resolution-test.sh	slow	all	1200	hermetic

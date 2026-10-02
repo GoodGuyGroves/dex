@@ -343,7 +343,8 @@ run_scenario() {
   # dxcomplete pauses and exits 1 after the launch.
   dx_step phase "$NO_INPUT" 1 'dxcomplete'
   dx_step wt-create "$NO_INPUT" 0 '__dx_setup_worktree "gw task" && __dx_startup_claim_release'
-  dx_step wt-remove "$NO_INPUT" 0 'dxrm gw-task'
+  # An untracked file makes the removal rescue it, which must land under DEX_HOME.
+  dx_step wt-remove "$NO_INPUT" 0 'printf "notes\n" > "$(dx_repo_root)/.dex/worktrees/task-gw-task/rescue-me.txt" && dxrm gw-task'
   dx_step maintain "$NO_INPUT" 0 'dx maintain --no-sync --no-pr --dry-run --include-working-tree'
   dx_step provider "$NO_INPUT" 0 'dx provider use claude-subscription'
   dx_step setup "$NO_INPUT" 0 'dx setup --direct'
@@ -396,6 +397,8 @@ for label in session phase; do
   grep -q "\"step\": \"$label\"" "$ISOLATED_STUB/memory-checks.jsonl" \
     || fail "the stub never decided auto-memory for step $label"
 done
+find "$TMP_DIR/isolated" -path '*/rescue/task-gw-task-*/untracked/rescue-me.txt' | grep -q . \
+  || fail "wt-remove did not rescue the untracked file into DEX_HOME/rescue"
 
 # fresh <label> <rc> <zsh code> [--no-skills] — one entry point alone.
 fresh() {
