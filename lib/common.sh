@@ -195,6 +195,7 @@ __dx_require_lib run-spec.sh
 __dx_require_lib agent-tools.sh
 __dx_require_lib maintenance.sh
 __dx_require_lib reviewers.sh
+__dx_require_lib pr-threads.sh
 __dx_require_lib project-state.sh
 __dx_require_lib lifecycle-control.sh
 __dx_require_lib session-management.sh
