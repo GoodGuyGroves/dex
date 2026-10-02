@@ -54,7 +54,7 @@ commits no remote-tracking ref holds, the worktree is kept under either
 setting, and Dex lists the submodules.
 
 A directory under `.dex/worktrees/` that git does not list as a worktree
-cannot be inspected file by file. Under `rescue` it is moved whole into the
+cannot be inspected file by file. Under `rescue` it is copied whole into the
 rescue directory; under `refuse` it is kept unless it is empty.
 
 The `before_remove` [worktree hook](worktree-hooks.md) runs after this check,

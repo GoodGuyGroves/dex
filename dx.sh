@@ -5313,7 +5313,7 @@ dxrm() {
       dx_warn "Some worktrees could not be removed. Resolve the errors above and run dxrm --all again."
       return 1
     elif [[ $kept_worktrees -eq 1 ]]; then
-      echo "Finished. Worktrees with content teardown_untracked: refuse protects were kept; see above."
+      echo "Finished. Some worktrees were kept so their work is not lost; see the warnings above."
     elif [[ $found -eq 0 ]]; then
       dx_info "No worktrees or branches found."
     elif [[ $skipped_active_in_place -eq 1 || $last_session_active_in_place -eq 1 ]]; then
@@ -5774,7 +5774,7 @@ dxclean() {
   local cleaned=0 cleanup_failed=0
   local wt_dir wt_name session_id phase_file phase_val wt_branch branch
   local active_in_place_phase active_in_place_result has_worktree ticket_name
-  local old_files old_phase_files deferral unique_count merged_oid swept
+  local old_files old_phase_files deferral unique_count merged_oid swept remove_result
   local -A branch_sids branch_wt_names branch_deferrals
   local record_branch record_sid record_wt_name record_deferral
 
@@ -5851,7 +5851,13 @@ dxclean() {
       fi
 
       echo "  Removing stale worktree: ${wt_name}"
-      if ! dx_wt_remove "$wt_dir" "$repo_root"; then
+      remove_result=0
+      dx_wt_remove "$wt_dir" "$repo_root" || remove_result=$?
+      if [[ "$remove_result" -eq 3 ]]; then
+        # The teardown gate kept it on purpose and has said why.
+        echo "  Kept ${wt_name}; its branch and session state were left intact."
+        continue
+      elif [[ "$remove_result" -ne 0 ]]; then
         dx_error "Failed to remove stale worktree ${wt_name}; its branch and session state were left intact."
         cleanup_failed=1
         continue

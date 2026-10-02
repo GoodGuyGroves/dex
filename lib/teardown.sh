@@ -13,7 +13,7 @@
 # value outside the allowed set gives the value that removes nothing, with a
 # warning: a typo must never make Dex delete more than it would by default.
 dx_teardown_setting() {
-  local repo_dir="$1" key="$2" value="" read_result=0 default_value safe_value allowed
+  local repo_dir="$1" key="$2" value="" read_result=0 default_value safe_value allowed allowed_match
   case "$key" in
     worktree_teardown) default_value=on_complete safe_value=caller allowed=" on_complete on_merge caller " ;;
     teardown_untracked) default_value=rescue safe_value=refuse allowed=" rescue refuse " ;;
@@ -31,8 +31,13 @@ dx_teardown_setting() {
     return 0
   fi
   value=$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')
-  case "$allowed" in
-    *" $value "*) printf '%s\n' "$value" ;;
+  # A value with a space in it would match a run of allowed words below.
+  case "$value" in
+    *[[:space:]]*) allowed_match=0 ;;
+    *) case "$allowed" in *" $value "*) allowed_match=1 ;; *) allowed_match=0 ;; esac ;;
+  esac
+  case "$allowed_match" in
+    1) printf '%s\n' "$value" ;;
     *)
       dx_warn "Ignoring ${key}: '${value}' in ${repo_dir}/.dex/dex.md (expected one of:${allowed% }). Using ${safe_value}."
       printf '%s\n' "$safe_value"
@@ -126,16 +131,31 @@ __dx_rescue_copy_entry() {
 }
 
 # __dx_wt_untracked_list <wt-dir>
-# Print the NUL-separated untracked paths a removal would destroy. Dex excludes `.claude` in every repository it links into
+# Print the NUL-separated untracked paths a removal would destroy. Dex
+# excludes `.claude` in every repository it links into
 # (dx_exclude_claude_artifacts), and that unanchored pattern also hides files
-# under a real .claude directory, so those are listed with only the
-# repository's own .gitignore rules. Dex's .claude link itself is a symlink,
-# which the `**/.claude/**` pathspec never matches.
+# under a real .claude directory, so those are listed again with the
+# repository's .gitignore files and the user's global excludes file, but not
+# info/exclude. Dex's .claude link itself is a symlink, which the
+# `**/.claude/**` pathspec never matches. A path both passes list (no Dex
+# exclude, or a .gitignore that re-includes it) is printed once.
 __dx_wt_untracked_list() {
-  local wt_dir="$1"
-  git -C "$wt_dir" ls-files -z --others --exclude-standard 2>/dev/null || return 1
-  git -C "$wt_dir" ls-files -z --others --exclude-per-directory=.gitignore \
-    -- ':(glob)**/.claude/**' 2>/dev/null
+  local wt_dir="$1" global_excludes
+  global_excludes=$(git -C "$wt_dir" config --path --get core.excludesFile 2>/dev/null) \
+    || global_excludes="${XDG_CONFIG_HOME:-$HOME/.config}/git/ignore"
+  (
+    set -o pipefail
+    {
+      git -C "$wt_dir" ls-files -z --others --exclude-standard 2>/dev/null || exit 1
+      if [[ -f "$global_excludes" ]]; then
+        git -C "$wt_dir" ls-files -z --others --exclude-per-directory=.gitignore \
+          --exclude-from="$global_excludes" -- ':(glob)**/.claude/**' 2>/dev/null
+      else
+        git -C "$wt_dir" ls-files -z --others --exclude-per-directory=.gitignore \
+          -- ':(glob)**/.claude/**' 2>/dev/null
+      fi
+    } | LC_ALL=C sort -zu
+  )
 }
 
 # __dx_wt_submodule_risk <wt-dir>
@@ -181,7 +201,10 @@ dx_wt_rescue() {
     __dx_rescue_copy_entry "${wt_dir}/${rel}" "${dest}/untracked/${rel}" || failed=1
   done <"$list_file"
   rm -f "$list_file"
-  if ! git -C "$wt_dir" diff HEAD --binary >"${dest}/tracked.patch" 2>/dev/null; then
+  # Pin the patch format: diff.external, textconv, colour or noprefix in the
+  # user's config would write something `git apply` cannot restore.
+  if ! git -C "$wt_dir" diff --binary --no-color --no-ext-diff --no-textconv \
+    --src-prefix=a/ --dst-prefix=b/ HEAD >"${dest}/tracked.patch" 2>/dev/null; then
     failed=1
   elif [[ ! -s "${dest}/tracked.patch" ]]; then
     rm -f "${dest}/tracked.patch"
@@ -207,12 +230,13 @@ dx_wt_rescue() {
 
 # __dx_rescue_unregistered <dir> <name>
 # A directory under .dex/worktrees that git does not list as a worktree: git
-# cannot say what in it is untracked, so the whole directory is moved (or, on
-# another filesystem, copied) into the rescue directory.
+# cannot say what in it is untracked, so the whole directory is copied into
+# the rescue directory. It is copied, not moved, because the before_remove
+# hook still runs against it.
 __dx_rescue_unregistered() {
   local src="$1" name="$2" dest
   dest=$(__dx_rescue_dir_create "$name") || return 1
-  if mv "$src" "${dest}/untracked" 2>/dev/null || cp -RpP "$src" "${dest}/untracked"; then
+  if cp -RpP "$src" "${dest}/untracked"; then
     printf '%s\n' "$dest"
     return 0
   fi
@@ -245,7 +269,7 @@ dx_wt_teardown_gate() {
       return 3
     fi
     rescue_path=$(__dx_rescue_unregistered "$wt_dir" "$wt_name") || return 1
-    dx_info "Moved the contents of unregistered ${wt_name} to ${rescue_path}"
+    dx_info "Copied the contents of unregistered ${wt_name} to ${rescue_path}"
     return 0
   fi
 
@@ -265,7 +289,7 @@ dx_wt_teardown_gate() {
     dx_error "Could not list untracked files in ${wt_dir}; the worktree was kept."
     return 1
   fi
-  git -C "$wt_dir" diff HEAD --quiet 2>/dev/null || tracked_dirty=1
+  git -C "$wt_dir" diff --quiet --no-ext-diff --no-textconv HEAD 2>/dev/null || tracked_dirty=1
   branch=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
   if [[ -n "$branch" ]]; then
     unique_count=$(dx_branch_unpushed_count "$repo_root" "$branch") || unique_count=""

@@ -60,6 +60,11 @@ assert_eq caller "$(dx_teardown_setting "$REPO" worktree_teardown 2>"$TMP_DIR/wa
 assert_contains "Ignoring worktree_teardown: 'on_merg'" "$TMP_DIR/warn"
 assert_eq refuse "$(dx_teardown_setting "$REPO" teardown_untracked 2>/dev/null)" "an unknown mode refuses"
 assert_eq false "$(dx_teardown_setting "$REPO" delete_remote_branch_on_merge 2>/dev/null)" "only true enables remote delete"
+# Several allowed words are not one allowed value.
+set_teardown "$REPO" $'worktree_teardown: on_merge caller\nteardown_untracked: rescue refuse\ndelete_remote_branch_on_merge: true false'
+assert_eq caller "$(dx_teardown_setting "$REPO" worktree_teardown 2>/dev/null)" "two timing words keep the worktree"
+assert_eq refuse "$(dx_teardown_setting "$REPO" teardown_untracked 2>/dev/null)" "two modes refuse"
+assert_eq false "$(dx_teardown_setting "$REPO" delete_remote_branch_on_merge 2>/dev/null)" "two booleans do not enable remote delete"
 mkdir -p "$REPO/.dex"
 printf '## Worktree Teardown\n\n```yaml\n- not a mapping\n```\n' >"$REPO/.dex/dex.md"
 assert_eq caller "$(dx_teardown_setting "$REPO" worktree_teardown 2>"$TMP_DIR/warn")" "a malformed block keeps the worktree"
@@ -127,7 +132,12 @@ printf 'edited\n' >>"$WT/README.md"
 git -C "$WT" add README.md
 printf 'unstaged\n' >>"$WT/README.md"
 
+# Diff settings a user may have must not change what tracked.patch holds.
+git config --global diff.noprefix true
+git config --global color.diff always
 out=$(dx_wt_rescue "$WT" ticket-7)
+git config --global --unset diff.noprefix
+git config --global --unset color.diff
 [[ -d "$out" && "$out" == "$DX_RESCUE_DIR"/ticket-7-* ]] || fail "rescue path: $out"
 assert_eq "keep me" "$(cat "$out/untracked/notes/deep dir/todo file.txt")" "nested untracked file copied"
 [[ -L "$out/untracked/link-to-readme" ]] || fail "a symlink is kept as a link"
@@ -217,11 +227,16 @@ rescue_branch=$(git -C "$REPO" for-each-ref --format='%(refname:short)' 'refs/he
 [[ -n "$rescue_branch" ]] || fail "no dex-rescue branch for detached commits"
 assert_eq "$detached_oid" "$(git -C "$REPO" rev-parse "$rescue_branch")" "rescue branch keeps the detached commit"
 
-# An unregistered directory is moved whole in rescue mode, kept in refuse mode.
+# An unregistered directory is copied whole in rescue mode, kept in refuse mode.
 mkdir -p "$REPO/.dex/worktrees/stray/sub"
 printf 'stray\n' >"$REPO/.dex/worktrees/stray/sub/file"
+# before_remove still runs in the directory, with its files, after the rescue.
+printf '# Project\n\n## Worktree Hooks\n\n```yaml\nbefore_remove: test -f sub/file && touch "$DX_REPO_ROOT/stray-hook-saw-file"\n```\n' \
+  >"$REPO/.dex/dex.md"
 dx_wt_remove "$REPO/.dex/worktrees/stray" "$REPO" >"$TMP_DIR/out" 2>&1 || assert_at $LINENO
 [[ ! -e "$REPO/.dex/worktrees/stray" ]] || assert_at $LINENO
+[[ -e "$REPO/stray-hook-saw-file" ]] || fail "before_remove did not see the unregistered directory: $(cat "$TMP_DIR/out")"
+rm -f "$REPO/stray-hook-saw-file"
 moved=$(find "$DX_RESCUE_DIR" -path '*stray-*/untracked/sub/file' | head -1)
 [[ -n "$moved" ]] || fail "unregistered directory was not rescued"
 mkdir -p "$REPO/.dex/worktrees/stray2"
@@ -256,6 +271,31 @@ dx_wt_remove "$WT" "$REPO" >/dev/null 2>&1 || fail ".claude content blocked the 
   || fail "a file under .claude was not rescued"
 [[ -n "$(find "$DX_RESCUE_DIR" -path '*/untracked/pkg/.claude/notes.md' | head -1)" ]] \
   || fail "a file under a nested .claude was not rescued"
+
+# The second .claude pass still honours the user's global excludes file.
+printf '**/.claude/settings.local.json\n' >"$TMP_DIR/global-ignore"
+git config --global core.excludesFile "$TMP_DIR/global-ignore"
+git -C "$REPO" worktree add -q "$WT" -b worktree-ticket-15
+dx_exclude_claude_artifacts "$WT"
+mkdir -p "$WT/.claude"
+printf '{}\n' >"$WT/.claude/settings.local.json"
+set_teardown "$REPO" 'teardown_untracked: refuse'
+dx_wt_remove "$WT" "$REPO" >"$TMP_DIR/out" 2>&1 || fail "a globally ignored .claude file blocked removal: $(cat "$TMP_DIR/out")"
+[[ ! -e "$WT" ]] || assert_at $LINENO
+git config --global --unset core.excludesFile
+rm -f "$REPO/.dex/dex.md"
+
+# Without Dex's exclude (a fresh repository: info/exclude is shared by its
+# worktrees) both passes list .claude files; each is rescued once.
+DUP="$TMP_DIR/dup"
+new_repo "$DUP"
+git -C "$DUP" worktree add -q "$DUP/.dex/worktrees/ticket-16" -b worktree-ticket-16
+mkdir -p "$DUP/.dex/worktrees/ticket-16/.claude"
+printf 'n\n' >"$DUP/.dex/worktrees/ticket-16/.claude/notes.md"
+ln -s notes.md "$DUP/.dex/worktrees/ticket-16/.claude/link"
+dx_wt_remove "$DUP/.dex/worktrees/ticket-16" "$DUP" >"$TMP_DIR/out" 2>&1 \
+  || fail "a .claude path listed twice failed the rescue: $(cat "$TMP_DIR/out")"
+[[ ! -e "$DUP/.dex/worktrees/ticket-16" ]] || assert_at $LINENO
 
 # Submodule work cannot be rescued, so it keeps the worktree in both modes.
 SUB="$TMP_DIR/subsrc"

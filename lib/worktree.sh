@@ -424,7 +424,7 @@ dx_wt_remove() {
   fi
   [[ -z "$repo_root" ]] || dx_worktree_hook_run before_remove "$repo_root" "$wt_dir"
   dx_unlink_claude_from_worktree "$wt_dir"
-  # The gate may have moved an unregistered directory away already.
+  # Nothing may be left to remove (a hook can delete the directory itself).
   [[ -e "$wt_dir" ]] || return 0
   git -C "${repo_root:-.}" worktree remove "$wt_dir" --force 2>/dev/null || rm -rf "$wt_dir"
 }

@@ -220,6 +220,19 @@ dxz dxclean >"$TMP_DIR/out" 2>&1
 has_branch feat/eight || assert_at $LINENO
 assert_contains "Kept ticket-8: feat/eight has commits its merged pull request does not" "$TMP_DIR/out"
 
+# 11. A worktree the teardown gate keeps is not a dxclean failure. Files under
+#     a real .claude directory are hidden from git status by Dex's exclude, so
+#     dxclean reaches the gate, which refuses under teardown_untracked: refuse.
+set_teardown 'teardown_untracked: refuse'
+lifecycle ticket-11 feat/eleven
+WT="$TEST_REPO/.dex/worktrees/ticket-11" dxz 'dx_exclude_claude_artifacts "$WT"'
+mkdir -p "$TEST_REPO/.dex/worktrees/ticket-11/.claude"
+printf 'notes\n' >"$TEST_REPO/.dex/worktrees/ticket-11/.claude/notes.md"
+dxz dxclean >"$TMP_DIR/out" 2>&1 || fail "dxclean failed on a worktree the gate kept: $(cat "$TMP_DIR/out")"
+[[ -f "$TEST_REPO/.dex/worktrees/ticket-11/.claude/notes.md" ]] || fail "dxclean removed a refused worktree"
+assert_contains "Kept ticket-11" "$TMP_DIR/out"
+assert_not_contains "Failed to remove stale worktree ticket-11" "$TMP_DIR/out"
+
 # Nothing above wrote outside the sandbox's DEX_HOME and repository.
 [[ ! -e "$HOME/.dex" && ! -e "$HOME/.claude/.dex-phases" ]] || fail "state written outside DEX_HOME"
 
