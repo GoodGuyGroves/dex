@@ -175,6 +175,7 @@ dx_context_provider_block() {
   local timeout_secs max_chars budget=-1 limit_invalid=""
   local scratch_dir="" out_file="" err_file="" files_file="" block_file=""
   local run_rc=0 render_rc=0 render_stats="" base_ref="" raw_chars kept_chars
+  local scratch_prefix="" capture_bytes=0
 
   case "$slot" in
     session_start | phase_handoff) ;;
@@ -236,13 +237,20 @@ dx_context_provider_block() {
 
   # Captures live in Dex's own state directory, never in the repository or a
   # shared temp directory, and are removed before returning.
+  # They carry the session ID so dx_cleanup_session sweeps any a killed hook
+  # left behind.
   scratch_dir="${DX_LOOP_DIR:-}"
   [[ -n "$scratch_dir" ]] || return 0
   mkdir -p "$scratch_dir" 2>/dev/null || return 0
-  out_file=$(mktemp "$scratch_dir/context-provider.out.XXXXXX" 2>/dev/null) || return 0
-  err_file=$(mktemp "$scratch_dir/context-provider.err.XXXXXX" 2>/dev/null) || err_file=""
-  files_file=$(mktemp "$scratch_dir/context-provider.files.XXXXXX" 2>/dev/null) || files_file=""
-  block_file=$(mktemp "$scratch_dir/context-provider.block.XXXXXX" 2>/dev/null) || block_file=""
+  scratch_prefix="context"
+  if command -v dx_session_id_valid >/dev/null 2>&1 && dx_session_id_valid "$session_id"; then
+    scratch_prefix="$session_id"
+  fi
+  scratch_prefix="$scratch_dir/${scratch_prefix}.context-provider"
+  out_file=$(mktemp "${scratch_prefix}.out.XXXXXX" 2>/dev/null) || return 0
+  err_file=$(mktemp "${scratch_prefix}.err.XXXXXX" 2>/dev/null) || err_file=""
+  files_file=$(mktemp "${scratch_prefix}.files.XXXXXX" 2>/dev/null) || files_file=""
+  block_file=$(mktemp "${scratch_prefix}.block.XXXXXX" 2>/dev/null) || block_file=""
   if [[ -z "$err_file" || -z "$files_file" || -z "$block_file" ]]; then
     rm -f "$out_file" "$err_file" "$files_file" "$block_file"
     return 0
@@ -255,6 +263,10 @@ dx_context_provider_block() {
       || : >"$files_file"
   fi
 
+  # stdout is cut at four bytes a character, the most UTF-8 needs, so a
+  # runaway provider fills a bounded file rather than the disk. The command's
+  # own exit status is kept; head closing the pipe early shows up as SIGPIPE.
+  capture_bytes=$((max_chars * 4 + 4096))
   dx_run_with_timeout "$timeout_secs" env \
     DX_TICKET_ID="$(__dx_context_provider_ticket_id "$session_id" "$worktree")" \
     DX_TICKET_TITLE="$(__dx_context_provider_ticket_title "$session_id")" \
@@ -263,9 +275,15 @@ dx_context_provider_block() {
     DX_WORKTREE_NAME="${worktree##*/}" \
     DX_SESSION_ID="$session_id" \
     DX_CHANGED_FILES="$files_file" \
-    bash -c 'cd "$1" || exit 1; shift; eval "$1"' \
-    dex-context-provider "$worktree" "$provider_cmd" \
+    bash -c 'cd "$1" || exit 1; cap="$2"; shift 2; (eval "$1") | head -c "$cap"; exit "${PIPESTATUS[0]}"' \
+    dex-context-provider "$worktree" "$capture_bytes" "$provider_cmd" \
     </dev/null >"$out_file" 2>"$err_file" || run_rc=$?
+  # A provider stopped by the cap printed more than can be injected anyway:
+  # that is oversize output to truncate, not a failure.
+  if [[ "$run_rc" -ne 0 && "$run_rc" -ne 124 ]] \
+    && [[ "$(wc -c <"$out_file" | tr -d ' ')" -ge "$capture_bytes" ]]; then
+    run_rc=0
+  fi
 
   if [[ "$run_rc" -eq 124 ]]; then
     dx_warn "The ${slot} context provider passed ${timeout_secs}s and was stopped. Continuing without it."

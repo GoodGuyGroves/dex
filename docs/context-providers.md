@@ -50,7 +50,10 @@ script.
 | `DX_SESSION_ID` | Dex's session ID |
 | `DX_CHANGED_FILES` | Path to a file listing the paths the branch changes against the default branch, one per line. It always exists, and may be empty. Dex computes it without fetching and deletes it after the run |
 
-stdin is `/dev/null`. stderr is discarded, never injected.
+stdin is `/dev/null`. stderr is discarded, never injected. stdout is read up to
+four bytes per `max_chars` character (plus 4 KiB); a provider that keeps
+printing past that is cut off there and its output truncated, not treated as
+a failure.
 
 ## What the agent sees
 

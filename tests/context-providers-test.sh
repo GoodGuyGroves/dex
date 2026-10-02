@@ -224,6 +224,17 @@ body=$(printf '%s\n' "$out" | sed '1,2d;$d')
 [[ ${#body} -le 300 ]] || fail "truncated body is ${#body} characters, over max_chars 300"
 grep -q '"type":"context_provider.truncated"' "$EVENTS" || assert_at $LINENO
 
+# A provider that never stops printing fills a bounded capture and is cut,
+# not reported as a failure.
+reset_marks
+make_dex 'phase_handoff: yes recall' 'max_chars: 300'
+started=$SECONDS
+out=$(block phase_handoff 2 2>"$err_file")
+[[ $((SECONDS - started)) -lt 15 ]] || fail "an endless provider was not cut off"
+has "$out" "[truncated: kept "
+[[ ! -s "$err_file" ]] || fail "an endless provider warned: $(cat "$err_file")"
+grep -q '"type":"context_provider.truncated"' "$EVENTS" || assert_at $LINENO
+
 # --- Session start leaves the hook under Claude Code's 10,000 characters ----
 reset_marks
 make_dex "session_start: python3 -c 'print(\"y\" * 20000)'" \
@@ -298,5 +309,11 @@ assert_contains "timeout_seconds in .dex/dex.md is not a whole number" "$err_fil
 grep -q '"reason":"invalid_limit"' "$EVENTS" || assert_at $LINENO
 
 [[ -z "$(ls -A "$DX_LOOP_DIR")" ]] || fail "scratch files left behind: $(ls -A "$DX_LOOP_DIR")"
+
+# A hook killed mid-run leaves its captures behind; they carry the session ID,
+# so ending the session sweeps them.
+touch "$DX_LOOP_DIR/$SID.context-provider.out.leftover"
+dx_cleanup_session "$SID"
+assert_no_file "$DX_LOOP_DIR/$SID.context-provider.out.leftover"
 
 printf 'ok   context providers\n'
