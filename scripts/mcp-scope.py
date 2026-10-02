@@ -355,23 +355,41 @@ def command_review_waves(repo, registry, out_file):
 
 
 def command_report(repo, registry):
-    """One row per configurable phase and review waves, for status and doctor:
-    key, value (inherit | none | list), source, selected, missing, disabled."""
+    """What each configurable phase and review waves load, for `dx status` and
+    `dx doctor`. One `phase<TAB>key<TAB>text` row each, where text is never
+    empty, then `missing<TAB>key<TAB>name`, `disabled<TAB>key<TAB>name` and
+    `invalid<TAB>message` lines for every problem."""
     policy, problems = read_policy(repo)
     rows = [(phase,) + declared(policy, phase) for phase in CONFIGURABLE]
     if "review_waves" in policy:
         rows.append(("review_waves", policy["review_waves"], "project"))
     else:
         rows.append(("review_waves", "none", "builtin"))
+    issues = []
     for key, value, source in rows:
-        selected = missing = disabled = []
-        if value not in ("inherit", "none"):
+        if value == "inherit":
+            text = "inherited"
+        elif value == "none":
+            text = "none"
+        else:
             result = _resolve(repo, value, registry)
-            selected, missing, disabled = result["selected"], result["missing"], result["disabled"]
-        print("\t".join(("phase", key, value if isinstance(value, str) else "list", source,
-                         ",".join(selected), ",".join(missing), ",".join(disabled))))
+            text = ", ".join(result["selected"]) or "none resolved"
+            notes = []
+            if result["missing"]:
+                notes.append("missing: " + ", ".join(result["missing"]))
+            if result["disabled"]:
+                notes.append("disabled: " + ", ".join(result["disabled"]))
+            if notes:
+                text += " (" + "; ".join(notes) + ")"
+            issues += [f"missing\t{key}\t{name}" for name in result["missing"]]
+            issues += [f"disabled\t{key}\t{name}" for name in result["disabled"]]
+        if source != "project":
+            text += " [" + ("default" if source == "default" else "built-in") + "]"
+        print(f"phase\t{key}\t{text}")
+    for line in issues:
+        print(line)
     for problem in problems:
-        print(f"invalid\t{problem}")
+        print(f"invalid\t{problem}".replace("\n", " "))
     return 0
 
 

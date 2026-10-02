@@ -348,4 +348,36 @@ elif [[ "$DOCTOR_TREE_COUNT" -eq 0 ]]; then
   printf '  %s\n' "No provider process tree is running on this host."
 fi
 
+# ── The current repository's `## MCP` section, only when it declares one ────
+DOCTOR_REPO=$(git rev-parse --show-toplevel 2>/dev/null) || DOCTOR_REPO=""
+if [[ -n "$DOCTOR_REPO" ]] && dx_mcp_declared "$DOCTOR_REPO"; then
+  printf '%s\n' "MCP (this repo):"
+  if DOCTOR_MCP=$(dx_mcp_phase_report "$DOCTOR_REPO" 2>&1); then
+    DOCTOR_MCP_PROBLEMS=0
+    while IFS= read -r doctor_line; do
+      doctor_kind="${doctor_line%%$'\t'*}"
+      doctor_rest="${doctor_line#*$'\t'}"
+      case "$doctor_kind" in
+        missing|disabled)
+          DOCTOR_MCP_PROBLEMS=$((DOCTOR_MCP_PROBLEMS + 1))
+          if [[ "$doctor_kind" == missing ]]; then
+            dx_warn "${doctor_rest%%$'\t'*} lists '${doctor_rest#*$'\t'}', which no Claude MCP configuration or Dex's registry defines."
+          else
+            dx_warn "${doctor_rest%%$'\t'*} lists '${doctor_rest#*$'\t'}', which is disabled in your Claude settings."
+          fi
+          ;;
+        invalid)
+          DOCTOR_MCP_PROBLEMS=$((DOCTOR_MCP_PROBLEMS + 1))
+          dx_warn "Ignored in ## MCP: $doctor_rest"
+          ;;
+      esac
+    done <<< "$DOCTOR_MCP"
+    if [[ "$DOCTOR_MCP_PROBLEMS" -eq 0 ]]; then
+      dx_ok "Every server ## MCP names resolves ('dx status' lists them per phase)."
+    fi
+  else
+    dx_warn "## MCP could not be resolved: ${DOCTOR_MCP##*$'\n'}"
+  fi
+fi
+
 dx_info "Read-only. Nothing here was stopped, removed or written."

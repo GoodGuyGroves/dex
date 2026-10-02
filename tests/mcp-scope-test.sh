@@ -261,10 +261,33 @@ assert_eq "$EMPTY_FLAGS" "$(wave_flags)" "review_waves: none"
 
 write_mcp 'default: none' 'plan: [github, ghost]' 'implement: inherit'
 (cd "$REPO" && python3 "$SCOPE" report "$REPO" "$REGISTRY") > "$TMP_DIR/report"
-assert_contains $'phase\tplan\tlist\tproject\tgithub\tghost\t' "$TMP_DIR/report"
-assert_contains $'phase\timplement\tinherit\tproject\t\t\t' "$TMP_DIR/report"
-assert_contains $'phase\tverify\tnone\tdefault\t\t\t' "$TMP_DIR/report"
-assert_contains $'phase\treview_waves\tnone\tbuiltin\t\t\t' "$TMP_DIR/report"
+assert_eq "$(printf 'phase\tplan\tgithub (missing: ghost)')" "$(grep '^phase.plan' "$TMP_DIR/report")" "plan row"
+assert_eq "$(printf 'phase\timplement\tinherited')" "$(grep '^phase.implement' "$TMP_DIR/report")" "implement row"
+assert_contains $'phase\tverify\tnone [default]' "$TMP_DIR/report"
+assert_contains $'phase\treview_waves\tnone [built-in]' "$TMP_DIR/report"
+assert_contains $'missing\tplan\tghost' "$TMP_DIR/report"
+
+# dx status prints the rows; dx doctor warns about the problems.
+(cd "$REPO" && bash "$ROOT/bin/status.sh") > "$TMP_DIR/status.out" 2>&1
+assert_contains "  MCP:        ## MCP in .dex/dex.md (Claude launches; Codex ignores it)" "$TMP_DIR/status.out"
+assert_contains "    plan:         github (missing: ghost)" "$TMP_DIR/status.out"
+assert_contains "    implement:    inherited" "$TMP_DIR/status.out"
+assert_contains "    review waves: none [built-in]" "$TMP_DIR/status.out"
+assert_contains "An inline launch loads its own phase's servers and every later phase's." "$TMP_DIR/status.out"
+(cd "$REPO" && bash "$ROOT/bin/doctor.sh") > "$TMP_DIR/doctor.out" 2>&1
+assert_contains "MCP (this repo):" "$TMP_DIR/doctor.out"
+assert_contains "[warn]  plan lists 'ghost', which no Claude MCP configuration or Dex's registry defines." "$TMP_DIR/doctor.out"
+write_mcp 'plan: [github]' 'phases: x'
+(cd "$REPO" && bash "$ROOT/bin/status.sh") > "$TMP_DIR/status.out" 2>&1
+assert_contains "    ignored:      'phases' is not a ## MCP key; use flat phase keys" "$TMP_DIR/status.out"
+write_mcp 'plan: [github]'
+(cd "$REPO" && bash "$ROOT/bin/doctor.sh") > "$TMP_DIR/doctor.out" 2>&1
+assert_contains "[ok]    Every server ## MCP names resolves" "$TMP_DIR/doctor.out"
+rm -f "$REPO/.dex/dex.md"
+(cd "$REPO" && bash "$ROOT/bin/status.sh") > "$TMP_DIR/status.out" 2>&1
+assert_contains "  MCP:        built-in (plan, verify, pr, complete: none; others inherited)" "$TMP_DIR/status.out"
+(cd "$REPO" && bash "$ROOT/bin/doctor.sh") > "$TMP_DIR/doctor.out" 2>&1
+assert_not_contains "MCP (this repo):" "$TMP_DIR/doctor.out"
 
 # Usage errors.
 rc=0

@@ -184,6 +184,28 @@ else
   if [[ "$current_ui_proof" != "MISSING" ]]; then
     echo "  UI Details: $(dx_ui_capture_evidence_file "$current_session")"
   fi
+
+  # The MCP servers each lifecycle phase launches with (docs/mcp-phases.md).
+  if ! dx_mcp_declared "$repo_root"; then
+    echo "  MCP:        built-in (plan, verify, pr, complete: none; others inherited)"
+  elif mcp_report=$(dx_mcp_phase_report "$repo_root" 2>/dev/null); then
+    echo "  MCP:        ## MCP in .dex/dex.md (Claude launches; Codex ignores it)"
+    while IFS= read -r mcp_line; do
+      mcp_kind="${mcp_line%%$'\t'*}"
+      mcp_rest="${mcp_line#*$'\t'}"
+      case "$mcp_kind" in
+        phase)
+          mcp_key="${mcp_rest%%$'\t'*}"
+          [[ "$mcp_key" == review_waves ]] && mcp_key="review waves"
+          printf '    %-14s%s\n' "${mcp_key}:" "${mcp_rest#*$'\t'}"
+          ;;
+        invalid) printf '    %-14s%s\n' "ignored:" "$mcp_rest" ;;
+      esac
+    done <<< "$mcp_report"
+    echo "    An inline launch loads its own phase's servers and every later phase's."
+  else
+    echo "  MCP:        ## MCP in .dex/dex.md could not be resolved; run 'dx doctor'"
+  fi
 fi
 
 # Changes available immediately?
