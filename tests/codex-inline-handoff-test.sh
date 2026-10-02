@@ -369,7 +369,7 @@ for control_kind in symlink directory; do
   [[ ! -e "$provider_marker" ]] || assert_at $LINENO
   [[ "$(cat "$state_file")" == "4" ]] || assert_at $LINENO
   grep -q "unreadable or invalid lifecycle control receipt" \
-    "$TMP_DIR/invalid-control-${control_kind}.out"
+    "$TMP_DIR/invalid-control-${control_kind}.out" || assert_at $LINENO
   if [[ "$control_kind" == "symlink" ]]; then
     [[ -L "$control_file" ]] || assert_at $LINENO
     rm -f "$control_file"
@@ -401,7 +401,7 @@ dx_completion_write_receipt "$session_id" "$old_generation"
 __dx_claude() {
   local expect_context=0 context_file="" arg expectation receipt_generation
   [[ "$DX_PROVIDER_ENGINE" == "codex-plugin" ]] || assert_at $LINENO
-  grep -Fxq "engine=codex-plugin" "$provider_file"
+  grep -Fxq "engine=codex-plugin" "$provider_file" || assert_at $LINENO
   for arg in "$@"; do
     if [[ "$expect_context" -eq 1 ]]; then
       context_file="$arg"
@@ -552,15 +552,15 @@ generation="0123456789abcdef0123456789abcdef"
 context_stderr="$TMP_DIR/context-build.stderr"
 ctx_file="$(__dx_build_system_context "repo" 4 "$session_id" "$TMP_DIR/repo" "worktree" "test" "$generation" 2> "$context_stderr")"
 [[ ! -s "$context_stderr" ]] || assert_at $LINENO
-grep -q "Headless Codex Phase Completion" "$ctx_file"
-grep -Fq "bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"$session_id\" \"$generation\"" "$ctx_file"
+grep -q "Headless Codex Phase Completion" "$ctx_file" || assert_at $LINENO
+grep -Fq "bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"$session_id\" \"$generation\"" "$ctx_file" || assert_at $LINENO
 if grep -q "dx_complete_file" "$ctx_file"; then
   printf "%s\n" "direct context still exposes the legacy completion marker" >&2
   exit 1
 fi
 
 ctx_file="$(__dx_build_system_context "repo" 6 "$session_id" "$TMP_DIR/repo" "worktree" "test" "$generation")"
-grep -Fq "bash \"\$DEX_DIR/bin/escalate.sh\" \"$session_id\" \"$generation\"" "$ctx_file"
+grep -Fq "bash \"\$DEX_DIR/bin/escalate.sh\" \"$session_id\" \"$generation\"" "$ctx_file" || assert_at $LINENO
 if grep -Fq "bash \"\$DEX_DIR/bin/control.sh\" pause" "$ctx_file"; then
   printf "%s\n" "direct context still asks the agent to impersonate human control" >&2
   exit 1
@@ -571,35 +571,36 @@ if grep -q "dx_paused_file" "$ctx_file"; then
 fi
 
 ctx_file="$(__dx_build_system_context "repo" 2 "$session_id" "$TMP_DIR/repo" "worktree" "test" "$generation")"
-grep -q "Headless Codex Phase Completion" "$ctx_file"
-grep -q "normal Phase 2 readiness gate" "$ctx_file"
-grep -q "Follow prompts/commit-format.md" "$ctx_file"
-grep -q "Do not wait for full verification" "$ctx_file"
-grep -q "push immediately after every commit" "$ctx_file"
-grep -q "stop the lifecycle as no-change" "$ctx_file"
-grep -Fq "bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"$session_id\" \"$generation\"" "$ctx_file"
-grep -q "Direct Human Control" "$ctx_file"
-grep -q "bin/control.sh" "$ctx_file"
-grep -q "Soft Defaults and Overrides" "$ctx_file"
-grep -q "override review.pass-timeout 2400 --source agent" "$ctx_file"
-grep -q "waive review.clean-passes --source agent" "$ctx_file"
-grep -q "Never describe an overridden" "$ctx_file"
-grep -Fq "\`CLEAN\` waves" "$ctx_file"
-grep -Fq "\`dx control ...\` or \`bin/control.sh ...\`" "$ctx_file"
-grep -Fq "\`DEX_POLICY_SESSION_ID\`" "$ctx_file"
-grep -Fq "\`--session" "$ctx_file"
+grep -q "Headless Codex Phase Completion" "$ctx_file" || assert_at $LINENO
+grep -q "normal Phase 2 readiness gate" "$ctx_file" || assert_at $LINENO
+# Prompt references are absolute so they resolve from the target repo.
+grep -Fq "Follow $DEX_DIR/prompts/commit-format.md" "$ctx_file" || assert_at $LINENO
+grep -q "Do not wait for full verification" "$ctx_file" || assert_at $LINENO
+grep -q "push immediately after every commit" "$ctx_file" || assert_at $LINENO
+grep -q "stop the lifecycle as no-change" "$ctx_file" || assert_at $LINENO
+grep -Fq "bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"$session_id\" \"$generation\"" "$ctx_file" || assert_at $LINENO
+grep -q "Direct Human Control" "$ctx_file" || assert_at $LINENO
+grep -q "bin/control.sh" "$ctx_file" || assert_at $LINENO
+grep -q "Soft Defaults and Overrides" "$ctx_file" || assert_at $LINENO
+grep -q "override review.pass-timeout 2400 --source agent" "$ctx_file" || assert_at $LINENO
+grep -q "waive review.clean-passes --source agent" "$ctx_file" || assert_at $LINENO
+grep -q "Never describe an overridden" "$ctx_file" || assert_at $LINENO
+grep -Fq "\`CLEAN\` waves" "$ctx_file" || assert_at $LINENO
+grep -Fq "\`dx control ...\` or \`bin/control.sh ...\`" "$ctx_file" || assert_at $LINENO
+grep -Fq "\`DEX_POLICY_SESSION_ID\`" "$ctx_file" || assert_at $LINENO
+grep -Fq "\`--session" "$ctx_file" || assert_at $LINENO
 
 ctx_file="$(__dx_build_system_context "repo" 3 "$session_id" "$TMP_DIR/repo" "worktree" "test" "$generation")"
-grep -q "Commit and push accepted review fixes" "$ctx_file"
+grep -q "Commit and push accepted review fixes" "$ctx_file" || assert_at $LINENO
 if grep -q "Do not commit, push, or create a PR in Phase 3" "$ctx_file"; then
   printf "%s\n" "Phase 3 context still defers review-fix history" >&2
   exit 1
 fi
 
 ctx_file="$(__dx_build_system_context "repo" 4 "$session_id" "$TMP_DIR/repo" "worktree" "test" "$generation")"
-grep -q "final PR gate" "$ctx_file"
-grep -q "commit and push each coherent repair checkpoint" "$ctx_file"
-grep -q "user-direction path" "$ctx_file"
+grep -q "final PR gate" "$ctx_file" || assert_at $LINENO
+grep -q "commit and push each coherent repair checkpoint" "$ctx_file" || assert_at $LINENO
+grep -q "user-direction path" "$ctx_file" || assert_at $LINENO
 '
 
 run_zsh '
