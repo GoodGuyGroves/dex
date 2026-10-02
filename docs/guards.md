@@ -61,6 +61,8 @@ with `$` so it matches the path rather than a substring of one.
 
 For `env_var: DX_PROVIDER_ENGINE`, `guard-handler.py` treats the current Dex session provider state as authoritative when `DEX_SESSION_ID` is present, then falls back to the hook environment and provider config defaults. Without an explicit session id, a hook-provided `DX_PROVIDER_ENGINE` value wins over any launch-scoped fallback state so stale state files cannot silently expand provider-scoped guards.
 
+`env_var: DX_ATTRIBUTION_CLAUDE_FORBIDDEN` is derived the same way when the environment does not set it: it is `1` inside a Dex session (`DEX_SESSION_ID` set) whose repository's `## Attribution` mode is `dex` (the default) or `none`, and empty otherwise. `warn-claude-attribution` uses it, so the warning follows the project's attribution mode.
+
 ### Event Types
 
 | Event | Triggers On | Input Checked |
