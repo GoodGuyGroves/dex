@@ -161,6 +161,21 @@ dx_pr_apply_label_rules() {
   [[ "$failed" -eq 0 ]] || return 1
 }
 
+# dx_project_teardown_value <repo-dir> <key>
+# A project's raw setting from the fenced block under `## Worktree Teardown`
+# in its `.dex/dex.md`. Same parser and return codes as
+# dx_project_contract_values, with a closed key set like
+# dx_project_worktree_hook. dx_teardown_setting validates the value.
+dx_project_teardown_value() {
+  [[ $# -eq 2 ]] || return 2
+  local teardown_repo="$1" teardown_key="$2"
+  case "$teardown_key" in
+    worktree_teardown | teardown_untracked | delete_remote_branch_on_merge) ;;
+    *) return 2 ;;
+  esac
+  dx_project_contract_values "$teardown_repo" "Worktree Teardown" "$teardown_key"
+}
+
 dx_project_state_file() {
   local repo_root="$1"
   local git_dir
