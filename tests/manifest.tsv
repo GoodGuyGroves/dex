@@ -2,6 +2,7 @@
 # Every tests/*-test.sh file appears once. run-all.sh rejects drift before it
 # starts a test. `service` and `serial` run exclusively; `fast` and `slow` may
 # run in parallel. Use `shared` isolation only when a test must inherit state.
+attribution-modes-test.sh	fast	all	600	hermetic
 attribution-test.sh	slow	all	1200	hermetic
 attribution-worktree-test.sh	fast	all	600	hermetic
 branch-sync-test.sh	fast	all	600	hermetic
