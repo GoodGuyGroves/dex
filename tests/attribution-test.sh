@@ -86,6 +86,40 @@ git -C "$repo_dir" log -1 --pretty=%B > "$TMP_DIR/second-message.txt"
   exit 1
 }
 
+# The Dex trailer joins an existing trailer block. Starting a new paragraph
+# would leave the earlier trailers in the body, where git no longer reads them.
+printf 'third\n' >> "$repo_dir/file.txt"
+git -C "$repo_dir" add file.txt
+git -C "$repo_dir" commit -q -m "fix: keep trailers" -m "Co-Authored-By: Alice <alice@example.test>
+Refs: #18"
+git -C "$repo_dir" log -1 --format='%(trailers:only,unfold)' > "$TMP_DIR/kept-trailers.txt"
+assert_contains "Co-Authored-By: Alice <alice@example.test>" "$TMP_DIR/kept-trailers.txt"
+assert_contains "Refs: #18" "$TMP_DIR/kept-trailers.txt"
+assert_contains "Co-Authored-By: Dex <noreply@dexcode.ai>" "$TMP_DIR/kept-trailers.txt"
+
+# With `git commit -v` the message file carries the diff below a scissors
+# line, which git cuts. The trailer has to land above it.
+printf 'fourth\n' >> "$repo_dir/file.txt"
+git -C "$repo_dir" add file.txt
+cat > "$TMP_DIR/verbose-editor.sh" <<'EDITOR'
+#!/usr/bin/env bash
+{ printf 'fix: verbose commit\n\nCo-Authored-By: Alice <alice@example.test>\n'; cat "$1"; } > "$1.new"
+mv "$1.new" "$1"
+EDITOR
+chmod +x "$TMP_DIR/verbose-editor.sh"
+GIT_EDITOR="$TMP_DIR/verbose-editor.sh" git -C "$repo_dir" commit -q -v
+git -C "$repo_dir" log -1 --format='%(trailers:only,unfold)' > "$TMP_DIR/verbose-trailers.txt"
+assert_contains "Co-Authored-By: Alice <alice@example.test>" "$TMP_DIR/verbose-trailers.txt"
+assert_contains "Co-Authored-By: Dex <noreply@dexcode.ai>" "$TMP_DIR/verbose-trailers.txt"
+git -C "$repo_dir" log -1 --format=%B > "$TMP_DIR/verbose-message.txt"
+assert_not_contains ">8" "$TMP_DIR/verbose-message.txt"
+
+# A message with no content stays empty, so git still aborts the commit.
+empty_message="$TMP_DIR/empty-message.txt"
+printf '\n# Please enter the commit message\n' > "$empty_message"
+dx_commit_attribution_message "$empty_message"
+assert_not_contains "Co-Authored-By" "$empty_message"
+
 custom_message="$TMP_DIR/custom-message.txt"
 printf 'feat: custom attribution\n' > "$custom_message"
 DX_ATTRIBUTION_COAUTHOR_NAME="Dex Local" \
