@@ -209,6 +209,20 @@ __dx_reviewers_ledger_put() {
   mv -f "$tmp" "$ledger"
 }
 
+# Record a settled CI state (green, failed, error) on the CI rows, so CI that
+# goes pending again on the same head starts a new pending clock. It needs no
+# head lookup: the ledger only keeps rows for the head it last wrote.
+__dx_reviewers_ledger_settle_ci() {
+  local settle_session="$1" settle_state="$2" ledger tmp
+  ledger=$(dx_complete_wait_file "$settle_session")
+  [[ -f "$ledger" ]] || return 0
+  grep -q $'^ci\t' "$ledger" || return 0
+  tmp=$(mktemp "${ledger}.XXXXXX") || return 1
+  awk -F'\t' -v OFS='\t' -v s="$settle_state" '$1 == "ci" { $6 = s } { print }' \
+    "$ledger" > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$ledger"
+}
+
 # --- Comments and triggers ---------------------------------------------------------
 
 # dx_reviewer_comment <session_id> <pr> <body>
@@ -627,12 +641,19 @@ for c in checks:
 PY
   ) || { printf '%s\n' error; return 2; }
   ci_state=$(printf '%s\n' "$parsed" | head -n 1)
+  if [[ "$ci_state" != "pending" ]] && dx_session_id_valid "$ci_session"; then
+    __dx_reviewers_ledger_settle_ci "$ci_session" "$ci_state" || true
+  fi
   if [[ "$ci_state" == "pending" ]] && dx_session_id_valid "$ci_session" \
     && ci_head=$(cd "$ci_repo" && __dx_reviewers_head "$ci_session" "$ci_pr"); then
     now=$(__dx_reviewers_now)
     started="$now"
+    # The clock runs while CI stays pending. A rerun after CI settled on this
+    # head (a failed job re-run, say) starts it again.
     if existing=$(__dx_reviewers_ledger_get "$ci_session" ci - "$ci_head"); then
-      started=$(printf '%s\n' "$existing" | cut -f1)
+      case "$(printf '%s\n' "$existing" | cut -f3)" in
+        pending|stalled) started=$(printf '%s\n' "$existing" | cut -f1) ;;
+      esac
     fi
     limit=$(dx_complete_pending_minutes "$ci_session") || limit=120
     if (( now - started >= 10#$limit * 60 )); then

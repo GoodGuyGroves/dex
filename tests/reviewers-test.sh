@@ -563,6 +563,16 @@ assert_eq stalled "$(printf '%s\n' "$ci_out" | head -n 1)" "stalled output"
 # ...but a new head starts the pending clock again.
 printf '%s\n' "$NEW_HEAD" > "$GH_FAKE_DIR/head"
 assert_eq 1 "$(ci)" "new head resets the pending clock"
+# CI that settled and then goes pending again on the same head (a failed job
+# re-run) starts a new clock instead of inheriting the first one.
+reset_gh
+ledger_set ci - "$HEAD_SHA" "$(( $(date +%s) - 7300 ))" - pending
+printf '%s' '[{"name":"e2e","bucket":"fail"}]' > "$GH_FAKE_DIR/checks.json"
+printf '1' > "$GH_FAKE_DIR/checks.rc"
+assert_eq 3 "$(ci)" "settled CI before a re-run"
+printf '%s' '[{"name":"e2e","bucket":"pending"}]' > "$GH_FAKE_DIR/checks.json"
+printf '8' > "$GH_FAKE_DIR/checks.rc"
+assert_eq 1 "$(ci)" "a re-run on the same head restarts the pending clock"
 
 # readiness_check: only the named check counts, and missing is pending.
 cat > "$repo/.dex/dex.md" <<'EOF'
