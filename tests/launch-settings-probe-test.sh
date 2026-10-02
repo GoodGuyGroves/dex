@@ -9,10 +9,11 @@
 # - --setting-sources drops the excluded layer but never the --settings file;
 # - whether a byte-identical command in two layers runs once or twice
 #   (reported; a legacy ungated install relies on the answer);
-# - plansDirectory keeps a plan-mode run's plan out of ~/.claude/plans.
+# - plansDirectory keeps a plan-mode run's plan out of ~/.claude/plans;
+# - autoMemoryEnabled false in --settings beats the user's true.
 #
 # It runs only with DEX_PROBE_REAL_CLAUDE=1, needs a real `claude` and an
-# ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, and makes five short model
+# ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN, and makes seven short model
 # calls. HOME and CLAUDE_CONFIG_DIR point into a sandbox; the real ones are
 # not read. The FINDINGS block at the end is the result to record.
 set -euo pipefail
@@ -149,6 +150,33 @@ plans_global=$(find "$SANDBOX_HOME/.claude/plans" -name '*.md' 2>/dev/null | wc 
 finding plan-file-under-launch-dir "$(yes_no "$plans_here")"
 finding plan-file-under-claude-plans "$(yes_no "$plans_global")"
 [[ "$plans_global" -eq 0 ]] || FAILED+=('a plan file landed in ~/.claude/plans despite plansDirectory')
+
+# 6. autoMemoryEnabled false in the launch file beats the user's true: asked
+#    to remember something, the session writes nothing under
+#    ~/.claude/projects/*/memory. The control run without the launch key shows
+#    whether this Claude Code writes auto-memory from -p at all.
+memory_files() {
+  find "$SANDBOX_HOME/.claude/projects" -path '*/memory/*' -type f 2>/dev/null | wc -l | tr -d ' '
+}
+remember() { # <launch-json>
+  rm -rf "$SANDBOX_HOME/.claude/projects"
+  printf '%s\n' "$1" > "$LAUNCH"
+  (
+    cd "$REPO"
+    env -u CLAUDE_CODE_DISABLE_AUTO_MEMORY \
+      HOME="$SANDBOX_HOME" CLAUDE_CONFIG_DIR="$SANDBOX_HOME/.claude" DEX_LAUNCHED=1 \
+      python3 "$ROOT/tests/test-timeout.py" 300 claude -p \
+        'Save this to your auto-memory for future sessions in this project: the probe word is ZEBRA. Then reply OK.' \
+        --settings "$LAUNCH" --dangerously-skip-permissions --permission-mode bypassPermissions < /dev/null
+  ) > "$TMP_DIR/memory.out" 2>&1 || true
+  memory_files
+}
+printf '%s\n' '{"autoMemoryEnabled":true}' > "$USER_SETTINGS"
+control=$(remember '{}')
+disabled=$(remember '{"autoMemoryEnabled":false}')
+finding auto-memory-written-without-launch-key "$(yes_no "$control")"
+finding auto-memory-written-with-launch-key-false "$(yes_no "$disabled")"
+[[ "$disabled" -eq 0 ]] || FAILED+=('autoMemoryEnabled false in --settings lost to the user setting')
 
 printf '%s\n' 'FINDINGS'
 printf '  %s\n' "${FINDINGS[@]}"

@@ -73,6 +73,11 @@ verification, task completion, or phase completion to record meaningful work.
 - Before using a function or API: read the source or official docs to confirm the signature and behavior.
 - If you are uncertain about behavior, a schema, or a business rule: write a small test or read the code. Do not fill gaps with plausible guesses.
 
+### Durable Notes
+
+- Claude Code's auto-memory is off in every Dex launch. Do not write memory files under `~/.claude/projects/*/memory`; they would leak into unrelated sessions in the same repository.
+- When a lesson should outlive this session, put it in the repo's own memory: a scoped entry under `.dex/memory/domains/` mapped from `.dex/memory/index.md`, following `$DEX_DIR/prompts/sync-memory.md`. It is reviewed and committed like any other change.
+
 ### Tool Output Hygiene
 
 - Prefer scoped `rg`, `git diff --name-only`, `git diff --stat`, and targeted file reads before broad output.

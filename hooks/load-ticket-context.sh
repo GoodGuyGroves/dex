@@ -124,3 +124,8 @@ if [[ -f "$REPO_TOP/.dex/memory/index.md" ]]; then
   echo "Repo memory index detected: .dex/memory/index.md"
   echo "Load only active memory entries whose scope matches the task, changed files, or current phase."
 fi
+# Dex launches turn Claude Code's auto-memory off (autoMemoryEnabled: false).
+if [[ "${DEX_LAUNCHED:-}" == 1 ]]; then
+  echo ""
+  echo "Claude Code auto-memory is off in this Dex session. Record a durable lesson in .dex/memory/ (see $DEX_DIR/prompts/sync-memory.md), never under ~/.claude/projects/*/memory."
+fi

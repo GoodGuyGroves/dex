@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Claude Code plan files and prompt suggestions in Dex launches: every launch
-# file sends plans to .dex/plans inside the launch directory and turns prompt
-# suggestions off, git ignores the plans in a worktree and in an in-place
+# Claude Code plan files, prompt suggestions and auto-memory in Dex launches:
+# every launch file sends plans to .dex/plans inside the launch directory and
+# turns prompt suggestions and auto-memory off, git ignores the plans in a worktree and in an in-place
 # checkout, and the run keeps its own copy of the approved plan.
 set -euo pipefail
 
@@ -31,7 +31,7 @@ export DX_RTK_ENABLED=0
 
 # ── The launch file ───────────────────────────────────────────────────────
 python3 "$HELPER" launch-settings "$ROOT/settings.json" "$ROOT" '' '' 0 > "$TMP_DIR/plain.json"
-printf '%s\n' '{"promptSuggestionEnabled":true,"plansDirectory":"/elsewhere"}' > "$TMP_DIR/extra.json"
+printf '%s\n' '{"promptSuggestionEnabled":true,"autoMemoryEnabled":true,"plansDirectory":"/elsewhere"}' > "$TMP_DIR/extra.json"
 DEX_EXTRA_SETTINGS="$TMP_DIR/extra.json" python3 "$HELPER" launch-settings "$ROOT/settings.json" \
   "$ROOT" '' '' 0 > "$TMP_DIR/extra-out.json"
 python3 - "$TMP_DIR" "$DX_CLAUDE_PLANS_SUBDIR" <<'PY'
@@ -41,7 +41,9 @@ plain = json.load(open(tmp + "/plain.json"))
 extra = json.load(open(tmp + "/extra-out.json"))
 assert plain["plansDirectory"] == subdir == ".dex/plans", plain     # shell and Python agree
 assert plain["promptSuggestionEnabled"] is False, plain
+assert plain["autoMemoryEnabled"] is False, plain                   # no ~/.claude/projects/*/memory
 assert extra["promptSuggestionEnabled"] is True, extra              # a deliberate opt-in wins
+assert extra["autoMemoryEnabled"] is True, extra
 assert extra["plansDirectory"] == subdir, extra                     # the run's copy depends on it
 PY
 

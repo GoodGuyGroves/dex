@@ -422,7 +422,12 @@ def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
             groups[:] = [group for group in groups if group["hooks"]]
     # No dimmed next-prompt guess in a Dex session: one Enter or Tab would
     # send it, and in a driven terminal that can be a merge or a new lifecycle.
-    result: dict = {"promptSuggestionEnabled": False}
+    # No auto-memory either: it lives in ~/.claude/projects/<repo>/memory,
+    # shared by every session in the repository, outside DEX_HOME and the
+    # repo. Dex's durable notes go in .dex/memory/. The setting, not
+    # CLAUDE_CODE_DISABLE_AUTO_MEMORY: it reaches only this launch, a nested
+    # claude does not inherit it, and DEX_EXTRA_SETTINGS can still opt back in.
+    result: dict = {"promptSuggestionEnabled": False, "autoMemoryEnabled": False}
     if statusline:
         result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline)}
     if inbound:

@@ -18,7 +18,8 @@
       a write deletes its own rows.
   forbidden <observed.tsv>...
       Fail on any write that no expected row may allow: a Claude plan file
-      under ~/.claude/plans.
+      under ~/.claude/plans or an auto-memory file under
+      ~/.claude/projects/*/memory.
   parity <installed.jsonl> <isolated.jsonl> <allow.tsv>
       Compare the configuration each stub `claude` launch received, run by
       run; differences not allowlisted fail.
@@ -169,6 +170,7 @@ def _read_tsv(filename):
 # them, whatever unit is still open.
 FORBIDDEN = [
     ("plan file", re.compile(r"^\.claude/plans/.")),
+    ("auto-memory file", re.compile(r"^\.claude/projects/[^/]+/memory/.")),
 ]
 
 
@@ -609,7 +611,11 @@ def selftest(dex_dir):
                 'export DEX_DIR="${DEX_DIR:-/tmp}"; bash "$DEX_DIR/hooks/stop-sound.sh"'):
         assert not _runs_from(bad, dex_dir), bad
     for path, hit in ((".claude/plans/a-plan.md", True), (".claude/plans/a-agent-b1.md", True),
-                      (".claude/plans", False), (".claude/plansx/a.md", False)):
+                      (".claude/plans", False), (".claude/plansx/a.md", False),
+                      (".claude/projects/-repo/memory/MEMORY.md", True),
+                      (".claude/projects/-repo/memory/x/y.md", True),
+                      (".claude/projects/-repo/memory", False),
+                      (".claude/projects/-repo/memory.md", False)):
         assert any(pattern.match(path) for _, pattern in FORBIDDEN) == hit, path
     return 0
 
