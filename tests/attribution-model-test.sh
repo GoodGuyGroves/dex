@@ -136,6 +136,16 @@ assert_contains "claude-model-c" "$TMP_DIR/branch-models.out"
 assert_not_contains "claude-model-a" "$TMP_DIR/branch-models.out"
 [[ "$(grep -c 'claude-model-c' "$TMP_DIR/branch-models.out")" -eq 1 ]] || assert_at $LINENO
 
+# The same list through the command the prompts call.
+(cd "$repo" && DEX_SESSION_ID="$session" bash "$ROOT/bin/attribution.sh" models "$first_commit") > "$TMP_DIR/cli-models.out"
+assert_contains "claude-model-b" "$TMP_DIR/cli-models.out"
+assert_contains "claude-model-c" "$TMP_DIR/cli-models.out"
+[[ "$(cd "$repo" && bash "$ROOT/bin/attribution.sh" mode)" == "dex" ]] || assert_at $LINENO
+bash "$ROOT/bin/attribution.sh" --help > "$TMP_DIR/cli-help.out"
+assert_contains "Usage: dx attribution" "$TMP_DIR/cli-help.out"
+! (cd "$repo" && bash "$ROOT/bin/attribution.sh" bogus) > /dev/null 2>&1 || assert_at $LINENO
+! (cd "$TMP_DIR" && bash "$ROOT/bin/attribution.sh" mode) > /dev/null 2>&1 || assert_at $LINENO
+
 # With the trailer off there is nothing to list.
 printf '# Project\n' > "$repo/.dex/dex.md"
 [[ -z "$(DEX_SESSION_ID="$session" dx_attribution_branch_models "$repo" "$first_commit")" ]] || assert_at $LINENO

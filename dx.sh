@@ -131,6 +131,7 @@ __dx_cli() {
       fi
       ;;
     uninit)    bash "$DEX_DIR/bin/uninit.sh" "$@" ;;
+    attribution) bash "$DEX_DIR/bin/attribution.sh" "$@" ;;
     reload)
       if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
         echo "Usage: dx reload"
@@ -204,6 +205,7 @@ __dx_cli() {
       echo "                        Override timeout: dx research --scenario-timeout 7200"
       echo "                        On main/master, pass --allow-main"
       echo "  dx uninit           Remove Dex from current repo"
+      echo "  dx attribution      Show this repo's commit and PR attribution mode and models"
       echo "  dx reload           Reload shell functions and refresh Claude hooks"
       echo "  dx status           Show installation status"
       echo "  dex                 Alias for dx"
@@ -4115,7 +4117,7 @@ __dx_show_header() {
 { unalias __dx_task_commands; unfunction __dx_task_commands; } 2>/dev/null || true
 __dx_task_commands() {
   printf '%s\n' init sync login logout whoami dexcode worker maintain tools \
-    test config provider run control sessions ps doctor run-gate worktree review ui-capture research install uninstall uninit status \
+    test config provider run control sessions ps doctor run-gate worktree review ui-capture research install uninstall uninit attribution status \
     reload help revert log triage refine setup account accounts model route profile router context
 }
 
@@ -4372,7 +4374,7 @@ dx() {
 
   # Route management subcommands to the internal Dex dispatcher.
   case "$dx_command_input" in
-    init|sync|login|logout|whoami|dexcode|worker|maintain|tools|test|config|provider|setup|router|account|accounts|model|route|profile|context|run|run-gate|worktree|review|control|sessions|ps|doctor|ui-capture|research|install|uninstall|uninit|status|reload|help|--help|-h|revert|log)
+    init|sync|login|logout|whoami|dexcode|worker|maintain|tools|test|config|provider|setup|router|account|accounts|model|route|profile|context|run|run-gate|worktree|review|control|sessions|ps|doctor|ui-capture|research|install|uninstall|uninit|attribution|status|reload|help|--help|-h|revert|log)
       __dx_cli "$@"
       return $?
       ;;
