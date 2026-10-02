@@ -79,6 +79,21 @@ for phase in 0 1 2 3 4 5 6; do
   assert_eq "${expected_noninline[$phase]}" "$(mode_of "$phase" 0)" "built-in phase $phase non-inline"
   assert_eq "${expected_inline[$phase]}" "$(mode_of "$phase" 1)" "built-in phase $phase inline"
 done
+# The shell keeps the same table so a launch without `## MCP` starts no python3.
+(
+  # shellcheck source=lib/common.sh
+  source "$ROOT/lib/common.sh"
+  for phase in 0 1 2 3 4 5 6; do
+    for inline in 0 1; do
+      assert_eq "$(mode_of "$phase" "$inline")" \
+        "$(DEX_LOOP_PHASE="$phase" __dx_provider_builtin_phase_mcp "$inline")" \
+        "shell and Python built-ins agree for phase $phase inline $inline"
+    done
+  done
+  dx_mcp_declared "$REPO" && assert_at $LINENO
+  write_mcp 'plan: none'
+  dx_mcp_declared "$REPO" || assert_at $LINENO
+)
 rm -f "$REPO/.dex/dex.md"
 assert_eq none "$(mode_of 4 1)" "no dex.md at all"
 

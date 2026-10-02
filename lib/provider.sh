@@ -762,33 +762,86 @@ DEX_FACTORY_EVENTS_ENDPOINT
 EOF
 }
 
-# Lifecycle phases that never open a browser: 1 (Plan), 4 (Verify), 5 (PR) and
-# 6 (Complete). Phase 0 (Setup), 2 (Implement) and 3 (Review) keep whatever MCP
-# servers the user configured — Phase 2 is where UI proof is captured, and a
-# review wave already disables its own (DEX_REVIEW_DISABLE_MCP). Nothing
-# outside a Dex lifecycle reaches this: an interactive `claude` session is not
-# launched through the provider layer, and its settings are never rewritten.
+# Which MCP servers a lifecycle launch loads. Without a `## MCP` section in the
+# project's .dex/dex.md, the phases that never open a browser — 1 (Plan), 4
+# (Verify), 5 (PR) and 6 (Complete) — launch with no MCP servers, and 0
+# (Setup), 2 (Implement) and 3 (Review) keep whatever the user configured:
+# Phase 2 is where UI proof is captured, and a review wave sets its own
+# (lib/review-loop.sh). A project's `## MCP` section can name the servers per
+# phase instead; scripts/mcp-scope.py resolves it. Nothing outside a Dex
+# lifecycle reaches this: an interactive `claude` session is not launched
+# through the provider layer, and its settings are never rewritten.
 #
 # What a launch may drop depends on how far it runs. An MCP configuration is
 # fixed for the life of the process, and an inline lifecycle advances phases
-# inside one provider session (hooks/phase-loop.sh), so a Phase 1 launch there
-# goes on to run Phase 2 and must keep the browser. Phases 4, 5 and 6 are
-# followed only by each other, so they can drop the servers either way. The
-# case an inline session cannot cover is a `dx control jump` backwards into
-# Phase 2 from one of those three.
-__dx_provider_minimal_mcp_phase() {
+# inside one provider session (hooks/phase-loop.sh), so an inline launch gets
+# the servers of its own phase and every later one — a Phase 1 launch there
+# goes on to run Phase 2 and must keep the browser. The case an inline session
+# cannot cover is a `dx control jump` backwards into an earlier phase.
+#
+# DEX_LIFECYCLE_MINIMAL_MCP=0 turns all of this off. A review pass or
+# assessment is left alone (it states its own configuration even though it
+# runs as Phase 3), and so is the Codex engine, which takes no MCP flags.
+__dx_provider_phase_mcp_applies() {
   [[ "${DEX_LIFECYCLE_MINIMAL_MCP:-1}" != "0" ]] || return 1
   [[ "${DEX_LOOP_ACTIVE:-0}" == "1" ]] || return 1
   case "${DEX_LOOP_PHASE:-}" in
-    4|5|6) return 0 ;;
-    1)
-      if [[ "${DEX_PHASE_HANDOFF:-}" == "inline" ]]; then
-        return 1
-      fi
-      return 0
-      ;;
+    0|1|2|3|4|5|6) ;;
     *) return 1 ;;
   esac
+  [[ "${DEX_REVIEW_PASS_ACTIVE:-0}" != "1" ]] || return 1
+  [[ "${DEX_REVIEW_ASSESSMENT_ACTIVE:-0}" != "1" ]] || return 1
+  [[ "${DX_PROVIDER_ENGINE:-}" != "codex-plugin" ]]
+}
+
+# __dx_provider_builtin_phase_mcp <inline 0|1> — `inherit` or `none` for
+# DEX_LOOP_PHASE when the project declares nothing. The same table as BUILTIN
+# in scripts/mcp-scope.py (tests/mcp-scope-test.sh checks they agree); it is
+# kept here so a launch in a repository without `## MCP` starts no python3.
+__dx_provider_builtin_phase_mcp() {
+  case "${DEX_LOOP_PHASE:-}" in
+    4|5|6) printf 'none\n' ;;
+    1)
+      if [[ "$1" == "1" ]]; then
+        printf 'inherit\n'
+      else
+        printf 'none\n'
+      fi
+      ;;
+    *) printf 'inherit\n' ;;
+  esac
+}
+
+# __dx_provider_phase_mcp — set, in the caller's scope, _dx_phase_mcp_mode
+# (inherit, none or scoped) and, for scoped, _dx_phase_mcp_file: this
+# launch's strict configuration, private, under the launch-settings directory
+# whose sweep collects what a killed launch leaves behind.
+__dx_provider_phase_mcp() {
+  _dx_phase_mcp_mode=inherit
+  _dx_phase_mcp_file=""
+  __dx_provider_phase_mcp_applies || return 0
+  local phase_inline=0 phase_repo phase_dir phase_resolved
+  [[ "${DEX_PHASE_HANDOFF:-}" != "inline" ]] || phase_inline=1
+  phase_repo=$(git rev-parse --show-toplevel 2>/dev/null) || phase_repo="$PWD"
+  if ! dx_mcp_declared "$phase_repo"; then
+    _dx_phase_mcp_mode=$(__dx_provider_builtin_phase_mcp "$phase_inline")
+    return 0
+  fi
+  phase_dir=$(__dx_provider_launch_settings_dir)
+  if (umask 077 && mkdir -p "$phase_dir") \
+    && _dx_phase_mcp_file=$(umask 077 && mktemp "$phase_dir/launch.XXXXXX") \
+    && phase_resolved=$(dx_mcp_launch_config "$phase_repo" "$DEX_LOOP_PHASE" \
+      "$phase_inline" "$_dx_phase_mcp_file"); then
+    _dx_phase_mcp_mode="$phase_resolved"
+  else
+    dx_warn "Dex could not resolve this phase's MCP servers from .dex/dex.md; using Dex's built-in default for the phase."
+    _dx_phase_mcp_mode=$(__dx_provider_builtin_phase_mcp "$phase_inline")
+  fi
+  if [[ "$_dx_phase_mcp_mode" != "scoped" && -n "$_dx_phase_mcp_file" ]]; then
+    rm -f "$_dx_phase_mcp_file"
+    _dx_phase_mcp_file=""
+  fi
+  return 0
 }
 
 # __dx_provider_args_set_mcp <args…> — did the caller already state its own MCP
@@ -905,22 +958,31 @@ dx_provider_claude() {
 
   # A phase that never opens a browser launches with no MCP servers at all —
   # the same empty configuration review waves use — so it does not fork a node
-  # sidecar, and a Chromium behind it, for servers it will not call. The user's
-  # own MCP registrations are read, not written, and a caller that already
-  # stated its own configuration keeps it.
+  # sidecar, and a Chromium behind it, for servers it will not call. A project
+  # can name a phase's servers instead (`## MCP`). The user's own MCP
+  # registrations are read, not written, and a caller that already stated its
+  # own configuration keeps it.
   #
   # The flags go in front of everything the caller passed. A prompt reaches
   # this function either as a trailing operand or as the value of `-p`
   # (bin/test.sh does the latter), so "before the message" is only safe to
   # express as "before the first argument".
-  local minimal_mcp_config
-  if __dx_provider_minimal_mcp_phase && ! __dx_provider_args_set_mcp "$@"; then
-    if minimal_mcp_config=$(__dx_provider_minimal_mcp_config); then
-      set -- --strict-mcp-config --mcp-config "$minimal_mcp_config" "$@"
-    else
-      dx_warn "Dex could not write the phase MCP configuration; this phase keeps the inherited MCP servers."
-    fi
+  local minimal_mcp_config _dx_phase_mcp_mode=inherit _dx_phase_mcp_file=""
+  if ! __dx_provider_args_set_mcp "$@"; then
+    __dx_provider_phase_mcp
   fi
+  case "$_dx_phase_mcp_mode" in
+    none)
+      if minimal_mcp_config=$(__dx_provider_minimal_mcp_config); then
+        set -- --strict-mcp-config --mcp-config "$minimal_mcp_config" "$@"
+      else
+        dx_warn "Dex could not write the phase MCP configuration; this phase keeps the inherited MCP servers."
+      fi
+      ;;
+    scoped)
+      set -- --strict-mcp-config --mcp-config "$_dx_phase_mcp_file" "$@"
+      ;;
+  esac
 
   # DX_LAUNCH_STATUS_LINE=1 is how a lifecycle phase asks for Dex's status
   # line; every other launch keeps the user's own. It is consumed here, before
@@ -940,7 +1002,10 @@ dx_provider_claude() {
   # same hooks a second time. No trap removes the file: dx.sh is sourced into
   # the user's shell, so the next launch's sweep collects what a kill leaves.
   local _dx_launch_file="" _dx_launch_mcp_file="" _dx_launch_args=() _dx_launch_rc=0
-  __dx_provider_launch_settings "$@" || return 1
+  if ! __dx_provider_launch_settings "$@"; then
+    rm -f ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
+    return 1
+  fi
   local -x DEX_LAUNCHED=1
   # The router scopes MCP servers itself; this names the --mcp-config it may
   # fold into that scope instead of treating it as the caller's own.
@@ -948,7 +1013,8 @@ dx_provider_claude() {
     local -x DEX_MCP_LAUNCH_CONFIG="$_dx_launch_mcp_file"
   fi
   __dx_provider_claude_exec "${_dx_launch_args[@]}" || _dx_launch_rc=$?
-  rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"}
+  rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} \
+    ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
   return "$_dx_launch_rc"
 }
 

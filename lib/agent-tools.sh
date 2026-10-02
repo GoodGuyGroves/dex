@@ -471,6 +471,78 @@ dx_dex_launch_mcp_config() {
   python3 "$DEX_DIR/scripts/settings-json.py" launch-mcp "$registry" "$root"
 }
 
+# ── Per-phase MCP servers ────────────────────────────────────────────────────
+# A project names the MCP servers each lifecycle phase loads in the `## MCP`
+# section of its .dex/dex.md; scripts/mcp-scope.py resolves it against Dex's
+# registry and the user's own Claude configuration (see docs/mcp-phases.md).
+
+# dx_mcp_declared <repo> — does the project's .dex/dex.md have a `## MCP`
+# section? A cheap check, so launches in a repository without one start no
+# python3; the resolver decides what the section says.
+dx_mcp_declared() {
+  [[ -f "$1/.dex/dex.md" ]] || return 1
+  grep -Eiq '^##[[:space:]]+MCP[[:space:]]*$' "$1/.dex/dex.md"
+}
+
+# __dx_mcp_report_warn <context> <repo> — one warning per resolver report
+# line on stdin, so a server a phase asked for is never dropped silently.
+__dx_mcp_report_warn() {
+  local mcp_context="$1" mcp_repo="$2" mcp_kind mcp_value
+  while IFS=$'\t' read -r mcp_kind mcp_value; do
+    case "$mcp_kind" in
+      missing)
+        dx_warn "MCP (${mcp_context}): '${mcp_value}' is not defined in any Claude MCP configuration or Dex's registry; launching without it."
+        ;;
+      disabled)
+        dx_warn "MCP (${mcp_context}): '${mcp_value}' is disabled in your Claude settings; launching without it."
+        ;;
+      unset-env)
+        dx_warn "MCP (${mcp_context}): a selected server reads \${${mcp_value}}, which is unset; check its authentication before relying on it."
+        ;;
+      invalid)
+        dx_warn "Ignoring part of '## MCP' in ${mcp_repo}/.dex/dex.md: ${mcp_value}."
+        ;;
+    esac
+  done
+}
+
+# __dx_mcp_resolve <context> <repo> <mcp-scope.py arguments…> — print the
+# resolved mode (inherit, none, scoped, or unset for undeclared review waves)
+# and warn for each problem the resolver reported. Returns 1 when it failed.
+__dx_mcp_resolve() {
+  local mcp_context="$1" mcp_repo="$2" mcp_output mcp_mode
+  shift 2
+  mcp_output=$(python3 "$DEX_DIR/scripts/mcp-scope.py" "$@") || return 1
+  mcp_mode="${mcp_output%%$'\n'*}"
+  case "$mcp_mode" in
+    inherit|none|scoped|unset) ;;
+    *) return 1 ;;
+  esac
+  if [[ "$mcp_output" == *$'\n'* ]]; then
+    __dx_mcp_report_warn "$mcp_context" "$mcp_repo" <<< "${mcp_output#*$'\n'}"
+  fi
+  printf '%s\n' "$mcp_mode"
+}
+
+# dx_mcp_launch_config <repo> <phase 0-6> <inline 0|1> <out-file> — the MCP
+# mode for a lifecycle launch; a scoped result is written to <out-file>.
+dx_mcp_launch_config() {
+  local mcp_label
+  mcp_label=$(dx_lifecycle_phase_label "$2" 2>/dev/null) || mcp_label="Phase $2"
+  __dx_mcp_resolve "$mcp_label" "$1" launch "$1" "$2" "$3" "$(dx_dex_mcp_registry)" "$4"
+}
+
+# dx_mcp_review_wave_config <repo> <out-file> — the same for review waves.
+dx_mcp_review_wave_config() {
+  __dx_mcp_resolve "review waves" "$1" review-waves "$1" "$(dx_dex_mcp_registry)" "$2"
+}
+
+# dx_mcp_phase_report <repo> — the resolver's per-phase rows for dx status
+# and dx doctor (see scripts/mcp-scope.py report).
+dx_mcp_phase_report() {
+  python3 "$DEX_DIR/scripts/mcp-scope.py" report "$1" "$(dx_dex_mcp_registry)"
+}
+
 # The registry as Codex `-c` values, one per line.
 dx_dex_codex_mcp_overrides() {
   local registry
