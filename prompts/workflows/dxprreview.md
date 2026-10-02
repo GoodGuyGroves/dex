@@ -157,7 +157,9 @@ the Step 8 report with its draft-comment count and backup file path. On rc 1
 (pending reviews could not be listed), rc 5 (a backup could not be written, so
 that review was kept) or rc 3 (a delete failed), warn in the report that replies
 may be hidden from other readers, and continue. Under `resolve-all`, skip this
-step: that policy keeps the behaviour from before the policy existed.
+step: that policy keeps the behaviour from before the policy existed. Also skip
+it under `dx maintain respond`: that provider makes no GitHub writes, and the
+wrapper publishes the replies after it exits (Step 5).
 
 ### 2. Understand the Full Change
 

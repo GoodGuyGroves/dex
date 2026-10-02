@@ -62,6 +62,8 @@ assert_contains 'dx_pr_thread_policy' "$REVIEW"
 assert_contains 'dx_pr_thread_respond' "$REVIEW"
 assert_contains 'dx_pr_pending_review_clear' "$REVIEW"
 assert_contains 'draft-comment count and backup file path' "$REVIEW"
+# dx maintain respond's provider makes no GitHub writes, the cleanup included.
+assert_contains 'it under `dx maintain respond`: that provider makes no GitHub writes' "$REVIEW"
 assert_contains '**Left open for the maintainer (disagreements):**' "$REVIEW"
 assert_not_contains 'resolveReviewThread' "$REVIEW"
 for doc in "$PHASE6" "$COMPLETE" "$WATCH"; do
