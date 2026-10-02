@@ -68,6 +68,10 @@ git -C "$TEST_REPO" commit -q -m init
 git -C "$TEST_REPO" remote add origin "$TMP_DIR/origin.git"
 git -C "$TEST_REPO" push -q -u origin main
 git -C "$TEST_REPO" remote set-head origin main
+# .dex/ (config and worktrees) is not part of the work under test: keep it out
+# of `git status`, as a real project's committed config and ignored worktrees
+# are.
+printf '.dex/\n' >>"$TEST_REPO/.git/info/exclude"
 
 # dxz <script> — run zsh with dx.sh loaded, from the repository root.
 dxz() {
@@ -297,6 +301,31 @@ complete ticket-9 >/dev/null 2>&1
 assert_eq never "$(meta ticket-9 ticket_close)" "the launch snapshot holds the override"
 assert_eq "" "$(meta ticket-9 ticket_close_pending)" "run override never: no ticket close recorded"
 if grep -q 'number,headRefOid' "$GH_STUB_DIR/calls" 2>/dev/null; then fail "never looked up the pull request"; fi
+
+# 10. An in-place lifecycle (dx --no-worktree): completion releases the branch
+#     and drops the session, and the ticket close survives it the same way.
+set_dex 'GitHub Issues (`gh`)' 'ticket_close: on_merge'
+reset_gh
+git -C "$TEST_REPO" switch -q -c feat/ten main
+git -C "$TEST_REPO" commit -q --allow-empty -m "work on ticket-10"
+git -C "$TEST_REPO" push -q -u origin feat/ten
+NAME=ticket-10 dxz '
+  sid=$(dx_session_id "$NAME")
+  dx_meta_write "$sid" "wt_name=$NAME" "wt_dir=$TEST_REPO" workspace_mode=in-place \
+    current_branch=feat/ten ticket_id=10 ticket_number=10
+  dx_ticket_close_snapshot "$sid" "$TEST_REPO"
+  dx_lifecycle_atomic_write "$(dx_state_file "$sid")" 7'
+open_pr 110 feat/ten
+NAME=ticket-10 dxz '__dx_cleanup_completed_workspace "$NAME" "$TEST_REPO" main in-place "$(dx_session_id "$NAME")"' \
+  >"$TMP_DIR/out" 2>&1 || fail "in-place completion failed: $(cat "$TMP_DIR/out")"
+assert_contains "Recorded 10 to close when pull request #110 merges" "$TMP_DIR/out"
+assert_eq main "$(git -C "$TEST_REPO" branch --show-current)" "in-place completion returned to main"
+assert_eq on_merge "$(meta ticket-10 ticket_close_pending)" "in-place record survives completion"
+assert_eq "" "$(meta ticket-10 wt_dir)" "only the ticket close is kept"
+pr_state MERGED
+sweep >/dev/null 2>&1
+assert_contains "issue close 10 --reason completed" "$GH_STUB_DIR/calls"
+[[ ! -e "$(meta_file ticket-10)" ]] || fail "in-place record kept after the merge"
 
 # Nothing landed outside the sandbox: Dex state stays under DEX_HOME and the
 # work in the repository; HOME is untouched.
