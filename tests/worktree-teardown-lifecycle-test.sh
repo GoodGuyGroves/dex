@@ -233,6 +233,33 @@ dxz dxclean >"$TMP_DIR/out" 2>&1 || fail "dxclean failed on a worktree the gate 
 assert_contains "Kept ticket-11" "$TMP_DIR/out"
 assert_not_contains "Failed to remove stale worktree ticket-11" "$TMP_DIR/out"
 
+# 12. The sweep leaves a deferred lifecycle that was reopened (phase 0-6),
+#     even after its pull request merged.
+set_teardown 'worktree_teardown: on_merge'
+lifecycle ticket-12 feat/twelve
+complete ticket-12 >/dev/null 2>&1
+merged feat/twelve
+dxz 'dx_lifecycle_atomic_write "$(dx_state_file "$(dx_session_id ticket-12)")" 3'
+dxz dxclean >"$TMP_DIR/out" 2>&1
+[[ -d "$TEST_REPO/.dex/worktrees/ticket-12" ]] || fail "the sweep removed a reopened lifecycle: $(cat "$TMP_DIR/out")"
+has_branch feat/twelve || assert_at $LINENO
+dxz 'dxrm ticket-12' >/dev/null 2>&1 || assert_at $LINENO
+
+# 13. dxrm --all goes through the same gate: refuse keeps a worktree with an
+#     untracked file, rescue copies the file out and removes it.
+set_teardown 'teardown_untracked: refuse'
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-13" -b worktree-ticket-13 main
+printf 'draft\n' >"$TEST_REPO/.dex/worktrees/ticket-13/draft.txt"
+dxz 'dxrm --all' >"$TMP_DIR/out" 2>&1 || true
+[[ -f "$TEST_REPO/.dex/worktrees/ticket-13/draft.txt" ]] || fail "dxrm --all removed a refused worktree"
+assert_contains "Some worktrees were kept" "$TMP_DIR/out"
+set_teardown 'teardown_untracked: rescue'
+before=$(rescue_count)
+dxz 'dxrm --all' >"$TMP_DIR/out" 2>&1 || fail "dxrm --all failed: $(cat "$TMP_DIR/out")"
+[[ ! -e "$TEST_REPO/.dex/worktrees/ticket-13" ]] || fail "dxrm --all kept a rescued worktree"
+assert_eq "$((before + 1))" "$(rescue_count)" "dxrm --all rescued the untracked file"
+[[ -n "$(find "$DEX_HOME/rescue" -path '*ticket-13-*/untracked/draft.txt' | head -1)" ]] || assert_at $LINENO
+
 # Nothing above wrote outside the sandbox's DEX_HOME and repository.
 [[ ! -e "$HOME/.dex" && ! -e "$HOME/.claude/.dex-phases" ]] || fail "state written outside DEX_HOME"
 
