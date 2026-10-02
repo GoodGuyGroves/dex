@@ -12,6 +12,10 @@ Usage: dx control <status|pause|stop|done|jump PHASE|resume>
        dx control clear-override GATE --reason TEXT [--scope phase|session]
        dx control waive GATE --reason TEXT
 
+  Inside a Dex launch (DEX_LAUNCHED=1) every control is recorded as
+  --source agent and needs --reason. Record --source human only when relaying
+  a direct human instruction, with --quote "<their words>".
+
   status       Show the current phase, pending control, and active overrides
   pause        Detach Dex and preserve the current phase for resume
                (detach is an alias)
@@ -31,7 +35,10 @@ Usage: dx control <status|pause|stop|done|jump PHASE|resume>
   waive        Mark a named gate waived and advance the current phase safely
 
 Override/control options:
-  --source agent|human   Attribution (policy changes default to agent; recovery to human)
+  --source agent|human   Attribution (inside a Dex launch: agent; otherwise policy
+                         changes default to agent and other controls to human)
+  --quote TEXT           The human's words, required for --source human inside
+                         a Dex launch; recorded in a control.quoted event
   --reason TEXT          Required for recovery, agent controls, and policy changes
   --scope phase|session  Override lifetime scope (default: phase)
   --for-seconds N        Expire an override after N seconds; 0 means no expiry
@@ -79,11 +86,18 @@ parse_policy_options() {
       --source)
         [[ $# -ge 2 ]] || { dx_error "--source requires agent or human."; return 1; }
         CONTROL_ORIGIN="$2"
+        CONTROL_ORIGIN_GIVEN=1
         shift 2
         ;;
       --reason)
         [[ $# -ge 2 ]] || { dx_error "--reason requires text."; return 1; }
         CONTROL_REASON="$2"
+        shift 2
+        ;;
+      --quote)
+        [[ $# -ge 2 ]] || { dx_error "--quote requires the human's words."; return 1; }
+        CONTROL_QUOTE="$2"
+        CONTROL_QUOTE_GIVEN=1
         shift 2
         ;;
       --scope)
@@ -115,10 +129,49 @@ parse_policy_options() {
     dx_error "--for-seconds must be a non-negative decimal with at most 15 digits."
     return 1
   }
-  if [[ "$CONTROL_ORIGIN" == "agent" && -z "$CONTROL_REASON" ]]; then
-    dx_error "--reason is required for an agent override or control."
+  if [[ "$CONTROL_QUOTE_GIVEN" -eq 1 ]]; then
+    dx_override_reason_valid "$CONTROL_QUOTE" || {
+      dx_error "--quote must be 1-500 characters on one line, with no tabs."
+      return 1
+    }
+    [[ "$CONTROL_ORIGIN" == "human" ]] || {
+      dx_error "--quote records a human's words, so it needs --source human."
+      return 1
+    }
+  fi
+  # An agent in a Dex launch runs this script; a human's own chat controls
+  # arrive through the UserPromptSubmit hook instead. Crediting a human here
+  # therefore needs the human's words.
+  if [[ "$CONTROL_LAUNCHED" -eq 1 && "$CONTROL_ORIGIN" == "human" \
+    && "$CONTROL_QUOTE_GIVEN" -eq 0 ]]; then
+    dx_error "Inside a Dex launch, --source human needs --quote \"<the human's words>\". Use --source agent for a decision the agent made."
     return 1
   fi
+  if [[ "$CONTROL_ORIGIN" == "agent" && -z "$CONTROL_REASON" ]]; then
+    if [[ "$CONTROL_LAUNCHED" -eq 1 && "$CONTROL_ORIGIN_GIVEN" -eq 0 ]]; then
+      dx_error "--reason is required: inside a Dex launch this control is recorded as --source agent."
+    else
+      dx_error "--reason is required for an agent override or control."
+    fi
+    return 1
+  fi
+}
+
+# Record the quoted human instruction once the control has succeeded.
+record_control_quote() {
+  local quote_json reason_json gate_json command_json data_json
+  [[ "$CONTROL_QUOTE_GIVEN" -eq 1 ]] || return 0
+  command_json=$(dx_event_json_string "$COMMAND" 64) || return 0
+  gate_json=$(dx_event_json_string "$CONTROL_GATE" 120) || return 0
+  reason_json=$(dx_event_json_string "$CONTROL_REASON" 500) || return 0
+  quote_json=$(dx_event_json_string "$CONTROL_QUOTE" 500) || return 0
+  data_json=$(printf '{"command":%s,"gate":%s,"source":"human","reason":%s,"quote":%s}' \
+    "$command_json" "$gate_json" "$reason_json" "$quote_json")
+  dx_event_emit_for_session "$SESSION_ID" "control.quoted" "info" \
+    "dx control ${COMMAND} relayed a quoted human instruction" \
+    "${CURRENT_PHASE:-}" "$data_json" 2>/dev/null || true
+  dx_run_log_append_for_session "$SESSION_ID" "info" "lifecycle-control" \
+    "dx control ${COMMAND} source=human quote=${CONTROL_QUOTE}" 2>/dev/null || true
 }
 
 record_control_policy() {
@@ -196,7 +249,13 @@ if [[ "$COMMAND" == "-h" || "$COMMAND" == "--help" || "$COMMAND" == "help" ]]; t
   exit 0
 fi
 
+CONTROL_LAUNCHED=0
+[[ "${DEX_LAUNCHED:-}" == "1" ]] && CONTROL_LAUNCHED=1
 CONTROL_ORIGIN="human"
+[[ "$CONTROL_LAUNCHED" -eq 1 ]] && CONTROL_ORIGIN="agent"
+CONTROL_ORIGIN_GIVEN=0
+CONTROL_QUOTE=""
+CONTROL_QUOTE_GIVEN=0
 CONTROL_REASON=""
 CONTROL_SCOPE="phase"
 CONTROL_FOR_SECONDS=0
@@ -289,6 +348,8 @@ if [[ "$COMMAND" != "status" && "$COMMAND" != "resume" ]] \
     exit 1
   fi
 fi
+
+trap 'CONTROL_EXIT_RC=$?; [[ "$CONTROL_EXIT_RC" -eq 0 ]] && record_control_quote; exit "$CONTROL_EXIT_RC"' EXIT
 
 OWNER_SESSION=""
 [[ -f "$(dx_owner_file "$SESSION_ID")" ]] && OWNER_SESSION=$(cat "$(dx_owner_file "$SESSION_ID")" 2>/dev/null || true)

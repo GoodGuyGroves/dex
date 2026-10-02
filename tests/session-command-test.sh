@@ -416,8 +416,12 @@ assert_eq "live" "$(dx_session_runtime_health "$SID_LIVE")" \
   "pause keeps runtime lease live"
 kill -0 "$LIVE_PID" 2>/dev/null || fail "pause signalled the provider process"
 
-run_sessions "$REPO_A" "$TMP_DIR/cancel-live.out" cancel workspace:cancel
+# Inside a Dex launch control.sh records an agent, so dx sessions supplies the
+# reason an agent control needs.
+DEX_LAUNCHED=1 run_sessions "$REPO_A" "$TMP_DIR/cancel-live.out" cancel workspace:cancel
 assert_eq "0" "$COMMAND_RESULT" "cancel live session result"
+grep -Fq $'control.cancel\trequested\tphase\t2\tagent\t0\tdx sessions cancel workspace:cancel' \
+  "$DX_STATE_DIR/${SID_CANCEL}.overrides" || fail "launched cancel was not attributed to the agent"
 assert_contains "Cancel request accepted for session $SID_CANCEL" \
   "$TMP_DIR/cancel-live.out"
 assert_not_contains "stopped" "$TMP_DIR/cancel-live.out"
