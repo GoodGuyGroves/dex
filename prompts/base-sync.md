@@ -71,7 +71,7 @@ claiming completion. Report:
 - the status word and its `key=value` lines;
 - for a conflict, the conflicting files and why they are not simple;
 - for `limit`, that a human can allow more rebases with
-  `dx control override pr.rebase-attempts <n> --source human --reason "<why>"`
+  `dx control override pr.rebase-attempts <n> --reason "<why>"` from their terminal
   and resume;
 - that the PR was not marked ready.
 

@@ -175,13 +175,15 @@ unchanged and record an attributed softening instead:
 
 ```bash
 dx control override guard.no-force-push allow --scope session \
-  --source human --reason "Emergency rollback approved in this session"
+  --source human --quote "Force-push the rollback, I approve it" \
+  --reason "Emergency rollback approved in this session"
 ```
 
 The matching `block` becomes a warning for that phase or session and its hook
 message includes the source and reason. Use `clear-override` with the same gate
 and scope to restore the file's policy early. An agent can use `--source agent`,
-but must provide its own reason. An absent, expired, malformed, linked, or
+but must provide its own reason. Inside a Dex launch `--source human` also needs
+`--quote` with the human's words. An absent, expired, malformed, linked, or
 wrong-mode override journal grants no exception; the original block remains in
 force.
 
@@ -192,6 +194,11 @@ validates and journals the decision. This also works when the built-in guard
 directory cannot be loaded. It is deliberately not a general shell bypass:
 wrappers, command substitutions, redirections, pipelines, separators, and
 appended commands remain subject to every matching guard.
+
+A bare `dx` or `dex` is exempt only as Dex's shell function. If an executable
+named `dx` is on PATH, as a dev shell's wrapper can be, the hook would run that
+program instead, so `dx control ...` gets no exemption there. In that case use
+`bash "$DEX_DIR/bin/control.sh" ...`, which is always recognized.
 
 ## Pattern Syntax
 

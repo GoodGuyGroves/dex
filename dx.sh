@@ -1541,15 +1541,18 @@ bash "$DEX_DIR/bin/control.sh" override review.pass-timeout 2400 --source agent 
 bash "$DEX_DIR/bin/control.sh" override watch.command-timeout 90 --scope session --source agent --reason "The repository API is responding slowly"
 
 # Keep independent review, but accept a smaller clean streak as a waiver:
-bash "$DEX_DIR/bin/control.sh" override review.clean-passes 2 --source human --reason "Two clean waves are sufficient for this unusually expensive scope"
+bash "$DEX_DIR/bin/control.sh" override review.clean-passes 2 --source agent --reason "Two clean waves are sufficient for this unusually expensive scope"
 
 # Skip the rest of an assurance gate and advance through the safe transition:
 bash "$DEX_DIR/bin/control.sh" waive review.clean-passes --source agent --reason "Two provider failures prevent independent waves; direct review and all deterministic checks are complete"
 ```
 
-When the human authorizes an exception in chat, use `--source human` and quote
-their reason accurately. `dx control status` shows active overrides. Use
-`clear-override` to return to the default.
+Inside a Dex launch every control is recorded as `--source agent` and needs
+`--reason`, even when a brief or prompt says waivers are allowed. Use
+`--source human --quote "<their words>"` only to relay the human's own
+instruction from chat; Dex refuses `--source human` without a quote here.
+`dx control status` shows active overrides. Use `clear-override` to return to
+the default.
 
 Running lifecycle watchdogs and provider timeout supervisors re-read operational
 policy. A lower review target still requires that many genuine independent
@@ -1558,8 +1561,10 @@ remaining gate. Neither path forges success. Runtime integrity is not a policy
 gate, so valid state records, transition ownership, atomic writes, and
 quiescing an active child still apply.
 
-The exact standalone `dx control ...` or `bin/control.sh ...` command is the
-break-glass path and cannot be denied by a blocking guard. Keep it in its own
+The exact standalone `bash "$DEX_DIR/bin/control.sh" ...` command is the
+break-glass path and cannot be denied by a blocking guard. A bare `dx control ...`
+qualifies only when no `dx` executable is on PATH, so prefer the script form.
+Keep it in its own
 shell tool call: wrappers, substitutions, redirections, pipelines, and appended
 commands are not exempt. Review and maintenance child sessions use the parent
 policy id in `DEX_POLICY_SESSION_ID`; pass `--session
@@ -1577,14 +1582,14 @@ hook. Codex sessions, and either provider when applying a reasoned exception,
 run the same provider-neutral command before stopping:
 
 ```bash
-bash "$DEX_DIR/bin/control.sh" stop
-bash "$DEX_DIR/bin/control.sh" done
-bash "$DEX_DIR/bin/control.sh" jump verify
-bash "$DEX_DIR/bin/control.sh" resume
+bash "$DEX_DIR/bin/control.sh" stop --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" done --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" jump verify --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" resume --reason "<why>"
 ```
 
-For a human instruction relayed through Codex, add `--source human --reason
-"<their reason>"`. Agent-originated controls use `--source agent --reason`.
+These record `--source agent`. For a human instruction relayed through Codex,
+add `--source human --quote "<their words>"` instead.
 Review-wave isolation remains in force until the active child is quiescent.
 A project block guard can be softened explicitly with an override such as
 `guard.<guard-name>=allow`; built-in Dex guards are advisory by default.

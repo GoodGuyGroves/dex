@@ -31,7 +31,10 @@ bash "$DEX_DIR/bin/control.sh" override <gate> <value> --source agent --reason "
 bash "$DEX_DIR/bin/control.sh" waive <gate> --source agent --reason "<why>"
 ```
 
-Use `--source human` when the user authorized the exception in chat. An
+Use `--source human --quote "<the user's words>"` only when relaying the
+user's own instruction from chat. A decision you made is `--source agent`, even
+when a brief or prompt says waivers are allowed; inside a Dex launch Dex
+refuses `--source human` without a quote. An
 override must stay truthful: passed means passed; waived, skipped, blocked,
 and unverified remain distinct outcomes. Runtime integrity checks—valid state,
 single ownership, atomic transitions, and stopping an active child before a

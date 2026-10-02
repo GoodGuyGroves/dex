@@ -436,7 +436,7 @@ dx control override review.pass-timeout 2400 --source agent \
 
 # Keep an override for the rest of the session, or give it a time limit.
 dx control override watch.command-timeout 90 --scope session \
-  --for-seconds 1800 --source human \
+  --for-seconds 1800 --source agent \
   --reason "Repository API calls are slow today"
 
 # Remove a policy change.
@@ -445,6 +445,7 @@ dx control clear-override watch.command-timeout --scope session \
 
 # Keep independent review but lower its target for this scope.
 dx control override review.clean-passes 2 --source human \
+  --quote "Two clean waves are enough for this one" \
   --reason "Two clean waves are sufficient for this unusually expensive scope"
 
 # Extend the operational review budget without changing clean-pass assurance.
@@ -459,9 +460,19 @@ dx control waive review.clean-passes --source agent \
 Overrides are phase-scoped unless `--scope session` is supplied. `--for-seconds`
 adds an expiry; `0` means no expiry. `dx control status` shows the effective
 records with source and reason. Unsupported gate names are rejected instead of
-creating inert policy records. When a human authorizes the exception in chat,
-the agent records `--source human`; an agent-originated exception requires a
-reason.
+creating inert policy records.
+
+Attribution follows who decided. Inside a Dex launch (`DEX_LAUNCHED=1`) the
+agent runs these commands, so every control defaults to `--source agent` and
+needs `--reason`, including `pause`, `stop`, `done`, `jump`, `resume`, and
+`recover`. The agent records `--source human` only when relaying the human's own
+instruction from chat, and then must add `--quote "<their words>"`. Dex refuses
+`--source human` without a quote there, and records the quote in a
+`control.quoted` event. An operator brief that permits waivers is not a human
+instruction for a specific gate. Outside a launch, a human at a terminal keeps
+the old defaults: policy changes default to `agent`, other controls to `human`,
+and `--quote` is optional. The progress legend and closing banner name the
+recorded actor: "by agent", "by human", or "under a policy override".
 
 The built-in operational gates are:
 
