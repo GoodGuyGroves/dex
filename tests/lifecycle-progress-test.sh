@@ -182,6 +182,25 @@ grep -Fq "◇ marked done by human" "$DISPLAY_OUTPUT"
 grep -Fq "? outcome not recorded" "$DISPLAY_OUTPUT"
 grep -Fq "Controls: /dxpause  /dxskip  /dxresume  /dxrecover" "$DISPLAY_OUTPUT"
 
+# A phase finished through a control gets a phase-log row, as a gated phase
+# does: waived for a done, skipped for each phase a jump passes over. A
+# replayed receipt adds no second row.
+CONTROL_LOG_SESSION="lifecycle-progress-control-log"
+printf '2:%s\n' "$(( $(date +%s) - 60 ))" > "$(dx_times_file "$CONTROL_LOG_SESSION")"
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 2 3 complete 1-1-1 agent
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 2 3 complete 1-1-1 agent
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 3 6 jump 2-2-2 user-prompt
+CONTROL_LOG_FILE="$(dx_log_file "$CONTROL_LOG_SESSION")"
+assert_eq "2 Implement waived 0|3 Review skipped 0|4 Verify skipped 0|5 PR skipped 0" \
+  "$(awk -F '\t' 'NR > 1 { printf "%s%s %s %s %s", sep, $2, $3, $8, $9; sep = "|" }' \
+    "$CONTROL_LOG_FILE")" "control outcomes appear in the phase log"
+CONTROL_LOG_DURATION=$(awk -F '\t' 'NR == 2 { print $6 }' "$CONTROL_LOG_FILE")
+[[ "$CONTROL_LOG_DURATION" -ge 60 ]] || assert_at $LINENO
+assert_eq "agent-complete" \
+  "$(awk -F '\t' '$2 == 2 { print $6 }' "$(dx_phase_outcomes_file "$CONTROL_LOG_SESSION")")" \
+  "agent completion reason"
+[[ "$(dx_phase_outcome_latest "$CONTROL_LOG_SESSION" 3)" == "skipped" ]] || assert_at $LINENO
+
 # Historical sessions can outlive their compact phase TSV. Reconcile only a
 # validated phase.completed run event; unrelated journal or PR evidence never
 # earns a completion checkmark.

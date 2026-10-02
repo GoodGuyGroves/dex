@@ -1535,6 +1535,7 @@ dx_record_control_phase_outcomes() {
       continue
     fi
     [[ "$record_status" -eq 0 ]] || return 1
+    __dx_log_control_phase_outcome "$session_id" "$phase" "$outcome"
 
     data_json=$(printf \
       '{"outcome":"%s","reason":"%s","source":"%s","generation":"%s","target_phase":%s}' \
@@ -1546,6 +1547,26 @@ dx_record_control_phase_outcomes() {
       "Phase ${phase} ${outcome} by ${actor_label}; target_phase=${target}; generation=${generation}; source=${source}"
     phase=$((phase + 1))
   done
+}
+
+# Give a waived or skipped phase its row in the phase log, as a gated phase
+# gets one. A jumped-over phase that never started takes the current time as
+# its start. Only `advance` rows count as completed, so these cannot pass for one.
+__dx_log_control_phase_outcome() {
+  local session_id="$1" phase="$2" outcome="$3" start_epoch end_epoch times_file
+  end_epoch=$(date +%s)
+  start_epoch=""
+  times_file=$(dx_times_file "$session_id")
+  if [[ -f "$times_file" && ! -L "$times_file" ]]; then
+    start_epoch=$(awk -F: -v phase="$phase" \
+      '$1 == phase { start=$2 } END { if (start != "") print start }' \
+      "$times_file" 2>/dev/null || true)
+  fi
+  [[ "$start_epoch" =~ ^[0-9]+$ && "$start_epoch" -le "$end_epoch" ]] \
+    || start_epoch="$end_epoch"
+  dx_log_phase "$session_id" "$phase" "$(dx_lifecycle_phase_label "$phase")" \
+    "$start_epoch" "$end_epoch" "$((end_epoch - start_epoch))" 0 "$outcome" 0 \
+    2>/dev/null || true
 }
 
 # Compatibility name for older callers and pinned evaluation runtimes.
