@@ -258,7 +258,8 @@ Stored in `prompts/`. Skills reference them through `$DEX_DIR`, e.g.
 - `review.md` — 12-pass review criteria (A-L) with confidence scoring
 - `review-wave.md` — Review-wave contract and domain output schema (used by `/dxreview --single-pass` and Phase 3)
 - `commit-format.md` — Conventional Commits specification
-- `pr-description.md` — PR description template
+- `pr-description.md` — Default PR description template
+- `pr-template-resolution.md` — Which PR template is active, shared by `dxpr` and the Phase 5 audit
 - `ticket-instructions.md` — Ticket intake workflow (injected by SessionStart hook)
 - `freeform-intake.md` — Phase 0 prompt triage, issue creation approval, and recorded intake decision
 - `issue-hygiene.md` — Lifecycle-wide duplicate search, issue/PR reconciliation,
