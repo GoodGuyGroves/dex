@@ -89,6 +89,11 @@ def _contract():
 
 # ── The project's declarations ──────────────────────────────────────────────
 
+def _printable(text):
+    """A project's own text, safe to print on a terminal line."""
+    return re.sub(r"[\x00-\x1f\x7f]", "?", text)
+
+
 def _value(key, raw, problems):
     """`inherit`, `none` or a list of names; None when the value is invalid."""
     if isinstance(raw, str):
@@ -98,7 +103,7 @@ def _value(key, raw, problems):
     names = []
     for name in raw:
         if not NAME.match(name):
-            problems.append(f"{key}: '{name}' is not a valid MCP server name")
+            problems.append(f"{key}: '{_printable(name)}' is not a valid MCP server name")
             return None
         if name not in names:
             names.append(name)
@@ -333,7 +338,7 @@ def _emit(value, repo, registry, out_file, problems):
         lines += [f"disabled\t{name}" for name in result["disabled"]]
         lines += [f"unset-env\t{name}" for name in result["missing_env"]]
     for line in lines:
-        print(line.replace("\n", " "))
+        print(line)
     return 0
 
 
@@ -389,7 +394,7 @@ def command_report(repo, registry):
     for line in issues:
         print(line)
     for problem in problems:
-        print(f"invalid\t{problem}".replace("\n", " "))
+        print(f"invalid\t{problem}")
     return 0
 
 

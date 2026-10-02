@@ -162,6 +162,11 @@ assert_eq scoped "$(head -n 1 "$TMP_DIR/report")" "valid keys still apply"
 assert_eq none "$(mode_of 4 0)" "an invalid verify value falls back to the built-in"
 assert_eq inherit "$(mode_of 0 0)" "an ignored setup key leaves setup inheriting"
 
+write_mcp "plan: [$(printf 'x\033[31my')]"
+launch 1 0 > "$TMP_DIR/report"
+assert_contains "plan: 'x?[31my' is not a valid MCP server name" "$TMP_DIR/report"
+[[ "$(cat "$TMP_DIR/report")" != *$'\033'* ]] || assert_at $LINENO
+
 write_mcp 'plan:' '  nested: true'
 launch 1 0 > "$TMP_DIR/report"
 assert_eq none "$(head -n 1 "$TMP_DIR/report")" "a malformed block falls back to the built-in"
