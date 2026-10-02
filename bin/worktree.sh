@@ -86,7 +86,7 @@ __dx_worktree_require_repo() {
 # ─── audit ──────────────────────────────────────────────────────────────────
 
 __dx_worktree_audit() {
-  local apply=0 arg
+  local apply=0 arg remove_result
   for arg in "$@"; do
     case "$arg" in
       -h | --help)
@@ -260,8 +260,10 @@ __dx_worktree_audit() {
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     dx_info "Removing unregistered worktree directory: ${entry##*/}"
-    dx_wt_remove "$entry" "$DX_WT_REPO_ROOT" \
-      || dx_warn "Could not remove $entry"
+    # 3: the teardown gate kept it and has already said why.
+    remove_result=0
+    dx_wt_remove "$entry" "$DX_WT_REPO_ROOT" || remove_result=$?
+    [[ "$remove_result" -eq 0 || "$remove_result" -eq 3 ]] || dx_warn "Could not remove $entry"
   done < "$unregistered"
 
   while IFS= read -r entry; do

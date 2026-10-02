@@ -284,4 +284,25 @@ git -C "$REPO.git" show-ref --verify --quiet refs/heads/main || fail "deleted th
 dx_remote_branch_delete_if_merged "$REPO" merged-branch "$merged_oid" >/dev/null
 ! git -C "$REPO.git" show-ref --verify --quiet refs/heads/merged-branch || fail "merged remote branch kept"
 
+# refuse still lets a squash-merged worktree go: its merged pull request holds
+# the commits no ref has once GitHub deleted the branch.
+set_teardown "$REPO" 'teardown_untracked: refuse'
+git -C "$REPO" worktree add -q "$WT" -b worktree-ticket-12 main
+git -C "$WT" commit -q --allow-empty -m "squashed away"
+squashed_oid=$(git -C "$WT" rev-parse HEAD)
+result=0
+DX_TEST_GH_MODE=none dx_wt_remove "$WT" "$REPO" >/dev/null 2>&1 || result=$?
+assert_eq 3 "$result" "refuse keeps an unmerged branch's worktree"
+DX_TEST_GH_MODE=merged DX_TEST_GH_OID="$squashed_oid" dx_wt_remove "$WT" "$REPO" >/dev/null 2>&1 \
+  || fail "refuse kept a worktree whose pull request merged"
+[[ ! -e "$WT" ]] || assert_at $LINENO
+
+# dx worktree audit --apply goes through the same gate.
+mkdir -p "$REPO/.dex/worktrees/stray3"
+printf 'x\n' >"$REPO/.dex/worktrees/stray3/f"
+(cd "$REPO" && bash "$ROOT/bin/worktree.sh" audit --apply) >"$TMP_DIR/out" 2>&1 || true
+[[ -f "$REPO/.dex/worktrees/stray3/f" ]] || fail "audit --apply removed a directory refuse protects"
+assert_contains "stray3: it is not a registered git worktree and is not empty (teardown_untracked: refuse)" "$TMP_DIR/out"
+assert_not_contains "Could not remove" "$TMP_DIR/out"
+
 printf 'worktree-teardown-test: ok\n'

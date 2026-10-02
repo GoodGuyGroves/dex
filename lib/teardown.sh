@@ -200,7 +200,7 @@ __dx_rescue_unregistered() {
 # commits no branch holds gets a dex-rescue/<name>-<time> branch in rescue mode.
 dx_wt_teardown_gate() {
   local wt_dir="$1" repo_root="$2" mode wt_name untracked_count=0 tracked_dirty=0
-  local branch unique_count="" rescue_path stamp detached=0
+  local branch unique_count="" rescue_path stamp detached=0 merged_oid
   [[ -d "$wt_dir" ]] || return 0
   wt_name=$(basename "$wt_dir")
   mode=$(dx_teardown_setting "$repo_root" teardown_untracked)
@@ -229,6 +229,13 @@ dx_wt_teardown_gate() {
   [[ "$unique_count" =~ ^[0-9]+$ ]] || unique_count="unknown"
 
   if [[ "$mode" == "refuse" ]]; then
+    # A squash-merged branch whose remote GitHub deleted holds commits no
+    # ref has; its merged pull request is where they went.
+    if [[ "$unique_count" != 0 && -n "$branch" ]] \
+      && merged_oid=$(dx_pr_merged_head "$repo_root" "$branch"); then
+      unique_count=$(dx_branch_unpushed_count "$repo_root" "$branch" "$merged_oid") || unique_count=""
+      [[ "$unique_count" =~ ^[0-9]+$ ]] || unique_count="unknown"
+    fi
     if [[ "$untracked_count" -gt 0 || "$tracked_dirty" -eq 1 || "$unique_count" != 0 ]]; then
       dx_warn "Kept worktree ${wt_name} (teardown_untracked: refuse):"
       if [[ "$untracked_count" -gt 0 ]]; then
