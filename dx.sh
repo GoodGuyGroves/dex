@@ -5377,12 +5377,27 @@ dxrm() {
 
   # Detect actual branch name (may have been renamed by ticket instructions).
   # With the directory already gone, the session's records still know it.
-  local actual_branch="" session_id
+  # An in-place lifecycle (worktree_teardown: caller) records its branch
+  # under its own session id, so look there too.
+  local actual_branch="" session_id in_place_session_id="" in_place_phase
   session_id=$(dx_session_id "$wt_name")
   if [[ -d "$wt_dir" ]]; then
     actual_branch=$(dx_wt_branch "$wt_dir")
   else
     actual_branch=$(dx_session_known_branch "$session_id")
+    if [[ -z "$actual_branch" ]]; then
+      in_place_session_id=$(__dx_session_id_for_workspace in-place "$wt_name")
+      actual_branch=$(dx_session_known_branch "$in_place_session_id")
+      [[ -n "$actual_branch" ]] || in_place_session_id=""
+    fi
+  fi
+  if [[ -n "$in_place_session_id" ]]; then
+    in_place_phase=$(cat "$(dx_state_file "$in_place_session_id")" 2>/dev/null || echo "")
+    if [[ "$in_place_phase" =~ ^[0-6]$ ]]; then
+      dx_error "Refusing to remove active in-place lifecycle branch ${actual_branch} (phase ${in_place_phase}/6: $(__dx_phase_name "$in_place_phase"))."
+      dx_info "Resume it with dx --resume, or finish the lifecycle before cleaning it up."
+      return 1
+    fi
   fi
 
   local has_dir=0 has_branch=0
@@ -5442,7 +5457,11 @@ dxrm() {
 
   if [[ $has_actual_branch -eq 1 ]]; then
     echo "  Deleting renamed branch ${actual_branch}..."
-    dx_lifecycle_branch_release "$repo_root" "$actual_branch" || true
+    # A kept branch keeps the in-place record too, so dxrm can be run again.
+    if dx_lifecycle_branch_release "$repo_root" "$actual_branch" \
+      && [[ -n "$in_place_session_id" ]]; then
+      dx_cleanup_session "$in_place_session_id"
+    fi
   fi
 
   # Clean up state files and last-session pointer

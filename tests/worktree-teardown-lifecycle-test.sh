@@ -260,6 +260,35 @@ dxz 'dxrm --all' >"$TMP_DIR/out" 2>&1 || fail "dxrm --all failed: $(cat "$TMP_DI
 assert_eq "$((before + 1))" "$(rescue_count)" "dxrm --all rescued the untracked file"
 [[ -n "$(find "$DEX_HOME/rescue" -path '*ticket-13-*/untracked/draft.txt' | head -1)" ]] || assert_at $LINENO
 
+# 14. In place, caller keeps a renamed branch, and dxrm <name> finds it through
+#     the in-place session: refused while that lifecycle is active, kept while
+#     checked out, then removed with its deferral record.
+set_teardown 'worktree_teardown: caller'
+git -C "$TEST_REPO" switch -q -c feat/fourteen
+git -C "$TEST_REPO" commit -q --allow-empty -m "in-place caller work"
+git -C "$TEST_REPO" push -q -u origin feat/fourteen
+in_place_deferral() {
+  dxz 'dx_meta_read "$(__dx_session_id_for_workspace in-place ticket-14)" teardown_deferred'
+}
+dxz '
+  sid=$(__dx_session_id_for_workspace in-place ticket-14)
+  dx_meta_write "$sid" wt_name=ticket-14 "wt_dir=$TEST_REPO" workspace_mode=in-place current_branch=feat/fourteen
+  dx_lifecycle_atomic_write "$(dx_state_file "$sid")" 7
+  __dx_cleanup_completed_workspace ticket-14 "$TEST_REPO" main in-place "$sid"' >"$TMP_DIR/out" 2>&1 \
+  || fail "in-place caller completion failed: $(cat "$TMP_DIR/out")"
+assert_eq caller "$(in_place_deferral)" "in-place caller deferral recorded"
+dxz 'dx_lifecycle_atomic_write "$(dx_state_file "$(__dx_session_id_for_workspace in-place ticket-14)")" 3'
+! dxz 'dxrm ticket-14' >"$TMP_DIR/out" 2>&1 || fail "dxrm removed an active in-place lifecycle"
+assert_contains "Refusing to remove active in-place lifecycle branch feat/fourteen" "$TMP_DIR/out"
+dxz 'dx_lifecycle_atomic_write "$(dx_state_file "$(__dx_session_id_for_workspace in-place ticket-14)")" 7'
+dxz 'dxrm ticket-14' >"$TMP_DIR/out" 2>&1 || true
+has_branch feat/fourteen || fail "dxrm deleted the checked-out in-place branch"
+assert_eq caller "$(in_place_deferral)" "deferral kept with the branch"
+git -C "$TEST_REPO" switch -q main
+dxz 'dxrm ticket-14' >"$TMP_DIR/out" 2>&1 || fail "dxrm failed on an in-place caller lifecycle: $(cat "$TMP_DIR/out")"
+! has_branch feat/fourteen || fail "dxrm kept the in-place caller branch: $(cat "$TMP_DIR/out")"
+assert_eq "" "$(in_place_deferral)" "in-place deferral record removed"
+
 # Nothing above wrote outside the sandbox's DEX_HOME and repository.
 [[ ! -e "$HOME/.dex" && ! -e "$HOME/.claude/.dex-phases" ]] || fail "state written outside DEX_HOME"
 
