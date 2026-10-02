@@ -6,6 +6,7 @@ attribution-model-test.sh	fast	all	600	hermetic
 attribution-modes-test.sh	fast	all	600	hermetic
 attribution-test.sh	slow	all	1200	hermetic
 attribution-worktree-test.sh	fast	all	600	hermetic
+auto-init-test.sh	fast	all	600	hermetic
 branch-sync-test.sh	fast	all	600	hermetic
 ccr-routing-test.sh	fast	all	600	hermetic
 checkpoint-test.sh	fast	all	600	hermetic
