@@ -70,9 +70,11 @@ without an issue, treat ticket-specific steps as N/A and keep the task branch.
        'ticket_title=<ticket title on one line>'
      ```
      Use the tracker's key (e.g. `ENG-999`) and the ticket's title, single-quoted
-     so the shell leaves it alone. Context providers receive the title as
-     `DX_TICKET_TITLE` (see `$DEX_DIR/docs/context-providers.md`). If no tracker
-     is configured, only the `current_branch` field is required.
+     so the shell leaves it alone, with each apostrophe written as `'\''`: an
+     unclosed quote fails the whole command and records nothing. Context
+     providers receive the title as `DX_TICKET_TITLE` (see
+     `$DEX_DIR/docs/context-providers.md`). If no tracker is configured, only
+     the `current_branch` field is required.
 
 3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip. Leave sub-issues as they are: Phase 6 settles each one per the project's `ticket_close` setting once its acceptance criteria pass (Done at completion by default).
 

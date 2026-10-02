@@ -76,7 +76,7 @@ Evidence: tracker output shows the assignee, or N/A.
     'ticket_title=<ticket title on one line>'
   ```
 
-  using the tracker's key (e.g. `ENG-999`) and the ticket's single-quoted title. This lets future `dx <N>` invocations resume the right worktree even after a rename, and gives context providers `DX_TICKET_TITLE`.
+  using the tracker's key (e.g. `ENG-999`) and the ticket's title, single-quoted with each apostrophe written as `'\''` (an unclosed quote fails the whole command, so nothing is recorded). This lets future `dx <N>` invocations resume the right worktree even after a rename, and gives context providers `DX_TICKET_TITLE`.
 
 Evidence: `git rev-parse --abbrev-ref HEAD` shows the resolved name;
 `git rev-parse --abbrev-ref --symbolic-full-name '@{u}'` and
