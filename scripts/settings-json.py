@@ -401,18 +401,28 @@ def settings_layer(value, label):
     return layer
 
 
+# Where Claude Code writes plan files in a Dex launch, relative to the launch
+# directory. Claude Code resolves plansDirectory against its working directory
+# and falls back to ~/.claude/plans for a value outside it, so it cannot point
+# at DEX_HOME. lib/events.sh DX_CLAUDE_PLANS_SUBDIR names the same path.
+PLANS_DIRECTORY = ".dex/plans"
+
+
 def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
     """One settings document for a Dex launch. Lowest to highest: Dex's
     defaults, each caller layer in order, then DEX_EXTRA_SETTINGS. Hook
     arrays add up, symlinkDirectories is a union, and Dex's own hook groups
-    are always present because disableAllHooks is Dex's to decide."""
+    are always present because disableAllHooks is Dex's to decide, as is
+    plansDirectory, which the run's plan copy depends on."""
     if not rtk:
         for groups in template.get("hooks", {}).values():
             for group in groups:
                 group["hooks"] = [hook for hook in group.get("hooks", [])
                                   if "rtk-claude-hook.sh" not in hook.get("command", "")]
             groups[:] = [group for group in groups if group["hooks"]]
-    result = {}
+    # No dimmed next-prompt guess in a Dex session: one Enter or Tab would
+    # send it, and in a driven terminal that can be a merge or a new lifecycle.
+    result: dict = {"promptSuggestionEnabled": False}
     if statusline:
         result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline)}
     if inbound:
@@ -434,6 +444,7 @@ def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
     # --settings outranks user and project settings, so this also overrides a
     # disableAllHooks there that would otherwise silence Dex's hooks.
     result["disableAllHooks"] = False
+    result["plansDirectory"] = PLANS_DIRECTORY
     return result
 
 

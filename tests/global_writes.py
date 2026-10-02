@@ -16,6 +16,9 @@
       Every observed row must match an expected row, and every expected row
       must match something observed. A stale row fails too: the unit that fixes
       a write deletes its own rows.
+  forbidden <observed.tsv>...
+      Fail on any write that no expected row may allow: a Claude plan file
+      under ~/.claude/plans.
   parity <installed.jsonl> <isolated.jsonl> <allow.tsv>
       Compare the configuration each stub `claude` launch received, run by
       run; differences not allowlisted fail.
@@ -159,6 +162,27 @@ def _read_tsv(filename):
             if line.strip() and not line.lstrip().startswith("#"):
                 rows.append((number, line.split("\t")))
     return rows
+
+
+# Session content Claude Code writes under HOME when a launch does not turn
+# it off. No expected.tsv row can allow these: a Dex launch must never write
+# them, whatever unit is still open.
+FORBIDDEN = [
+    ("plan file", re.compile(r"^\.claude/plans/.")),
+]
+
+
+def forbidden(observed_files):
+    bad = 0
+    for observed_file in observed_files:
+        for _, fields in _read_tsv(observed_file):
+            step, change, path = fields[:3]
+            for what, pattern in FORBIDDEN:
+                if change != "removed" and pattern.match(path):
+                    print("FORBIDDEN WRITE   step=%-12s %-8s ~/%s (a Claude %s)"
+                          % (step, change, path, what))
+                    bad = 1
+    return bad
 
 
 def _dex_skills(dex_dir):
@@ -584,6 +608,9 @@ def selftest(dex_dir):
     for bad in ('bash "$DEX_DIR/../evil.sh"', "echo foreign",
                 'export DEX_DIR="${DEX_DIR:-/tmp}"; bash "$DEX_DIR/hooks/stop-sound.sh"'):
         assert not _runs_from(bad, dex_dir), bad
+    for path, hit in ((".claude/plans/a-plan.md", True), (".claude/plans/a-agent-b1.md", True),
+                      (".claude/plans", False), (".claude/plansx/a.md", False)):
+        assert any(pattern.match(path) for _, pattern in FORBIDDEN) == hit, path
     return 0
 
 
@@ -603,6 +630,8 @@ def main(argv):
         return 0
     if command == "check" and len(args) == 3:
         return check(*args)
+    if command == "forbidden" and args:
+        return forbidden(args)
     if command == "parity" and len(args) == 3:
         return parity(*args)
     if command in ("seed", "seeded") and args:

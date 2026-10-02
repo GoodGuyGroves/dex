@@ -364,6 +364,22 @@ you run `dx install --global-hooks`. Those global hooks skip themselves inside
 Dex sessions (`DEX_LAUNCHED=1`), and `dx install --no-global-hooks` removes
 them.
 
+The same file sets two Claude Code settings for every Dex session:
+- `plansDirectory: ".dex/plans"`. Plan files land in the checkout the session
+  runs in, not in `~/.claude/plans`. Claude Code only accepts a directory
+  inside its working directory, so the path is relative. When a lifecycle or
+  a worktree starts, Dex makes git ignore it (through `.git/info/exclude` when
+  the repository doesn't already). A session-only launch in your own checkout
+  leaves `.git` alone, so add `.dex/plans/` to your ignores if you plan there.
+  Dex copies
+  the approved plan to the run's `artifacts/plan.md` at the Phase 1 gate and
+  again before it removes a worktree, and the lifecycle prompts read that copy.
+  Claude Code before 2.1.9 ignores the setting; Dex then copies the plan from
+  `~/.claude/plans` and warns.
+- `promptSuggestionEnabled: false`. A Dex session never pre-fills the input
+  with a guessed next prompt that one Enter or Tab would send.
+  `DEX_EXTRA_SETTINGS` can turn it back on.
+
 Upgrading: hooks an earlier `dx install` wrote into your Claude settings are
 reported as a legacy install. `dx status`, `dx tools doctor` and the bootstrap
 flag them until you choose `--global-hooks` or `--no-global-hooks`.
@@ -401,6 +417,7 @@ Known limits:
   rules/            Generated coding conventions
   guards/           Project-specific safety guards
   memory/           Durable repo memory
+  plans/            Claude Code plan files from Dex sessions (git-ignored)
   worktrees/        Ephemeral Dex worktrees
 ```
 

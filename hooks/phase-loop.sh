@@ -496,6 +496,14 @@ dx_sync_inline_phase_from_state() {
   fi
 }
 
+# Where Phase 2 finds the approved plan: the run's copy, not Claude's own file.
+dx_plan_copy_note() {
+  local plan_file
+  plan_file=$(dx_run_plan_file "$SESSION_ID" 2>/dev/null) || return 0
+  [[ -f "$plan_file" ]] || return 0
+  printf '\nThe approved plan is saved at %s. Re-read that copy whenever you need the plan again; files under .dex/plans are scratch.\n' "$plan_file"
+}
+
 dx_inline_phase_message() {
   dx_skill_refs_render "$(__dx_inline_phase_text "$1")"
 }
@@ -518,6 +526,7 @@ EOF
       cat <<EOF
 The plan is approved. Invoke the Skill tool with skill: "dximplement" to begin implementation. Phase focus: implementation, testing, and UI capture evidence. For UI-affecting changes, invoke dxuicapture before UI edits for baseline evidence, then capture after evidence and link the visual manifest/screenshots/videos/traces before stopping. Follow ${DEX_DIR}/prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When implementation is complete and the audit criteria are met, stop so the Stop hook can advance the lifecycle.
 EOF
+      dx_plan_copy_note
       ;;
     3)
       cat <<'EOF'
@@ -1476,6 +1485,8 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "1" ]]; then
     dx_print_rejected_receipt_command
     exit 2
   fi
+  # The plan is approved: keep the run's own copy, which Phase 2 onwards read.
+  dx_run_archive_plans "$SESSION_ID" "${CLAUDE_PROJECT_DIR:-$PWD}"
 fi
 
 if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then

@@ -262,6 +262,41 @@ def fire_hooks(config_argv):
                                         "command": command, "exit": code, "output": out})
 
 
+def merged_settings(argv):
+    """Every settings layer, later ones winning: user, project, local, then
+    --settings, which is the order Claude Code ranks them in."""
+    merged = {}
+    for layer in global_writes.settings_layers(argv, dict(os.environ), os.getcwd()):
+        merged.update(layer)
+    return merged
+
+
+def env_flag(name):
+    """True, False or None, the way Claude Code reads a boolean variable."""
+    value = os.environ.get(name, "").strip().lower()
+    return True if value in ("1", "true", "yes", "on") else False if value in ("0", "false", "no", "off") else None
+
+
+def plans_dir(settings):
+    """Claude Code 2.1.280: plansDirectory resolves against the working
+    directory and must stay inside it; anything else means ~/.claude/plans."""
+    value, cwd = settings.get("plansDirectory"), os.path.realpath(os.getcwd())
+    if isinstance(value, str) and value:
+        path = os.path.realpath(os.path.join(cwd, value))
+        if path == cwd or path.startswith(cwd + os.sep):
+            return path
+    return os.path.join(claude_dir(), "plans")
+
+
+def write_plan(settings):
+    """Plan mode writes the plan, and a planning subagent its own `-agent-`
+    file beside it."""
+    directory = plans_dir(settings)
+    for name in ("gw-stub-plan.md", "gw-stub-plan-agent-a0stub.md"):
+        touch(os.path.join(directory, name), "# plan from step %s\n" % os.environ.get("GW_STEP", ""))
+    log("plans.jsonl", {"step": os.environ.get("GW_STEP", ""), "dir": directory})
+
+
 def claude_main():
     if ARGS[:1] in (["--help"], ["-h"]):
         print(CLAUDE_HELP)
@@ -274,8 +309,17 @@ def claude_main():
     if ARGS[:1] == ["plugin"]:
         return claude_plugin(ARGS[1:])
     config = global_writes.effective_config(ARGS, dict(os.environ), os.getcwd())
+    settings = merged_settings(ARGS)
+    suggestions = env_flag("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
+    if suggestions is None:
+        suggestions = settings.get("promptSuggestionEnabled") is not False
     log("launches.jsonl", {"step": os.environ.get("GW_STEP", ""), "print": "-p" in ARGS,
-                           "home": HOME, "dex_dir": os.environ.get("GW_DEX_DIR", ""), "config": config})
+                           "home": HOME, "dex_dir": os.environ.get("GW_DEX_DIR", ""), "config": config,
+                           "prompt_suggestions": suggestions})
+    # The session's own writes, as the real CLI would make them. A plain
+    # session the user started (GW_FIRE_HOOKS=1) is theirs, not Dex's.
+    if os.environ.get("GW_FIRE_HOOKS") != "1" and "-p" not in ARGS and "--print" not in ARGS:
+        write_plan(settings)
     if "-p" in ARGS or "--print" in ARGS:
         # One-shot analysis (dx init, dx sync): write what init's check needs.
         dex_md = os.path.join(global_writes._git_root(os.getcwd()), ".dex", "dex.md")

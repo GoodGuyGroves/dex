@@ -404,6 +404,16 @@ dx_wt_remove() {
   if [[ -z "$repo_root" ]]; then
     repo_root=$(__dx_wt_repo_root "$wt_dir" 2>/dev/null) || repo_root=""
   fi
+  # The worktree's plan files go with it: copy them to its run first. The run
+  # is found from the worktree's own session, never an inherited DEX_RUN_ID.
+  if [[ -n "$repo_root" && -n "${DX_CLAUDE_PLANS_SUBDIR:-}" \
+    && -d "$wt_dir/$DX_CLAUDE_PLANS_SUBDIR" ]] && command -v dx_run_archive_plans >/dev/null 2>&1; then
+    (
+      unset DEX_RUN_ID
+      cd "$repo_root" 2>/dev/null || exit 0
+      dx_run_archive_plans "$(dx_session_id "$(basename "$wt_dir")")" "$wt_dir"
+    ) || true
+  fi
   [[ -z "$repo_root" ]] || dx_worktree_hook_run before_remove "$repo_root" "$wt_dir"
   dx_unlink_claude_from_worktree "$wt_dir"
   git worktree remove "$wt_dir" --force 2>/dev/null || rm -rf "$wt_dir"
@@ -440,6 +450,8 @@ dx_exclude_claude_artifacts() {
   touch "$exclude_file" 2>/dev/null || return 0
   grep -Fxq ".claude" "$exclude_file" 2>/dev/null || printf '%s\n' ".claude" >> "$exclude_file"
   grep -Fxq ".claude/*" "$exclude_file" 2>/dev/null || printf '%s\n' ".claude/*" >> "$exclude_file"
+  # Claude's plan files (the launch settings' plansDirectory).
+  ! command -v dx_claude_plans_ignore >/dev/null 2>&1 || dx_claude_plans_ignore "$wt_dir"
 }
 
 # dx_link_claude_to_worktree <repo_root> <wt_dir>

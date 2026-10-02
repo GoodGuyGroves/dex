@@ -705,11 +705,21 @@ assert_file_eq "missing Phase 1 criteria leaves phase active" "$DX_STATE_DIR/$SI
 
 write_review_criteria "$SID"
 write_lifecycle_completion "$SID" 1
+# The approved plan, written where the launch settings send it.
+dx_run_write_for_session "$SID" run_test_6b
+mkdir -p "$(dx_run_dir run_test_6b)" "$REVIEW_REPO/.dex/plans"
+printf '{}\n' > "$(dx_run_spec_file run_test_6b)"
+touch -t 202601010000 "$(dx_run_spec_file run_test_6b)"
+printf '# approved plan 6b\n' > "$REVIEW_REPO/.dex/plans/case-6b.md"
 set +e
 OUT="$(cd "$REVIEW_REPO" && printf '{"session_id":"claude-phase-1-criteria"}' | env DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=1 DEX_PHASE_HANDOFF=inline bash "$HOOK" 2>&1)"
 RC=$?
 set -e
 assert_rc "valid Phase 1 criteria reach handoff" 0
+assert_file_eq "Phase 1 gate copies the approved plan into the run" \
+  "$(dx_run_artifacts_dir run_test_6b)/plan.md" "# approved plan 6b"
+assert_out_contains "Phase 2 handoff names the run's plan copy" "$(dx_run_artifacts_dir run_test_6b)/plan.md"
+rm -rf "$REVIEW_REPO/.dex/plans"
 python3 -c 'import json,sys; payload=json.loads(sys.argv[1]); assert payload["decision"] == "block"; assert "Phase 1" in payload["systemMessage"]; assert "Phase 2" in payload["systemMessage"]' "$OUT" \
   || fail "Phase 1 handoff did not return structured Stop output"
 assert_out_contains "Phase 1 criteria emit Phase 2 handoff" "Phase Handoff: Phase 1 complete"
