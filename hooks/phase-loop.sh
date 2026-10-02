@@ -1183,12 +1183,14 @@ if [[ "$CONTROL_VALID" -eq 1 ]]; then
             printf '\n%s\n' "Dex changed the phase but could not release its transition lock. The new authorization was revoked and the lifecycle remains paused." >&2
             exit 2
           fi
+          CONTROL_RECALL=$(dx_context_provider_block phase_handoff "$CONTROL_TARGET" "$SESSION_ID")
           {
             printf '\n--- Dex phase changed by %s ---\n\n' "$CONTROL_ACTOR"
             printf 'Continue at Phase %s (%s). Earlier gates carry explicit override outcomes in the lifecycle ledger.\n\n' \
               "$CONTROL_TARGET" "$(dx_phase_name "$CONTROL_TARGET")"
             printf '%s\n\n' "$(dx_host_handoff_line)"
             dx_inline_phase_message "$CONTROL_TARGET"
+            [[ -z "$CONTROL_RECALL" ]] || printf '\n%s\n' "$CONTROL_RECALL"
           } >&2
           exit 2
         fi
@@ -1983,6 +1985,9 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       exit 2
     fi
 
+    # The project's own recall for the phase it is handing to, labelled
+    # unverified. Empty when .dex/dex.md declares no phase_handoff provider.
+    HANDOFF_RECALL=$(dx_context_provider_block phase_handoff "$NEXT_PHASE" "$SESSION_ID")
     HANDOFF_REASON=$(
       printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
       printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
@@ -1990,6 +1995,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       # started with is as old as the session. This line is the refresh.
       printf '%s\n\n' "$(dx_host_handoff_line)"
       dx_inline_phase_message "$NEXT_PHASE"
+      [[ -z "$HANDOFF_RECALL" ]] || printf '\n%s\n' "$HANDOFF_RECALL"
       printf '\n%s\n' "When Phase ${NEXT_PHASE} is genuinely complete, stop so the Stop hook can audit it."
     )
     dx_stop_json_block "$HANDOFF_REASON" \

@@ -711,11 +711,23 @@ mkdir -p "$(dx_run_dir run_test_6b)" "$REVIEW_REPO/.dex/plans"
 printf '{}\n' > "$(dx_run_spec_file run_test_6b)"
 touch -t 202601010000 "$(dx_run_spec_file run_test_6b)"
 printf '# approved plan 6b\n' > "$REVIEW_REPO/.dex/plans/case-6b.md"
+# A phase_handoff context provider: its recall rides in the handoff, for the
+# phase being handed to.
+printf '# Dex\n\n## Context Providers\n\n```yaml\nphase_handoff: echo "recall for phase $DX_PHASE"\n```\n' \
+  > "$REVIEW_REPO/.dex/dex.md"
 set +e
 OUT="$(cd "$REVIEW_REPO" && printf '{"session_id":"claude-phase-1-criteria"}' | env DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=1 DEX_PHASE_HANDOFF=inline bash "$HOOK" 2>&1)"
 RC=$?
 set -e
+rm -f "$REVIEW_REPO/.dex/dex.md"
 assert_rc "valid Phase 1 criteria reach handoff" 0
+python3 -c 'import json,sys
+reason = json.loads(sys.argv[1])["reason"]
+head = "--- External recall (unverified; verify against current code before relying on it) ---"
+assert head in reason, reason
+assert "recall for phase 2" in reason, reason
+assert reason.index(head) < reason.index("When Phase 2 is genuinely complete"), reason
+' "$OUT" || fail "Phase 2 handoff did not carry the phase_handoff provider's recall"
 assert_file_eq "Phase 1 gate copies the approved plan into the run" \
   "$(dx_run_artifacts_dir run_test_6b)/plan.md" "# approved plan 6b"
 assert_out_contains "Phase 2 handoff names the run's plan copy" "$(dx_run_artifacts_dir run_test_6b)/plan.md"

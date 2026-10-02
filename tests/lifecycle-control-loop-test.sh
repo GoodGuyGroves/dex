@@ -193,13 +193,25 @@ run_hook "$SID" 2
 grep -q "review child must finish" <<<"$OUT"
 
 dx_phase_busy_acknowledge "$SID" 3 "$BUSY_TOKEN"
+# Run from a repository with a phase_handoff context provider: a human jump is
+# a handoff too, so its recall is for the phase being jumped to.
+PROVIDER_REPO="$TMP_DIR/provider-repo"
+git init -q "$PROVIDER_REPO"
+mkdir -p "$PROVIDER_REPO/.dex"
+printf '# Dex\n\n## Context Providers\n\n```yaml\nphase_handoff: echo "recall for phase $DX_PHASE"\n```\n' \
+  > "$PROVIDER_REPO/.dex/dex.md"
+pushd "$PROVIDER_REPO" >/dev/null
 run_hook "$SID" 2
+popd >/dev/null
 [[ "$RC" -eq 2 ]] || assert_at $LINENO
 [[ "$(cat "$(dx_state_file "$SID")")" == "4" ]] || assert_at $LINENO
 [[ "$(cut -d: -f1 "$(dx_loop_config_file "$SID")")" == "4" ]] || assert_at $LINENO
 [[ ! -e "$(dx_lifecycle_control_file "$SID")" ]] || assert_at $LINENO
 [[ ! -e "$(dx_phase_busy_file "$SID" 3)" ]] || assert_at $LINENO
 grep -q "Phase 4 (Verify)" <<<"$OUT"
+grep -qx -- '--- External recall (unverified; verify against current code before relying on it) ---' <<<"$OUT" \
+  || assert_at $LINENO
+grep -qx 'recall for phase 4' <<<"$OUT" || assert_at $LINENO
 
 # Phase publication precedes activation. If the active path is unsafe, the
 # target phase remains authoritative, its fresh generation is revoked, and
