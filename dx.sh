@@ -4027,6 +4027,7 @@ __dx_show_header() {
         case "$(dx_phase_outcome_latest_source "$session_id" "$i")" in
           agent) legend_actor="by agent" ;;
           user-prompt|terminal) legend_actor="by human" ;;
+          "") legend_actor="(actor not recorded)" ;;
           *) legend_actor="under a policy override" ;;
         esac
         legend_entry+=" ${legend_actor}  "

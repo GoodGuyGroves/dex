@@ -199,6 +199,20 @@ assert_contains "  ◇ marked done by agent  ↷ skipped by human  ◇ marked do
   "$ACTOR_OUTPUT"
 assert_not_contains "marked done by human" "$ACTOR_OUTPUT"
 
+# A waiver known only from an older run journal has no recorded actor.
+JOURNAL_ACTOR_SESSION="lifecycle-progress-journal-actor"
+JOURNAL_ACTOR_RUN_ID="run_20261003T000000Z_1_0ac70000"
+dx_run_write_for_session "$JOURNAL_ACTOR_SESSION" "$JOURNAL_ACTOR_RUN_ID"
+mkdir -p "$(dx_run_dir "$JOURNAL_ACTOR_RUN_ID")"
+printf '%s\n' '{"id":"evt_000001_0ac70000","run_id":"run_20261003T000000Z_1_0ac70000","sequence":1,"type":"phase.waived","phase":"0","severity":"warn"}' \
+  > "$(dx_run_events_file "$JOURNAL_ACTOR_RUN_ID")"
+JOURNAL_ACTOR_OUTPUT="$TMP_DIR/journal-actor.out"
+JOURNAL_ACTOR_SESSION="$JOURNAL_ACTOR_SESSION" TEST_REPO="$TEST_REPO" zsh -fc '
+  source "$DEX_DIR/dx.sh"
+  __dx_show_header ticket-progress 1 "$TEST_REPO" main "$JOURNAL_ACTOR_SESSION" worktree
+' > "$JOURNAL_ACTOR_OUTPUT" 2>&1
+assert_contains "◇ marked done (actor not recorded)" "$JOURNAL_ACTOR_OUTPUT"
+
 # A phase finished through a control gets a phase-log row, as a gated phase
 # does: waived for a done, skipped for each phase a jump passes over. A
 # replayed receipt adds no second row.

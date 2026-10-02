@@ -12,9 +12,9 @@ Usage: dx control <status|pause|stop|done|jump PHASE|resume>
        dx control clear-override GATE --reason TEXT [--scope phase|session]
        dx control waive GATE --reason TEXT
 
-  Inside a Dex launch (DEX_LAUNCHED=1 or DEX_LOOP_ACTIVE=1) every control is recorded as
-  --source agent and needs --reason. Record --source human only when relaying
-  a direct human instruction, with --quote "<their words>".
+  Inside a Dex launch (DEX_LAUNCHED=1 or DEX_LOOP_ACTIVE=1) every control
+  is recorded as --source agent and needs --reason. Record --source human
+  only when relaying a direct human instruction, with --quote "<their words>".
 
   status       Show the current phase, pending control, and active overrides
   pause        Detach Dex and preserve the current phase for resume
