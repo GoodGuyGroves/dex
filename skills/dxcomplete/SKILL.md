@@ -8,8 +8,8 @@ description: "Run Phase 6 of the Dex lifecycle: verify PR readiness, request rev
 Phase 6 of the autonomous lifecycle. Verifies that Phase 5 left the PR ready,
 repairs any remaining draft state, requests configured reviewers, posts
 `@mention` comments, monitors CI and reviews through `/dxwatchpr`, addresses
-failures, and closes the ticket once CI is green and actionable review feedback
-is resolved. It never merges the PR.
+failures, and settles the ticket per `ticket_close` once CI is green and
+actionable review feedback is resolved. It never merges the PR.
 
 This skill runs as a **cycle loop** driven by `$DEX_DIR/prompts/phase-audits/6-complete.md`. The Stop hook re-injects the audit prompt every iteration. Read `dx_complete_wait_minutes` and `dx_complete_max_cycles` each cycle so in-session overrides apply. Defaults are 5 minutes per cycle and 3 cycles before pausing for manual follow-up.
 

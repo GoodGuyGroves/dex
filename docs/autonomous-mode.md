@@ -83,8 +83,8 @@ Phase 2 creates the first implementation commit.
 
 A ticket's sub-issues are scope. Phase 0 lists them (Linear: `list_issues`
 with `parentId`), Phase 1 plans a work package for each in the parent's stated
-order, the PR body reports every sub-issue's state, and Phase 6 marks each one
-Done when this PR meets its acceptance criteria.
+order, the PR body reports every sub-issue's state, and Phase 6 settles each
+one that this PR completes the way it settles the parent.
 
 When Phase 6 marks the ticket Done follows the project's `ticket_close`
 setting (`## Tickets` in `.dex/dex.md`). The default, `on_complete`, marks it
@@ -326,8 +326,8 @@ Phase 6 (Complete) is autonomous and bounded: it reads `## Reviewers` from
 `.dex/dex.md` to know who to notify. The autonomous loop re-reads
 `dx_complete_wait_minutes` (default 5) and `dx_complete_max_cycles` (default 3)
 each cycle, addresses failures through `/dxwatchpr` and `/dxprreview`, and
-re-requests reviewers after each push. It closes the ticket once CI is green
-and actionable review feedback is resolved. A missing review, pending request,
+re-requests reviewers after each push. It settles the ticket per
+`ticket_close` once CI is green and actionable review feedback is resolved. A missing review, pending request,
 absent approval, or GitHub `REVIEW_REQUIRED` merge decision does not block
 Phase 6; Dex reports that state for the maintainer because it never merges the
 PR. Reviewers GitHub says are not requestable are warnings.

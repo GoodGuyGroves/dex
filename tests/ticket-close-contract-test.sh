@@ -33,8 +33,9 @@ assert_contains '- `never` on GitHub Issues: reference the ticket as `Refs #N` a
 
 # The handoff and orchestrator texts no longer say "close the ticket".
 for text in "$ROOT/hooks/phase-loop.sh" "$ROOT/dx.sh" "$ROOT/prompts/workflows/dxwatchpr.md" \
-  "$ROOT/prompts/workflows/dxpr.md" "$ROOT/skills/dex/SKILL.md" "$COMPLETE" "$AUDIT"; do
-  if grep -n -i -E 'close (the )?ticket (when|once|only)|and close the ticket|Update the tracker to Done|Ticket updated to Done' "$text"; then
+  "$ROOT/prompts/workflows/dxpr.md" "$ROOT/skills/dex/SKILL.md" "$COMPLETE" "$AUDIT" \
+  "$ROOT/docs/autonomous-mode.md"; do
+  if grep -n -i -E 'closes? (the )?ticket (when|once|only)|and close the ticket|Update the tracker to Done|Ticket updated to Done' "$text"; then
     fail "${text#"$ROOT"/} still closes the ticket regardless of ticket_close"
   fi
 done

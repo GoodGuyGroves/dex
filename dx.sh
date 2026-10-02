@@ -392,7 +392,7 @@ __dx_phase_message() {
 # (Setup) bootstraps ticket state before planning begins; its message lives in
 # DX_PHASE_0_MESSAGE because zsh aliases arr[0] to arr[1]. Phases 1-6 then run
 # autonomously via `dx`. Phase 5 marks the PR ready; Phase 6 verifies readiness,
-# requests the configured reviewers, monitors CI/reviews, and closes the ticket. Phase names,
+# requests the configured reviewers, monitors CI/reviews, and settles the ticket per ticket_close. Phase names,
 # completion promises, audit basenames, and min-audit counts come from the
 # shared tables in lib/lifecycle-control.sh via the __dx_phase_* helpers below.
 DX_PHASE_MESSAGES=(\
@@ -3114,7 +3114,7 @@ PY
 # state/config files and injecting the next phase's instructions into that session.
 # Phase 6 (Complete) is autonomous: it verifies PR readiness, requests configured
 # reviewers (see dex.md § Reviewers), monitors CI/reviews, addresses comments,
-# and closes the ticket. The user is in the loop only as a configured reviewer.
+# and settles the ticket per ticket_close. The user is in the loop only as a configured reviewer.
 # Returns non-zero if the user interrupts or an error occurs.
 __dx_run_phases_inline() {
   local wt_name="$1" wt_dir="$2" default_branch="$3" step="$4"
