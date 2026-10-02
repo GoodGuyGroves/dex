@@ -115,6 +115,34 @@ assert_contains '50 files' "$ROOT/prompts/workflows/dxpr.md"
 assert_contains 'partial upload' "$ROOT/prompts/workflows/dxpr.md"
 assert_contains 'automatic attachment' "$ROOT/prompts/phase-audits/5-pr.md"
 assert_contains 'warned local handoff' "$ROOT/prompts/phase-audits/5-pr.md"
+# One definition of the active PR template, used by both the writer and the
+# audit; the default-template questions apply only to the default template.
+assert_contains '$DEX_DIR/prompts/pr-template-resolution.md' "$ROOT/prompts/workflows/dxpr.md"
+assert_contains '$DEX_DIR/prompts/pr-template-resolution.md' "$ROOT/prompts/phase-audits/5-pr.md"
+assert_contains 'dx_pr_apply_label_rules' "$ROOT/prompts/workflows/dxpr.md"
+assert_contains 'dx_pr_apply_label_rules' "$ROOT/prompts/phase-audits/5-pr.md"
+assert_contains 'dx_project_pr_template' "$ROOT/prompts/pr-template-resolution.md"
+assert_contains '.github/pull_request_template.md' "$ROOT/prompts/pr-template-resolution.md"
+python3 - "$ROOT/prompts/phase-audits/5-pr.md" <<'AUDIT'
+import sys
+from pathlib import Path
+
+audit = Path(sys.argv[1]).read_text(encoding="utf-8")
+step1 = audit.split("## Step 1: PR description", 1)[1].split("## Step 2", 1)[0]
+default_branch = step1.split("When the line reads `PR template: default`", 1)
+if len(default_branch) != 2:
+    raise SystemExit("5-pr.md Step 1 has no default-template branch")
+always, conditional = default_branch
+project_branch = conditional.split("When a project template is active", 1)
+if len(project_branch) != 2:
+    raise SystemExit("5-pr.md Step 1 has no project-template branch")
+if "testing instructions" in always.lower():
+    raise SystemExit("5-pr.md asks for testing instructions whatever the template")
+if "testing instructions" not in project_branch[0].lower():
+    raise SystemExit("5-pr.md lost the default template's testing question")
+if "testing instructions" in project_branch[1].lower():
+    raise SystemExit("5-pr.md asks a project template for testing instructions")
+AUDIT
 
 assert_contains "Verification is the PR gate, not a commit prerequisite" "$ROOT/prompts/commit-format.md"
 assert_contains "even while that test is failing" "$ROOT/prompts/commit-format.md"

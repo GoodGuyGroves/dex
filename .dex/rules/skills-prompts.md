@@ -55,7 +55,8 @@ Stored in `prompts/`. Referenced by skills by plain repo-relative path
 - `review-wave.md` — One `/dxreviewloop` iteration over the supplied scope
 - `failure-recovery.md` — Analysis to run instead of a third identical retry
 - `commit-format.md` — Conventional Commits specification
-- `pr-description.md` — PR description template
+- `pr-description.md` — Default PR description template
+- `pr-template-resolution.md` — Which PR template is active, shared by `dxpr` and the Phase 5 audit
 - `ticket-instructions.md` — Ticket intake workflow (injected by SessionStart hook)
 - `init-analysis.md` — Codebase analysis prompt (used by `dx init`)
 - `sync-memory.md` — Project context and repo memory refresh (`dx sync`)

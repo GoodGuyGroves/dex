@@ -268,6 +268,27 @@ scalars are not part of the contract. With the section absent nothing changes
 except that a command run through `dx run-gate` still takes its lease, so
 adding it is an optimisation and never a prerequisite.
 
+`## Pull Requests` is read the same way, and is just as optional:
+
+```yaml
+template: docs/pr-template.md
+labels_when:
+  - ".github/** => skip-ci"
+```
+
+- `template` names the project's PR template, relative to the repository root.
+  Phase 5 writes the PR description to it, and its audit checks that
+  template's sections instead of Dex's default ones. An absolute path, a path
+  outside the repository, or a missing or empty file is reported, and Phase 5
+  falls back to a template the project instructions mention, then Dex's
+  default. `prompts/pr-template-resolution.md` is the full order.
+- `labels_when` lists `"<glob> => <label>"` rules. Phase 5 adds each label
+  whose glob matches a file the PR changes, compared with the PR's own base
+  branch. Globs follow `review_sensitive_paths`, except that matching is
+  case-sensitive. Dex only adds labels. It never removes them, and it never
+  creates a label the repository lacks; that only warns. One malformed rule
+  applies none of them.
+
 ## Recommended settings for a shared host
 
 Put these in the shell that launches `dx` on a machine that runs several

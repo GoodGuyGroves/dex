@@ -97,8 +97,8 @@ For each logical group, finish all four steps before starting the next group:
 
    `--fill-first` titles the draft from the first commit, which is already a
    conventional message. Keep the body short: link the ticket and say it is a
-   work in progress. Phase 5 writes the real description with
-   `$DEX_DIR/prompts/pr-description.md` and marks the PR ready for review; never mark
+   work in progress. Phase 5 writes the real description with the template
+   `$DEX_DIR/prompts/pr-template-resolution.md` selects and marks the PR ready for review; never mark
    it ready here. If `gh` is unavailable or unauthenticated, report that the
    draft is pending and continue; publication is not a reason to stop work.
 
