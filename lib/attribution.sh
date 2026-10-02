@@ -21,6 +21,20 @@ __dx_attribution_effective_scope() {
   return "$rc"
 }
 
+# A linked worktree has its own git dir inside the common one. Its `--local`
+# config is the shared .git/config, so a value written there reaches the main
+# checkout and every other worktree.
+__dx_attribution_is_linked_worktree() {
+  local repo_root="$1" common_dir git_dir
+  common_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  git_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --absolute-git-dir 2>/dev/null) || return 1
+  [[ "$common_dir" != "$git_dir" ]]
+}
+
+__dx_attribution_worktree_config_enabled() {
+  [[ "$(git -C "$1" config --bool --get extensions.worktreeConfig 2>/dev/null)" == "true" ]]
+}
+
 dx_attribution_hook_dir() {
   local repo_root="$1"
   local mode="${2:-existing}"
@@ -58,6 +72,9 @@ dx_attribution_state_file() {
     printf '%s\n' "$worktree_state"
   elif [[ -f "$local_state" ]]; then
     printf '%s\n' "$local_state"
+  elif [[ "$mode" == "install" ]] && __dx_attribution_is_linked_worktree "$repo_root" \
+    && __dx_attribution_worktree_config_enabled "$repo_root"; then
+    printf '%s\n' "$worktree_state"
   elif [[ "$scope" == "worktree" ]]; then
     printf '%s\n' "$worktree_state"
   else
@@ -286,6 +303,20 @@ dx_install_attribution_hook() {
     dx_error "core.hooksPath is configured with an empty value; leaving it unchanged"
     return 1
   fi
+  # From a linked worktree, Dex never writes core.hooksPath to the shared
+  # config: it uses the worktree's own config when Git allows one, and otherwise
+  # leaves hooks to the main checkout.
+  if __dx_attribution_is_linked_worktree "$repo_root" \
+    && [[ "$(basename "$state_file")" != "dex-attribution-worktree-state.json" ]]; then
+    if [[ -f "$state_file" ]]; then
+      dx_ok "Dex attribution hooks are installed from the main checkout"
+    else
+      dx_warn "Not installing Dex attribution hooks from a linked worktree: Git would share them with every checkout"
+      dx_info "To install them for this worktree only, run: git config extensions.worktreeConfig true && dx sync"
+      dx_info "Or run 'dx sync' in the main checkout to install them for the whole repository"
+    fi
+    return 0
+  fi
 
   if [[ -f "$state_file" ]]; then
     __dx_attribution_state_validate "$repo_root" || return $?
@@ -350,7 +381,8 @@ dx_install_attribution_hook() {
 
     config_scope="local"
     effective_scope=$(__dx_attribution_effective_scope "$repo_root") || return $?
-    if [[ "$effective_scope" == "worktree" ]]; then
+    if [[ "$effective_scope" == "worktree" ]] \
+      || [[ "$(basename "$state_file")" == "dex-attribution-worktree-state.json" ]]; then
       config_scope="worktree"
     fi
     current_config=""
