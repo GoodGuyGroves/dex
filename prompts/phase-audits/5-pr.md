@@ -101,7 +101,7 @@ pipe review-request command output into `jq`.
 If the `## Reviewers` section is missing or empty (or contains only the `_none_` placeholder), skip this step — the user has chosen not to assign anyone.
 
 Adapter rows (`Adapter: greptile` or `copilot`, see `dx_reviewers_rows`) follow
-`prompts/reviewers/<adapter>.md`: Copilot is requested here like any `request`
+`$DEX_DIR/prompts/reviewers/<adapter>.md`: Copilot is requested here like any `request`
 row, and Greptile is triggered in Phase 6. The PR body and comments never
 mention `@copilot`.
 

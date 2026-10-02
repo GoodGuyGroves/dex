@@ -72,7 +72,7 @@ REVIEWER_ROWS=$(dx_reviewers_rows "$(git rev-parse --show-toplevel)") || REVIEWE
 
 Rows whose adapter is `generic` are today's `request` and `mention` rows. Rows
 with adapter `greptile` or `copilot` are adapter rows: read
-`prompts/reviewers/<adapter>.md` before acting on them. `wait` is `yes` only
+`$DEX_DIR/prompts/reviewers/<adapter>.md` before acting on them. `wait` is `yes` only
 when the project opted that reviewer into the Phase 6 wait gate. The parser
 already drops the `_none_` placeholder and makes every Copilot row a `request`
 row. If there are no rows, skip directly to Monitoring (the user has chosen

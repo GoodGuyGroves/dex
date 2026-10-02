@@ -55,7 +55,7 @@ placeholder, and makes every Copilot row a `request` row. Sort them into:
 - `REQUEST_REVIEWERS` — generic rows where Type is `request`
 - `MENTION_REVIEWERS` — generic rows where Type is `mention`
 - `ADAPTER_REVIEWERS` — rows whose adapter is `greptile` or `copilot`; read
-  `prompts/reviewers/<adapter>.md` before acting on them
+  `$DEX_DIR/prompts/reviewers/<adapter>.md` before acting on them
 
 A row with `wait: yes` and an adapter holds Phase 6 open until that reviewer
 has reviewed the PR's head commit or its wait times out

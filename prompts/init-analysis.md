@@ -155,7 +155,7 @@ for the repository, Dex records a warning and continues.
 
 `Wait` and `Adapter` are optional. `Adapter` (`greptile`, `copilot` or
 `generic`) says how Dex asks an AI reviewer for a review and tells when it has
-finished (see `prompts/reviewers/`). With `Wait: yes` on an adapter row, Phase 6
+finished (see `$DEX_DIR/prompts/reviewers/`). With `Wait: yes` on an adapter row, Phase 6
 does not complete until that reviewer has reviewed the PR's current head commit
 or `DEX_REVIEWER_WAIT_MINUTES` (default 20) runs out; a timeout is reported as
 not reviewed. Dex never writes `@copilot` in a comment, because that summons the
