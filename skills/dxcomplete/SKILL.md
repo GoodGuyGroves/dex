@@ -130,7 +130,7 @@ When setup runs:
 ```
 
 This checks CI status, fixes CI failures when appropriate, addresses review
-comments via `/dxprreview`, resolves clear review threads after replying, and
+comments via `/dxprreview`, applies the project's `thread_policy` to each thread, and
 cancels itself when checks are green, waited reviewers have finished, and
 actionable review feedback is resolved.
 
@@ -162,22 +162,17 @@ REVIEW_DECISION=$(gh pr view "$PR_NUM" --json reviewDecision --jq '.reviewDecisi
 REVIEW_STATE=$(dx_maintenance_pr_review_state "$REVIEW_DECISION") || REVIEW_STATE=unknown
 gh api repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/$PR_NUM/reviews
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api graphql --paginate \
-  -f owner="${REPO%%/*}" \
-  -f name="${REPO#*/}" \
-  -F number="$PR_NUM" \
-  -f query='
-query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100, after: $endCursor) {
-        nodes { id isResolved }
-        pageInfo { hasNextPage endCursor }
-      }
-    }
-  }
-}'
+THREADS_RC=0
+OPEN_THREADS=$(dx_pr_threads_open "$SESSION_ID" "$REPO" "$PR_NUM") || THREADS_RC=$?
 ```
+
+`OPEN_THREADS` has one line per unresolved review thread, ending in `reported`
+or `open`. A `reported` thread is a disagreement Dex replied to and left open
+under the default `thread_policy`, so the person who merges the PR sees it. It
+is not actionable feedback: never hand it back to `/dxprreview` or let it block
+completion, and list it in the summary under **Disagreements left open for the
+maintainer**. An `open` thread is unresolved feedback. A non-zero `THREADS_RC`
+means the thread state is unknown, which counts as a query error.
 
 `CI_STATE` line 1 is `green`, `pending`, `stalled`, `failed` or `error`; with
 `readiness_check` declared under `## Resources`, only that check counts and a
@@ -185,7 +180,7 @@ missing one is pending. `GATE_RC` 0 means every `wait: yes` reviewer is done on
 the head, timed out, or unavailable; 1 means one is still reviewing; 3 means
 the PR head could not be read, which counts as a query error, not waiting.
 
-- **CI green, `GATE_RC` 0, AND no actionable review feedback remains unresolved** → proceed to Step 6 (final verification + close), regardless of `REVIEW_STATE`.
+- **CI green, `GATE_RC` 0, `THREADS_RC` 0, AND no actionable review feedback remains unresolved** (`reported` threads do not count) → proceed to Step 6 (final verification + close), regardless of `REVIEW_STATE`.
 - **New commits were pushed** (e.g., `/dxwatchpr` fixed CI or `/dxprreview` addressed comments) → re-request reviewers, re-trigger adapter reviewers with `dx_reviewer_trigger`, and re-post the mention comment so reviewers know there's something new. `dx_complete_record_cycle "$SESSION_ID" progress`.
 - **Waiting** (no new commits, but CI is `pending` or `GATE_RC` is 1) → `dx_complete_record_cycle "$SESSION_ID" waiting`. The counter stays put, so waiting does not spend the idle budget; the reviewer timeout and `dx_complete_pending_minutes` (default 120) bound it.
 - **Cycle was idle** (nothing pushed, nothing pending, and the first case does not hold; stalled CI, query errors and `GATE_RC` 3 count here) → `dx_complete_record_cycle "$SESSION_ID" idle`; rc 5 means the `dx_complete_max_cycles` budget is spent, so pause with the manual follow-up notice; otherwise keep waiting.
@@ -210,20 +205,23 @@ gate:
 Copilot submits `COMMENTED` reviews by default. If Copilot auto-approval is
 enabled, it may instead submit `APPROVED`; no Copilot-specific completion rule
 is needed. Its overview approval assessment is not a native approval. In every
-case, address substantive feedback and resolve clear review threads before
-closing the ticket.
+case, address substantive feedback before closing the ticket; `/dxprreview`
+resolves or leaves open each thread by the project's `thread_policy`.
 
 ### 6. Final Verification
 
 Once Case A in Step 5 is met:
 
 1. **CI**: `dx_complete_ci_state` reports green (with `readiness_check`, that check passed).
-2. **Reviews**: No unresolved actionable feedback or review threads remain.
+2. **Reviews**: No unresolved actionable feedback remains, and
+   `dx_pr_threads_open` succeeded with no `open` thread still needing a
+   decision. `reported` disagreement threads stay open by design and are listed
+   in the summary.
    Do not require a review, an approval, or a particular `reviewDecision` to
    complete Phase 6; report merge-review state in the maintainer handoff.
 3. **Mention reviewers**: Best-effort — if a `mention` reviewer commented with
    an actionable concern, it should already have been addressed by
-   `/dxprreview`, with clear review threads resolved after Dex replies. Mention
+   `/dxprreview`, which applies the project's `thread_policy`. Mention
    rows route notifications and do not create an approval gate.
 4. **Waited reviewers**: `dx_reviewer_gate` returns 0. List each waited
    reviewer and its state on the head in the summary; a `timeout` or
@@ -263,6 +261,8 @@ Reviews:
   - <reviewer>: <status> (N comments addressed)
   ...
 Merge review state: <none|approved|review-required|changes-requested|unknown> (informational)
+Disagreements left open for the maintainer:
+  - <thread url> (<reviewer>)     (or "none")
 
 CI: All checks green (X/X passed)
 Cycles: <cycle_count>

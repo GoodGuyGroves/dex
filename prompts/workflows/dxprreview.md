@@ -5,7 +5,7 @@ description: "Critically evaluate PR review comments, fix valid issues, push bac
 
 # Skill: dxprreview
 
-Critically evaluate PR review comments — fix what should be fixed, push back on what should not, and escalate what needs human judgement. Normal PR review runs reply inline on GitHub without asking, then resolve each review thread when the reply clearly closes the comment.
+Critically evaluate PR review comments — fix what should be fixed, push back on what should not, and escalate what needs human judgement. Normal PR review runs reply inline on GitHub without asking. The project's `thread_policy` decides which threads Dex then resolves and which reactions it leaves (Step 6).
 
 Read `$DEX_DIR/prompts/issue-hygiene.md`. After accepting a review comment that changes
 scope, clarifies the working issue or PR, or reveals concrete distinct work,
@@ -125,7 +125,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
 gh api repos/$REPO/issues/$PR_NUM/comments
 ```
 
-Identify **unaddressed comments**: comments with no reply from the PR author and no resolved review thread. Filter out:
+Identify **unaddressed comments**: comments with no reply from the PR author and no resolved review thread. Under the default thread policy a disagreement thread stays open after Dex replies. It is still addressed: `dx_pr_threads_open` reports it as `reported` while Dex's marked reply is the last comment. It needs a new decision only when it is `open` again because the reviewer replied after Dex. Filter out:
 - Your own prior replies (from earlier `/dxprreview` or `/dxwatchpr` runs)
 - Inline comments in review threads where `isResolved` is already `true`
 - Approval comments with no actionable content
@@ -134,6 +134,32 @@ Identify **unaddressed comments**: comments with no reply from the PR author and
 **Important — `mention`-type reviewers from `.dex/dex.md § Reviewers`**: any reviewer whose Type is `mention` was deliberately invited (we posted an `@<handle>` comment requesting their review). Their substantive feedback IS actionable, even though they're a bot — do NOT classify them as "purely informational". Treat their `mention`-handle responses the same as a human reviewer's. The same goes for adapter rows (`Adapter: greptile` or `copilot`): a bot posts under its own login, not its mention handle, so treat comments from `dx_reviewer_adapter_logins <adapter>` (for example `greptile-apps[bot]` for `@greptileai`, `copilot-pull-request-reviewer[bot]` for Copilot) as that reviewer's feedback. The "purely informational" filter still applies to other bots not listed in the Reviewers section (CI bots, deploy preview bots, etc.). When a reply needs to name Copilot, write "Copilot", never `@copilot`: that mention summons the Copilot coding agent.
 
 If there are no unaddressed comments, report that and exit immediately.
+
+Read the project's thread policy, and under the default policy clear a stray
+pending review before any reply. A pending (unsubmitted) review by the
+authenticated user hides the replies Dex posts. Because Dex runs as that user,
+it may be the user's own unfinished review, so the helper saves its body and
+every draft comment to the run's artifacts before deleting it, and keeps the
+review when it cannot save it:
+
+```bash
+source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
+SESSION_ID="${DEX_SESSION_ID:-$(dx_session_id)}"
+THREAD_POLICY=$(dx_pr_thread_policy "$(git rev-parse --show-toplevel)")
+if [[ "$THREAD_POLICY" == "keep-disagreements-open" ]]; then
+  PENDING_RC=0
+  PENDING_CLEARED=$(dx_pr_pending_review_clear "$SESSION_ID" "$REPO" "$PR_NUM") || PENDING_RC=$?
+fi
+```
+
+Each `deleted<TAB><review_id><TAB><draft_count><TAB><backup_path>` line goes in
+the Step 8 report with its draft-comment count and backup file path. On rc 1
+(pending reviews could not be listed), rc 5 (a backup could not be written, so
+that review was kept) or rc 3 (a delete failed), warn in the report that replies
+may be hidden from other readers, and continue. Under `resolve-all`, skip this
+step: that policy keeps the behaviour from before the policy existed. Also skip
+it under `dx maintain respond`: that provider makes no GitHub writes, and the
+wrapper publishes the replies after it exits (Step 5).
 
 ### 2. Understand the Full Change
 
@@ -258,32 +284,54 @@ Also skip this step when running under `dx maintain respond`; write
 `response.md` and `inline-replies.jsonl` instead so the wrapper can publish
 safely after rechecking PR provenance.
 
-After pushing (so commit SHAs are available), reply to every unaddressed comment. Use the appropriate API endpoint based on comment type:
+After pushing (so commit SHAs are available), reply to every unaddressed comment.
 
-**Inline comments (from pull request review):**
+**Inline comments (from pull request review):** write the reply to a file, then
+let `dx_pr_thread_respond` post it and apply the thread policy. Map the Step 3
+decision to an outcome:
+
+| Decision | Outcome |
+|---|---|
+| Fixed, nitpick fixed | `fixed` |
+| Not fixing with cited reasoning, a false positive, or context the reviewer lacked | `disagree` |
+| Question answered, or a valid comment that does not block the PR | `answered` |
+| Dex asks the reviewer a clarifying question | `followup` |
+| Escalated (Tier 3) | no reply; do not call the helper |
+
+Write the reply text into `$REPLY_FILE` with your file-writing tool, not
+through a shell string: it can quote reviewer text, which is untrusted.
+
 ```bash
-gh api repos/$REPO/pulls/$PR_NUM/comments/<comment-id>/replies \
-  -f body="<reply>"
+REPLY_FILE=$(mktemp "${TMPDIR:-/tmp}/dex-reply.XXXXXX")
+# ...write the reply into "$REPLY_FILE"...
+dx_pr_thread_respond "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$REPO" "$PR_NUM" \
+  <comment-id> <outcome> "$REPLY_FILE"
+rm -f "$REPLY_FILE"
 ```
 
-After a successful inline reply, resolve the whole review thread when Dex has a
-clear resolution: fixed, not fixing with cited reasoning, question answered, or
-nitpick fixed. Do not resolve if the reply asks a follow-up question, asks the
-reviewer to clarify, or the comment is escalated.
+What the helper does for each outcome:
 
-Use the GraphQL thread ID from the Step 1 review-thread metadata. If the thread
-ID is missing, re-fetch `reviewThreads` before giving up.
+| Outcome | `keep-disagreements-open` (default) | `resolve-all` |
+|---|---|---|
+| `fixed` | reply, 👍 on a bot comment, resolve | reply, resolve |
+| `disagree` | reply ending in a hidden `<!-- dex:thread-disagreement -->` marker, 👎 on a bot comment, **thread left open** | reply, resolve |
+| `answered` | reply, 👍 on a bot comment, resolve | reply, resolve |
+| `followup` | reply, thread left open | reply, thread left open |
 
-```bash
-gh api graphql \
-  -f threadId="<review-thread-id>" \
-  -f query='
-mutation($threadId: ID!) {
-  resolveReviewThread(input: {threadId: $threadId}) {
-    thread { id isResolved }
-  }
-}'
-```
+Reactions go only on comments whose author is a bot account, because bots such
+as Greptile and Copilot learn from them; human reviewers get the reply alone.
+On a Greptile comment, the helper starts Dex's first disagreement reply in a
+thread with the Greptile handle so Greptile re-reads the thread. Do not add
+the handle or the marker yourself.
+
+The helper prints `comment_id<TAB>reply=posted<TAB>reaction=…<TAB>thread=…`
+and reads the thread state from GitHub itself. Return codes:
+- 1: the comment could not be read or the reply call failed. A timed-out call
+  may still have posted, so check the thread for Dex's reply before retrying
+  once, then report it.
+- 3: the reply was posted but the reaction, thread lookup or resolve failed;
+  report it and do not post the reply again.
+- 4: the reply mentions @copilot; reword it ("Copilot") and call again.
 
 **PR-level comments (issue-style):**
 ```bash
@@ -291,8 +339,8 @@ gh api repos/$REPO/issues/$PR_NUM/comments \
   -f body="<reply>"
 ```
 
-PR-level comments do not have review threads. Reply inline on the PR, but do not
-try to resolve them through `resolveReviewThread`.
+PR-level comments do not have review threads or the inline reactions endpoint.
+Reply on the PR; the thread policy does not apply to them.
 
 **Reply format by decision:**
 
@@ -345,7 +393,9 @@ Invoke the `dex:humanizer` skill on any prose in the terminal report. Preserve t
 **Not fixing:** N comments (all replied with reasoning)
 **Answered:** N questions
 **Resolved threads:** N threads
+**Left open for the maintainer (disagreements):** N threads (links)
 **Left open:** N threads (follow-up question or escalation)
+**Pending reviews cleared:** N (each: review id, draft-comment count, backup file path)
 **Escalated:** N comments (awaiting user direction)
 ```
 
@@ -353,6 +403,6 @@ Invoke the `dex:humanizer` skill on any prose in the terminal report. Preserve t
 
 - This skill critically evaluates comments. It does NOT blindly fix everything. Reviewers can be wrong, suggest personal preferences, or request changes that would make the code worse. The agent's job is to use judgement, not compliance.
 - When not fixing a comment, the reasoning must be substantive — reference specific code, patterns, or constraints. "I disagree" is not sufficient.
-- Resolve review threads after replying when Dex's reply clearly closes the comment. Leave the thread unresolved when Dex asks a follow-up question or escalates.
+- `dx_pr_thread_respond` resolves threads by the project's `thread_policy`. Under the default policy a disagreement stays open for the person who merges the PR; under `resolve-all` every thread Dex answers is resolved. A follow-up question or an escalation is never resolved.
 - Do not dismiss reviews — reply and let the reviewer re-review.
 - When invoked from `/dxwatchpr`, the comment fetching in Step 1 may duplicate what the caller already fetched. The skill re-fetches anyway for freshness and standalone compatibility.

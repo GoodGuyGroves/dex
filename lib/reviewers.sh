@@ -225,6 +225,13 @@ __dx_reviewers_ledger_settle_ci() {
 
 # --- Comments and triggers ---------------------------------------------------------
 
+# __dx_reviewers_mentions_copilot <text>
+# True when the text mentions @copilot or @github-copilot, which summons the
+# Copilot coding agent. Every Dex-authored PR comment and reply checks this.
+__dx_reviewers_mentions_copilot() {
+  printf '%s\n' "$1" | grep -Eiq '(^|[^A-Za-z0-9_.-])@(github-)?copilot'
+}
+
 # dx_reviewer_comment <session_id> <pr> <body>
 # The one way Dex posts a reviewer-directed PR comment. A body that mentions
 # @copilot or @github-copilot is refused with rc 4 before gh runs: that mention
@@ -234,8 +241,7 @@ dx_reviewer_comment() {
   [[ $# -eq 3 ]] || return 2
   local comment_session="$1" comment_pr="$2" comment_body="$3" body_file rc=0
   [[ "$comment_pr" =~ ^[0-9]+$ && -n "$comment_body" ]] || return 2
-  if printf '%s\n' "$comment_body" \
-    | grep -Eiq '(^|[^A-Za-z0-9_.-])@(github-)?copilot'; then
+  if __dx_reviewers_mentions_copilot "$comment_body"; then
     printf '%s\n' "dex: refusing to post a PR comment that mentions @copilot; request Copilot with gh pr edit --add-reviewer @copilot" >&2
     return 4
   fi
