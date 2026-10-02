@@ -88,3 +88,14 @@ test('linked worktrees retain servers disabled in the main checkout', t => {
   assert.deepEqual(result.summary.selected, ['linear']);
   assert.ok(result.summary.omitted.includes('github'));
 });
+
+test('a scope reports names it cannot find or that are disabled, and refuses unreadable configuration', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-mcp-missing-')); t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { github: { url: 'https://github' }, off: { command: 'x', disabled: true } } }));
+  const result = scope({ enabled: true, include: ['github', 'ghost', 'off'] }, { home, cwd: home, root: home, env: {} });
+  assert.deepEqual(result.summary.selected, ['github']);
+  assert.deepEqual(result.summary.missing, ['ghost']);
+  assert.deepEqual(result.summary.disabled, ['off']);
+  fs.writeFileSync(path.join(home, '.claude.json'), '{not json');
+  assert.throws(() => scope({ enabled: true, include: ['github'] }, { home, cwd: home, root: home, env: {} }), /Cannot read MCP configuration at/);
+});
