@@ -186,6 +186,18 @@ assert_eq "agent" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
 assert_contains "marked done by agent override" "$TMP_DIR/launched-done.out"
 dx_cleanup_session "$LAUNCH_SESSION"
 
+# A Codex lifecycle has no DEX_LAUNCHED, but its phase loop marks it the same.
+setup_attribution_lifecycle "$LAUNCH_SESSION"
+assert_rejected "$LINENO" env -u DEX_LAUNCHED DEX_LOOP_ACTIVE=1 \
+  DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" done \
+  > "$TMP_DIR/loop-done-no-reason.out" 2>&1
+assert_contains "recorded as --source agent" "$TMP_DIR/loop-done-no-reason.out"
+env -u DEX_LAUNCHED DEX_LOOP_ACTIVE=1 DEX_SESSION_ID="$LAUNCH_SESSION" \
+  bash "$CONTROL" done --reason "Codex finished the phase" > "$TMP_DIR/loop-done.out"
+assert_eq "agent" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
+  "a phase-loop done defaults to agent"
+dx_cleanup_session "$LAUNCH_SESSION"
+
 QUOTE_RUN_ID="run_20261003T000000Z_1_q00ted00"
 dx_run_write_for_session "$LAUNCH_SESSION" "$QUOTE_RUN_ID"
 setup_attribution_lifecycle "$LAUNCH_SESSION"
@@ -704,7 +716,8 @@ grep -q "No active Dex lifecycle" "$TMP_DIR/inactive.out"
 
 printf '%s\n' 7 > "$(dx_state_file "$DEX_SESSION_ID")"
 set +e
-DEX_LOOP_ACTIVE=1 bash "$CONTROL" stop > "$TMP_DIR/completed.out" 2>&1
+DEX_LOOP_ACTIVE=1 bash "$CONTROL" stop --reason "The lifecycle is already complete" \
+  > "$TMP_DIR/completed.out" 2>&1
 RC=$?
 set -e
 [[ "$RC" -ne 0 ]] || assert_at $LINENO

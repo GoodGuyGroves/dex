@@ -12,7 +12,7 @@ Usage: dx control <status|pause|stop|done|jump PHASE|resume>
        dx control clear-override GATE --reason TEXT [--scope phase|session]
        dx control waive GATE --reason TEXT
 
-  Inside a Dex launch (DEX_LAUNCHED=1) every control is recorded as
+  Inside a Dex launch (DEX_LAUNCHED=1 or DEX_LOOP_ACTIVE=1) every control is recorded as
   --source agent and needs --reason. Record --source human only when relaying
   a direct human instruction, with --quote "<their words>".
 
@@ -250,7 +250,7 @@ if [[ "$COMMAND" == "-h" || "$COMMAND" == "--help" || "$COMMAND" == "help" ]]; t
 fi
 
 CONTROL_LAUNCHED=0
-[[ "${DEX_LAUNCHED:-}" == "1" ]] && CONTROL_LAUNCHED=1
+dx_lifecycle_in_dex_launch && CONTROL_LAUNCHED=1
 CONTROL_ORIGIN="human"
 [[ "$CONTROL_LAUNCHED" -eq 1 ]] && CONTROL_ORIGIN="agent"
 CONTROL_ORIGIN_GIVEN=0

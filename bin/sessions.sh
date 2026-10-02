@@ -902,7 +902,7 @@ __dx_sessions_mutate() {
   # Inside a Dex launch control.sh records an agent, and an agent control
   # needs a reason.
   local control_args=()
-  [[ "${DEX_LAUNCHED:-}" == "1" ]] \
+  dx_lifecycle_in_dex_launch \
     && control_args=(--reason "dx sessions ${mutation_action} ${selector_value}")
   if ! bash "$DEX_DIR/bin/control.sh" --session "$session_id" "$mutation_action" \
     ${control_args[@]+"${control_args[@]}"}; then

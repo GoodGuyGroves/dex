@@ -59,6 +59,14 @@ dx_lifecycle_phase_audit_basename() {
   esac
 }
 
+# True inside a provider session Dex started: a lifecycle phase or loop
+# (DEX_LOOP_ACTIVE=1, Claude and Codex alike) or a Claude launch
+# (DEX_LAUNCHED=1). A command run there comes from the agent; the human's own
+# chat controls arrive through the UserPromptSubmit hook instead.
+dx_lifecycle_in_dex_launch() {
+  [[ "${DEX_LAUNCHED:-}" == "1" || "${DEX_LOOP_ACTIVE:-}" == "1" ]]
+}
+
 dx_lifecycle_control_actor_label() {
   if [[ "${1:-}" == "agent" ]]; then
     printf '%s\n' "agent override"

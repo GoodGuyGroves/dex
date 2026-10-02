@@ -462,7 +462,8 @@ adds an expiry; `0` means no expiry. `dx control status` shows the effective
 records with source and reason. Unsupported gate names are rejected instead of
 creating inert policy records.
 
-Attribution follows who decided. Inside a Dex launch (`DEX_LAUNCHED=1`) the
+Attribution follows who decided. Inside a session Dex launched
+(`DEX_LOOP_ACTIVE=1` or `DEX_LAUNCHED=1`, for Claude and Codex alike) the
 agent runs these commands, so every control defaults to `--source agent` and
 needs `--reason`, including `pause`, `stop`, `done`, `jump`, `resume`, and
 `recover`. The agent records `--source human` only when relaying the human's own
