@@ -17,6 +17,24 @@ Dex runs the sync at two points:
 The project turns both off with `rebase_before_ready: false` in `.dex/dex.md`
 § Resources. The command then answers `disabled` with exit 0.
 
+## Which base
+
+The sync picks the base in this order and reports it as `base_source=`:
+
+1. `pr`: the open PR's base branch. This applies only when the branch is on
+   origin, `gh` is installed, and origin is a GitHub repository `gh` can
+   resolve, meaning `github.com` or a host `gh` holds credentials for.
+2. `recorded`: `base_branch` in the session meta. A branch stacked on another
+   branch records it before its PR exists:
+   `dx_meta_write "$DEX_SESSION_ID" base_branch=<parent-branch>`.
+3. `default`: the repository's default branch.
+
+When `gh` is missing, origin isn't GitHub, or the branch has no open PR, the
+sync moves on to the next source. It fails with `fetch-failed` (exit 5) rather
+than guessing in two cases: `gh` errors or times out against a GitHub origin,
+or the chosen base doesn't exist on origin. A stacked branch rebased onto the
+default branch would replay its parent's commits.
+
 ## What each answer means
 
 The first output line is the status word; `key=value` lines follow.
