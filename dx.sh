@@ -5649,6 +5649,10 @@ __dx_sweep_deferred_teardowns() {
     fi
     dx_info "The pull request for ${branch} merged; removing ${wt_name}." >&2
     if [[ "$workspace_mode" == "worktree" ]]; then
+      if [[ -n "$wt_dir" && ( "$PWD" == "$wt_dir" || "$PWD" == "$wt_dir"/* ) ]]; then
+        dx_info "Kept ${wt_name} for now: this shell is inside it. Run dxrm ${wt_name} from elsewhere." >&2
+        continue
+      fi
       # dxrm changes directory; keep the caller where it was.
       ( cd "$repo_root" && dxrm "$wt_name" ) >&2 || continue
     else
@@ -5975,6 +5979,16 @@ dxclean() {
   # UI proof is intentionally longer-lived than lifecycle state so reviewers
   # can still retrieve it after a PR completes.
   dx_ui_capture_cleanup "$(dx_ui_capture_retention_days)" || cleanup_failed=1
+
+  # Rescued worktree content is the user's to delete; say what is there.
+  local rescue_count rescue_size
+  if [[ -d "${DX_RESCUE_DIR:-}" ]]; then
+    rescue_count=$(find "$DX_RESCUE_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$rescue_count" -gt 0 ]]; then
+      rescue_size=$(du -sh "$DX_RESCUE_DIR" 2>/dev/null | awk '{print $1}')
+      echo "  Kept ${rescue_count} rescued worktree copy(ies) (${rescue_size:-?}) in ${DX_RESCUE_DIR}; Dex never deletes them."
+    fi
+  fi
 
   # 6. Host-wide leftovers.
   #

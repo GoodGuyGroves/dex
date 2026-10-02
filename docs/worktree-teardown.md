@@ -36,7 +36,7 @@ least: `caller`, `refuse` and `false`.
 | Value | What a removal does with untracked files and uncommitted edits |
 |-------|-------------------------------------------------------------|
 | `rescue` | Copies them into a new directory under `DX_RESCUE_DIR`, then removes the worktree. If any copy fails, the worktree is kept. |
-| `refuse` | Keeps the worktree and lists what is there. `dxrm` exits non-zero; Phase 6 reports that local cleanup did not finish. |
+| `refuse` | Keeps the worktree and lists what is there. `dxrm <name>` exits non-zero, `dxrm --all` says which it kept, and Phase 6 reports that local cleanup did not finish. |
 
 Commits that exist only on the worktree's branch are handled the same way.
 Under `rescue` the worktree is removed and the branch is kept. Under `refuse`

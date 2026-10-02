@@ -125,6 +125,7 @@ assert_eq "on_merge|feat/three" "$(dxz 'sid=$(dx_session_id ticket-3); print -r 
 dxz dxclean >"$TMP_DIR/out" 2>&1
 [[ -d "$TEST_REPO/.dex/worktrees/ticket-3" ]] || fail "dxclean removed an unmerged on_merge worktree"
 assert_contains "Skipping ticket-3 (waiting for its pull request to merge)" "$TMP_DIR/out"
+assert_contains "Kept 1 rescued worktree copy(ies)" "$TMP_DIR/out"
 touch "$GH_STUB_DIR/fail"
 dxz dxclean >"$TMP_DIR/out" 2>&1
 rm -f "$GH_STUB_DIR/fail"
