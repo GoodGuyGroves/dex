@@ -155,6 +155,22 @@ dx_meta_write "$sid" "ticket_close=garbage"
 [[ "$(mode "$REPO_MERGE" "$sid")" == on_merge ]] || assert_at $LINENO
 rm -f "$(dx_meta_file "$sid")"
 
+# The launch snapshot: the project value on first launch, kept on a resume,
+# replaced by a valid run override, and never by an invalid one.
+dx_ticket_close_snapshot "$sid" "$REPO_MERGE"
+[[ "$(dx_meta_read "$sid" ticket_close)" == on_merge ]] || assert_at $LINENO
+dx_ticket_close_snapshot "$sid" "$REPO_NEVER"
+[[ "$(dx_meta_read "$sid" ticket_close)" == on_merge ]] || assert_at $LINENO
+DEX_TICKET_CLOSE=Never dx_ticket_close_snapshot "$sid" "$REPO_MERGE"
+[[ "$(dx_meta_read "$sid" ticket_close)" == never ]] || assert_at $LINENO
+DEX_TICKET_CLOSE=bogus dx_ticket_close_snapshot "$sid" "$REPO_MERGE" 2>"$TMP_DIR/snapshot.err"
+[[ "$(dx_meta_read "$sid" ticket_close)" == never ]] || assert_at $LINENO
+grep -q "Ignoring DEX_TICKET_CLOSE='bogus'" "$TMP_DIR/snapshot.err" || assert_at $LINENO
+rm -f "$(dx_meta_file "$sid")"
+DEX_TICKET_CLOSE=bogus dx_ticket_close_snapshot "$sid" "$REPO_TYPO" 2>/dev/null
+[[ "$(dx_meta_read "$sid" ticket_close)" == never ]] || assert_at $LINENO
+rm -f "$(dx_meta_file "$sid")"
+
 # Tracker kind, from the Ticket tracker row of `## Integrations` only.
 [[ "$(dx_ticket_tracker_kind "$REPO_NO_SECTION")" == github ]] || assert_at $LINENO
 [[ "$(dx_ticket_tracker_kind "$REPO_LINEAR")" == other ]] || assert_at $LINENO

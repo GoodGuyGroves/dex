@@ -208,3 +208,22 @@ dx_ticket_tracker_kind() {
     END { if (!found) print "none" }
   ' "$ticket_repo/.dex/dex.md"
 }
+
+# dx_ticket_close_snapshot <session-id> <repo-dir>
+# Record the lifecycle's ticket_close in its .meta at launch, so Phase 6 and
+# the merge sweep read the value the run started with after its environment
+# is gone. A valid DEX_TICKET_CLOSE always replaces the record; otherwise a
+# resume keeps the value it already has.
+dx_ticket_close_snapshot() {
+  local ticket_sid="${1:-}" ticket_repo="${2:-}" ticket_mode=""
+  [[ -n "$ticket_sid" ]] || return 0
+  if [[ -n "${DEX_TICKET_CLOSE:-}" ]]; then
+    ticket_mode=$(__dx_ticket_close_normalize "$DEX_TICKET_CLOSE") \
+      || dx_warn "Ignoring DEX_TICKET_CLOSE='${DEX_TICKET_CLOSE}' (expected on_complete, on_merge or never)."
+  fi
+  if [[ -z "$ticket_mode" ]]; then
+    __dx_ticket_close_normalize "$(dx_meta_read "$ticket_sid" ticket_close)" >/dev/null && return 0
+    ticket_mode=$(dx_ticket_close_setting "$ticket_repo")
+  fi
+  dx_meta_write "$ticket_sid" "ticket_close=${ticket_mode}"
+}

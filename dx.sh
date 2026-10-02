@@ -1264,7 +1264,9 @@ __dx_build_system_context() {
   printf 'You are Dex, running the Dex lifecycle for %s.\n' "$wt_name" > "$_ctx_tmp"
   printf 'Initial phase: Phase %s (%s).\n' "$step" "$phase_label" >> "$_ctx_tmp"
   printf 'Workspace: %s\n' "$wt_dir" >> "$_ctx_tmp"
-  printf 'Workspace mode: %s\n\n' "$workspace_mode" >> "$_ctx_tmp"
+  printf 'Workspace mode: %s\n' "$workspace_mode" >> "$_ctx_tmp"
+  printf 'Ticket close: %s (ticket_close; Phase 6 follows it)\n\n' \
+    "$(dx_ticket_close_mode "$wt_dir" "$session_id" 2>/dev/null)" >> "$_ctx_tmp"
   printf '## Requested Work\n\n' >> "$_ctx_tmp"
   printf 'Original dx request: %s\n' "${raw_input:-$wt_name}" >> "$_ctx_tmp"
 
@@ -3342,6 +3344,7 @@ __dx_run_phases_inline() {
     DEX_HEADLESS_RUN="${DEX_HEADLESS_RUN:-}" \
     DEX_HEADLESS_RUN_SPEC_FILE="${DEX_HEADLESS_RUN_SPEC_FILE:-}" \
     DEX_HEADLESS_REQUIRES_PLAN_APPROVAL="${DEX_HEADLESS_REQUIRES_PLAN_APPROVAL:-}" \
+    DEX_TICKET_CLOSE="${DEX_TICKET_CLOSE:-}" \
     DEX_LOOP_ACTIVE=1 \
     DEX_LOOP_PROMISE="$(__dx_phase_promise "$step")" \
     DEX_LOOP_PHASE="$step" \
@@ -3624,7 +3627,7 @@ __dx_run_spec_record_failure() {
 { unalias __dx_run_spec_apply_env; unfunction __dx_run_spec_apply_env; } 2>/dev/null || true
 __dx_run_spec_apply_env() {
   local spec_file="$1" run_token="${2:-}"
-  local token factory_url events_endpoint harness_name harness_model harness_effort plan_approval default_branch
+  local token factory_url events_endpoint harness_name harness_model harness_effort plan_approval ticket_close default_branch
   local source_title
 
   token=$(dx_run_spec_token "$run_token" 2>/dev/null || true)
@@ -3684,6 +3687,12 @@ __dx_run_spec_apply_env() {
 
   plan_approval=$(dx_run_spec_field "$spec_file" "workflow.requires_plan_approval")
   export DEX_HEADLESS_REQUIRES_PLAN_APPROVAL="$plan_approval"
+  # An absent workflow.ticket_close leaves DEX_TICKET_CLOSE and the project
+  # setting alone; a present one is the run's override.
+  ticket_close=$(dx_run_spec_field "$spec_file" "workflow.ticket_close")
+  if [[ -n "$ticket_close" ]]; then
+    export DEX_TICKET_CLOSE="$ticket_close"
+  fi
   default_branch=$(dx_run_spec_field "$spec_file" "repository.default_branch")
   export DEX_HEADLESS_DEFAULT_BRANCH="$default_branch"
 }
@@ -3703,6 +3712,7 @@ __dx_run_spec_cli() {
   local -x DX_MODEL_OVERRIDE="${DX_MODEL_OVERRIDE:-}"
   local -x DEX_SESSION_TITLE="${DEX_SESSION_TITLE:-}"
   local -x DEX_HEADLESS_REQUIRES_PLAN_APPROVAL="${DEX_HEADLESS_REQUIRES_PLAN_APPROVAL:-}"
+  local -x DEX_TICKET_CLOSE="${DEX_TICKET_CLOSE:-}"
   local -x DEX_HEADLESS_DEFAULT_BRANCH="${DEX_HEADLESS_DEFAULT_BRANCH:-}"
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -4444,6 +4454,11 @@ dx() {
     mkdir -p "$DX_LOOP_DIR"
     __dx_write_state "$(dx_prompt_file "$session_id")" "$raw_input"
   fi
+
+  # ticket_close is fixed for the lifecycle when it launches, so Phase 6 and
+  # the merge sweep read the same value after this run's environment is gone.
+  dx_ticket_close_snapshot "$session_id" "$_dx_wt_dir" \
+    || dx_warn "Could not record ticket_close for this lifecycle; Phase 6 resolves it again."
 
   if [[ $step -gt 0 ]]; then
     echo "Resuming ${_dx_wt_name} from Phase ${step}: $(__dx_phase_name "$step")..."
