@@ -76,7 +76,9 @@ ROWS
 
 # __dx_pr_threads_fetch <session> <owner/repo> <pr> <out_file>
 # Every review thread of the PR, all pages, as gh prints them: one JSON
-# document per page, concatenated. Each thread carries its first 100 comments.
+# document per page, concatenated. Each thread carries its first 100 comments
+# and, separately, its last one, so a long thread is still judged by its
+# latest reply.
 __dx_pr_threads_fetch() {
   local fetch_session="$1" fetch_repo="$2" fetch_pr="$3" fetch_out="$4"
   # shellcheck disable=SC2016 # GraphQL variables are expanded by GitHub, not the shell.
@@ -95,6 +97,9 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
           viewerCanResolve
           comments(first: 100) {
             nodes { id databaseId url body viewerDidAuthor author { login } }
+          }
+          latest: comments(last: 1) {
+            nodes { body viewerDidAuthor }
           }
         }
         pageInfo { hasNextPage endCursor }
@@ -161,7 +166,8 @@ for doc in docs:
         comments = (thread.get("comments") or {}).get("nodes") or []
         if not comments:
             continue
-        root, last = comments[0], comments[-1]
+        root = comments[0]
+        last = ((thread.get("latest") or {}).get("nodes") or [comments[-1]])[-1]
         reported = bool(last.get("viewerDidAuthor")) and marker in str(last.get("body") or "")
         rows.append("\t".join([
             clean(thread.get("id")),

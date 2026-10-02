@@ -440,6 +440,15 @@ page1 = [
     t("T_resolved", True, [c(6, "octocat", "done")]),
     t("T_plain", False, [c(7, "octocat", "please\tfix\nthis")]),
 ]
+# A thread longer than the first page of comments: its latest comment, not the
+# 100th, decides. Here the reviewer answered after Dex's marked reply.
+long_thread = t("T_long", False, [c(9, "octocat", "nit"), c(10, "me", "No.\n\n" + marker, True)])
+long_thread["latest"] = {"nodes": [{"body": "still disagree", "viewerDidAuthor": False}]}
+page1.append(long_thread)
+# ...and the other way round: Dex's marked reply is the latest.
+long_reported = t("T_long_reported", False, [c(11, "octocat", "nit"), c(12, "octocat", "more")])
+long_reported["latest"] = {"nodes": [{"body": "Kept.\n\n" + marker, "viewerDidAuthor": True}]}
+page1.append(long_reported)
 page2 = [t("T_page2", False, [c(8, "copilot-pull-request-reviewer[bot]", "bug")])]
 print(json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {
     "nodes": page1, "pageInfo": {"hasNextPage": True, "endCursor": "c1"}}}}}}))
@@ -450,6 +459,8 @@ open_out=$(dx_pr_threads_open "$SESSION" "$REPO" 7)
 assert_eq $'T_reported\t1\tgreptile-apps[bot]\thttps://example.test/c1\treported
 T_reopened\t3\toctocat\thttps://example.test/c3\topen
 T_plain\t7\toctocat\thttps://example.test/c7\topen
+T_long\t9\toctocat\thttps://example.test/c9\topen
+T_long_reported\t11\toctocat\thttps://example.test/c11\treported
 T_page2\t8\tcopilot-pull-request-reviewer[bot]\thttps://example.test/c8\topen' "$open_out" "open threads"
 
 # A query failure is rc 1 with no output, never an empty (clean) list.

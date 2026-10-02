@@ -324,8 +324,9 @@ the handle or the marker yourself.
 
 The helper prints `comment_id<TAB>reply=posted<TAB>reaction=…<TAB>thread=…`
 and reads the thread state from GitHub itself. Return codes:
-- 1: the comment could not be read or the reply failed; nothing was posted, so
-  retry once and then report it.
+- 1: the comment could not be read or the reply call failed. A timed-out call
+  may still have posted, so check the thread for Dex's reply before retrying
+  once, then report it.
 - 3: the reply was posted but the reaction, thread lookup or resolve failed;
   report it and do not post the reply again.
 - 4: the reply mentions @copilot; reword it ("Copilot") and call again.
