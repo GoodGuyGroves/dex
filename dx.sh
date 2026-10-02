@@ -1737,9 +1737,14 @@ __dx_cleanup_completed_workspace() {
   else
     teardown_repo="$wt_dir"
   fi
+  lifecycle_branch=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
+  # ticket_close: on_merge leaves the ticket for the merge sweep. The record
+  # goes into the same .meta as a deferred teardown and outlives the worktree.
+  if [[ -n "$session_id" ]] && ! dx_ticket_close_defer "$session_id" "$teardown_repo" "$lifecycle_branch"; then
+    dx_warn "Ticket lifecycle completed, but Dex could not record the ticket close for the merge; close the ticket once the pull request merges."
+  fi
   teardown_timing=$(dx_teardown_setting "$teardown_repo" worktree_teardown)
   if [[ "$teardown_timing" != "on_complete" ]]; then
-    lifecycle_branch=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
     if [[ -n "$session_id" ]] && ! dx_teardown_defer "$session_id" "$teardown_timing" "$lifecycle_branch"; then
       dx_warn "Ticket lifecycle completed, but Dex could not record the deferred teardown; ${wt_name} was kept. Run dxrm ${wt_name} when you are done with it."
       return 1
@@ -4457,7 +4462,10 @@ dx() {
 
   # ticket_close is fixed for the lifecycle when it launches, so Phase 6 and
   # the merge sweep read the same value after this run's environment is gone.
-  dx_ticket_close_snapshot "$session_id" "$_dx_wt_dir" \
+  # Read from the main checkout, like the `## Worktree Teardown` settings.
+  local ticket_close_repo
+  ticket_close_repo=$(__dx_wt_repo_root "$_dx_wt_dir" 2>/dev/null) || ticket_close_repo="$_dx_wt_dir"
+  dx_ticket_close_snapshot "$session_id" "$ticket_close_repo" \
     || dx_warn "Could not record ticket_close for this lifecycle; Phase 6 resolves it again."
 
   if [[ $step -gt 0 ]]; then
@@ -5662,7 +5670,9 @@ dxcd() {
 
 # __dx_sweep_deferred_teardowns <repo_root> [budget_seconds]
 # Finish the teardown of lifecycles that completed with worktree_teardown:
-# on_merge once GitHub confirms their pull request merged. An open pull
+# on_merge once GitHub confirms their pull request merged, and close the
+# tickets of lifecycles that completed with ticket_close: on_merge
+# (dx_ticket_close_settle). An open pull
 # request, or one Dex cannot ask about, keeps everything: nothing is removed
 # without a confirmed merge. caller records are left for whoever launched Dex,
 # and a lifecycle that was reopened (phase 0-6) is not touched. With
@@ -5670,18 +5680,25 @@ dxcd() {
 # the rest wait for the next run. Prints the number of lifecycles it finished.
 { unalias __dx_sweep_deferred_teardowns; unfunction __dx_sweep_deferred_teardowns; } 2>/dev/null || true
 __dx_sweep_deferred_teardowns() {
-  local repo_root="$1" budget="${2:-}" sid wt_name wt_dir workspace_mode branch deferral
+  local repo_root="$1" budget="${2:-}" sid wt_name wt_dir workspace_mode branch deferral ticket_pending
   local phase_val merged_oid merge_result current default_branch finished=0
   local sweep_started=$SECONDS
   [[ -n "$repo_root" ]] || { echo 0; return 0; }
-  while IFS=$'\037' read -r sid wt_name wt_dir workspace_mode branch deferral; do
-    [[ -n "$sid" && "$deferral" == "on_merge" && -n "$branch" ]] || continue
+  while IFS=$'\037' read -r sid wt_name wt_dir workspace_mode branch deferral ticket_pending; do
+    [[ -n "$sid" ]] || continue
+    [[ ( "$deferral" == "on_merge" && -n "$branch" ) || "$ticket_pending" == "on_merge" ]] || continue
     phase_val=$(cat "$(dx_state_file "$sid")" 2>/dev/null || echo "")
     [[ ! "$phase_val" =~ ^[0-6]$ ]] || continue
     if [[ -n "$budget" ]] && (( SECONDS - sweep_started >= budget )); then
       dx_info "Stopped checking deferred teardowns after ${budget}s; dxclean or the next dx run checks the rest." >&2
       break
     fi
+    # The ticket first (ticket_close: on_merge): closing it removes nothing,
+    # and the teardown below drops the session record.
+    if [[ "$ticket_pending" == "on_merge" ]]; then
+      dx_ticket_close_settle "$repo_root" "$sid" >&2 || true
+    fi
+    [[ "$deferral" == "on_merge" && -n "$branch" ]] || continue
     merge_result=0
     merged_oid=$(dx_pr_merged_head "$repo_root" "$branch") || merge_result=$?
     if [[ "$merge_result" -eq 1 ]]; then
