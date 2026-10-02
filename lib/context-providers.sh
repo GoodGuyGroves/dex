@@ -189,6 +189,11 @@ dx_context_provider_block() {
   worktree=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
   repo=$(dx_repo_root 2>/dev/null) || repo=""
   [[ -n "$repo" ]] || repo="$worktree"
+  # Every session start and handoff comes through here, and most projects
+  # declare nothing: one grep for the heading, the shape
+  # scripts/project-contract.py matches, spares them a Python start.
+  grep -qiE '^#{1,6}[[:space:]]+Context Providers[[:space:]]*$' \
+    "$repo/.dex/dex.md" 2>/dev/null || return 0
 
   provider_cmd=$(dx_project_context_provider "$repo" "$slot" 2>/dev/null) || read_rc=$?
   if [[ "$read_rc" -eq 2 ]]; then
