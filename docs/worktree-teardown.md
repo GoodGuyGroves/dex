@@ -44,7 +44,14 @@ nothing is removed. Commits on a detached HEAD that no branch holds get a
 `dex-rescue/<worktree>-<time>` branch under `rescue`.
 
 Gitignored files (build output, `node_modules`, `.env`) are not rescued.
-Neither are the links Dex itself adds to a worktree, such as `.claude`.
+Neither are the links Dex itself adds to a worktree, such as `.claude`. Files
+under a real `.claude` directory are rescued unless the repository's own
+`.gitignore` ignores them.
+
+Submodule work cannot be copied out: a worktree's submodule repositories are
+deleted with it. If a submodule has untracked files, uncommitted edits or
+commits no remote-tracking ref holds, the worktree is kept under either
+setting, and Dex lists the submodules.
 
 A directory under `.dex/worktrees/` that git does not list as a worktree
 cannot be inspected file by file. Under `rescue` it is moved whole into the
@@ -58,7 +65,7 @@ and only for a worktree that is actually removed.
 | Value | When Phase 6's worktree (or, in place, branch) is removed |
 |-------|-------------------------------------------------------------|
 | `on_complete` | At completion, as before. |
-| `on_merge` | Once its pull request has merged. `dxclean`, and the next `dx` run in that repository, ask GitHub (`gh pr list --state merged`). An open pull request keeps everything quietly. If `gh` is missing, fails or times out, everything is kept and Dex says it could not confirm the merge. |
+| `on_merge` | Once its pull request has merged. `dxclean`, and the next `dx` run in that repository, ask GitHub (`gh pr list --state merged`). An open pull request keeps everything quietly, and so does one closed without merging: run `dxrm <name>` for those. If `gh` is missing, fails or times out, everything is kept and Dex says it could not confirm the merge. A merged pull request counts only when its head contains the local branch, so one merged earlier from the same branch name does not. At `dx` start the check waits at most 10 seconds per lookup and starts no new lookup after 20 seconds. |
 | `caller` | Never by Dex on its own. Whoever launched Dex (a person, an orchestrator) runs `dxrm <name>` after the merge. `dxclean` skips it. |
 
 With `on_merge` or `caller`, completion writes `teardown_deferred`,

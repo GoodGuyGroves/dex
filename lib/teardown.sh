@@ -117,12 +117,43 @@ __dx_rescue_copy_entry() {
   local src="$1" dest="$2"
   mkdir -p "$(dirname "$dest")" || return 1
   if [[ -L "$src" ]]; then
-    ln -s "$(readlink "$src")" "$dest"
+    ln -s -- "$(readlink "$src")" "$dest"
   elif [[ -d "$src" ]]; then
     cp -RpP "$src" "$dest"
   else
     cp -p "$src" "$dest"
   fi
+}
+
+# __dx_wt_untracked_list <wt-dir>
+# Print the NUL-separated untracked paths a removal would destroy. Dex excludes `.claude` in every repository it links into
+# (dx_exclude_claude_artifacts), and that unanchored pattern also hides files
+# under a real .claude directory, so those are listed with only the
+# repository's own .gitignore rules. Dex's .claude link itself is a symlink,
+# which the `**/.claude/**` pathspec never matches.
+__dx_wt_untracked_list() {
+  local wt_dir="$1"
+  git -C "$wt_dir" ls-files -z --others --exclude-standard 2>/dev/null || return 1
+  git -C "$wt_dir" ls-files -z --others --exclude-per-directory=.gitignore \
+    -- ':(glob)**/.claude/**' 2>/dev/null
+}
+
+# __dx_wt_submodule_risk <wt-dir>
+# Print one line per initialised submodule whose removal would lose work:
+# untracked files, uncommitted edits, or commits no remote-tracking ref holds.
+# A worktree's submodule repositories live under its own git directory, so
+# `git worktree remove` deletes them, and neither the untracked list nor
+# tracked.patch can carry them. Fails when git cannot inspect them.
+__dx_wt_submodule_risk() {
+  local wt_dir="$1"
+  [[ -f "${wt_dir}/.gitmodules" ]] || return 0
+  # shellcheck disable=SC2016 # expanded by git submodule foreach
+  git -C "$wt_dir" submodule foreach --recursive --quiet '
+    if [ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null | head -1)" ]; then
+      echo "submodule $displaypath has untracked files or uncommitted changes"
+    elif [ "$(git rev-list --count HEAD --branches --not --remotes 2>/dev/null || echo unknown)" != 0 ]; then
+      echo "submodule $displaypath has commits that exist nowhere else"
+    fi' 2>/dev/null
 }
 
 # dx_wt_rescue <wt-dir> <wt-name>
@@ -140,7 +171,7 @@ dx_wt_rescue() {
     return 1
   }
   list_file="${dest}/.untracked-list"
-  if ! git -C "$wt_dir" ls-files -z --others --exclude-standard >"$list_file" 2>/dev/null; then
+  if ! __dx_wt_untracked_list "$wt_dir" >"$list_file"; then
     dx_error "Could not list untracked files in ${wt_dir}."
     return 1
   fi
@@ -201,6 +232,7 @@ __dx_rescue_unregistered() {
 dx_wt_teardown_gate() {
   local wt_dir="$1" repo_root="$2" mode wt_name untracked_count=0 tracked_dirty=0
   local branch unique_count="" rescue_path stamp detached=0 merged_oid
+  local submodule_risk
   [[ -d "$wt_dir" ]] || return 0
   wt_name=$(basename "$wt_dir")
   mode=$(dx_teardown_setting "$repo_root" teardown_untracked)
@@ -217,7 +249,22 @@ dx_wt_teardown_gate() {
     return 0
   fi
 
-  untracked_count=$(git -C "$wt_dir" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
+  # Submodule content cannot be copied out, so both modes keep the worktree.
+  if ! submodule_risk=$(__dx_wt_submodule_risk "$wt_dir"); then
+    dx_warn "Kept worktree ${wt_name}: Dex could not inspect its submodules."
+    return 3
+  fi
+  if [[ -n "$submodule_risk" ]]; then
+    dx_warn "Kept worktree ${wt_name}: removing it would delete submodule work Dex cannot rescue:"
+    printf '%s\n' "$submodule_risk" | sed 's/^/    /'
+    return 3
+  fi
+
+  if ! untracked_count=$(set -o pipefail
+    __dx_wt_untracked_list "$wt_dir" | tr -cd '\000' | wc -c | tr -d ' '); then
+    dx_error "Could not list untracked files in ${wt_dir}; the worktree was kept."
+    return 1
+  fi
   git -C "$wt_dir" diff HEAD --quiet 2>/dev/null || tracked_dirty=1
   branch=$(git -C "$wt_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
   if [[ -n "$branch" ]]; then
@@ -240,7 +287,7 @@ dx_wt_teardown_gate() {
       dx_warn "Kept worktree ${wt_name} (teardown_untracked: refuse):"
       if [[ "$untracked_count" -gt 0 ]]; then
         dx_info "  ${untracked_count} untracked file(s):"
-        git -C "$wt_dir" ls-files --others --exclude-standard 2>/dev/null | head -10 | sed 's/^/    /'
+        __dx_wt_untracked_list "$wt_dir" | tr '\000' '\n' | head -10 | sed 's/^/    /'
       fi
       [[ "$tracked_dirty" -eq 0 ]] || dx_info "  uncommitted changes to tracked files"
       [[ "$unique_count" == 0 ]] || dx_info "  ${unique_count} commit(s) on ${branch:-a detached HEAD} that exist nowhere else"
@@ -283,18 +330,21 @@ dx_pr_merged_head() {
   printf '%s\n' "$head_oid"
 }
 
-# dx_remote_branch_delete_if_merged <repo-dir> <branch> <merged-oid>
+# dx_remote_branch_delete_if_merged <repo-dir> <branch> <merged-oid> [remote]
 # With delete_remote_branch_on_merge: true, delete <branch> on its remote.
 # Only when the pull request was merged (the caller passes its head commit),
 # the branch is not the default branch, and the remote branch still points at
-# that commit, so work pushed after the merge is never deleted. Returns 0 when
-# deleted or skipped; a failed push only warns.
+# that commit, so work pushed after the merge is never deleted. The push
+# carries that commit as a lease, so a push racing the check is not deleted
+# either. Pass [remote] when the local branch, and with it its
+# branch.<name>.remote setting, may already be gone. Returns 0 when deleted
+# or skipped; a failed push only warns.
 dx_remote_branch_delete_if_merged() {
-  local repo_dir="$1" branch="$2" merged_oid="$3" remote remote_oid
+  local repo_dir="$1" branch="$2" merged_oid="$3" remote="${4:-}" remote_oid
   [[ -n "$branch" && -n "$merged_oid" ]] || return 0
   [[ "$(dx_teardown_setting "$repo_dir" delete_remote_branch_on_merge)" == "true" ]] || return 0
   [[ "$branch" != "$(dx_default_branch "$repo_dir")" ]] || return 0
-  remote=$(git -C "$repo_dir" config --get "branch.${branch}.remote" 2>/dev/null || echo "")
+  [[ -n "$remote" ]] || remote=$(git -C "$repo_dir" config --get "branch.${branch}.remote" 2>/dev/null || echo "")
   [[ -n "$remote" && "$remote" != "." ]] || remote=origin
   remote_oid=$(__dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
     git -C "$repo_dir" ls-remote --heads "$remote" "refs/heads/${branch}" 2>/dev/null | awk 'NR == 1 { print $1 }')
@@ -306,7 +356,8 @@ dx_remote_branch_delete_if_merged() {
     return 0
   fi
   if __dx_ticket_branch_run "${DEX_TEARDOWN_GH_TIMEOUT:-30}" \
-    git -C "$repo_dir" push --quiet "$remote" --delete "$branch" >/dev/null 2>&1; then
+    git -C "$repo_dir" push --quiet --force-with-lease="refs/heads/${branch}:${merged_oid}" \
+    "$remote" --delete "$branch" >/dev/null 2>&1; then
     dx_info "Deleted merged remote branch ${remote}/${branch}"
   else
     dx_warn "Could not delete remote branch ${remote}/${branch}; delete it by hand if you no longer need it."
@@ -321,8 +372,10 @@ dx_remote_branch_delete_if_merged() {
 # exactly that), or delete_remote_branch_on_merge is on. Returns what
 # dx_branch_delete_safe returns.
 dx_lifecycle_branch_release() {
-  local repo_dir="$1" branch="$2" merged_oid="${3:-}" unique_count delete_result=0
+  local repo_dir="$1" branch="$2" merged_oid="${3:-}" unique_count delete_result=0 remote
   [[ -n "$branch" ]] || return 0
+  # Deleting the local branch drops its branch.<name>.remote setting.
+  remote=$(git -C "$repo_dir" config --get "branch.${branch}.remote" 2>/dev/null || echo "")
   if [[ -z "$merged_oid" ]]; then
     unique_count=$(dx_branch_unpushed_count "$repo_dir" "$branch" 2>/dev/null) || unique_count=""
     if [[ "$unique_count" != 0 ]] \
@@ -331,7 +384,7 @@ dx_lifecycle_branch_release() {
     fi
   fi
   dx_branch_delete_safe "$repo_dir" "$branch" "$merged_oid" || delete_result=$?
-  [[ -z "$merged_oid" ]] || dx_remote_branch_delete_if_merged "$repo_dir" "$branch" "$merged_oid"
+  [[ -z "$merged_oid" ]] || dx_remote_branch_delete_if_merged "$repo_dir" "$branch" "$merged_oid" "$remote"
   return "$delete_result"
 }
 
@@ -348,8 +401,10 @@ dx_teardown_defer() {
 
 # dx_teardown_deferred_list <repo-root>
 # One line per lifecycle in this repository whose teardown was deferred at
-# completion (worktree_teardown: on_merge or caller):
-#   session_id<TAB>wt_name<TAB>wt_dir<TAB>workspace_mode<TAB>branch<TAB>deferral
+# completion (worktree_teardown: on_merge or caller), fields separated by the
+# unit separator (\037), which, unlike a tab, read does not merge when a field
+# is empty:
+#   session_id wt_name wt_dir workspace_mode branch deferral
 dx_teardown_deferred_list() {
   local repo_root="$1" repo_key meta_file sid deferral wt_name wt_dir workspace_mode branch
   [[ -d "$DX_STATE_DIR" ]] || return 0
@@ -366,7 +421,7 @@ dx_teardown_deferred_list() {
     workspace_mode=$(dx_meta_read "$sid" workspace_mode)
     branch=$(dx_meta_read "$sid" teardown_branch)
     [[ -n "$wt_name" ]] || continue
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$sid" "$wt_name" "$wt_dir" \
+    printf '%s\037%s\037%s\037%s\037%s\037%s\n' "$sid" "$wt_name" "$wt_dir" \
       "${workspace_mode:-worktree}" "$branch" "$deferral"
   done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" \
     -exec grep -l '^teardown_deferred=' {} + 2>/dev/null)
@@ -385,8 +440,9 @@ dx_session_known_branch() {
 }
 
 # dx_session_branch_records <repo-root>
-# One line per Dex session in this repository whose branch Dex recorded:
-#   branch<TAB>session_id<TAB>wt_name<TAB>wt_dir<TAB>deferral
+# One line per Dex session in this repository whose branch Dex recorded,
+# fields separated by \037 like dx_teardown_deferred_list:
+#   branch session_id wt_name wt_dir deferral
 # dxclean uses it to find lifecycle branches renamed away from worktree-*.
 dx_session_branch_records() {
   local repo_root="$1" repo_key meta_file sid branch
@@ -397,7 +453,7 @@ dx_session_branch_records() {
     sid=$(basename "$meta_file" .meta)
     branch=$(dx_session_known_branch "$sid")
     [[ -n "$branch" ]] || continue
-    printf '%s\t%s\t%s\t%s\t%s\n' "$branch" "$sid" "$(dx_meta_read "$sid" wt_name)" \
+    printf '%s\037%s\037%s\037%s\037%s\n' "$branch" "$sid" "$(dx_meta_read "$sid" wt_name)" \
       "$(dx_meta_read "$sid" wt_dir)" "$(dx_meta_read "$sid" teardown_deferred)"
   done < <(find "$DX_STATE_DIR" -maxdepth 1 -type f -name "${repo_key}-*.meta" -print 2>/dev/null)
 }

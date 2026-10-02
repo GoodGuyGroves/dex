@@ -4379,10 +4379,13 @@ dx() {
   fi
 
   # Finish deferred teardowns (worktree_teardown: on_merge) whose pull request
-  # merged since the last run. Best-effort: it never blocks a start.
+  # merged since the last run. Best-effort and time-boxed: it never fails a start.
   local sweep_repo
   if sweep_repo=$(dx_repo_root 2>/dev/null) && [[ -n "$sweep_repo" ]]; then
-    __dx_sweep_deferred_teardowns "$sweep_repo" >/dev/null </dev/null || true
+    # Shorter gh timeout and an overall budget than dxclean's: a slow or
+    # unreachable GitHub must not hold up the start.
+    DEX_TEARDOWN_GH_TIMEOUT="${DEX_TEARDOWN_GH_TIMEOUT:-10}" \
+      __dx_sweep_deferred_teardowns "$sweep_repo" 20 >/dev/null </dev/null || true
   fi
 
   # Normal mode — setup workspace and run phased lifecycle
@@ -5623,28 +5626,42 @@ dxcd() {
 
 # ─── Deferred teardown sweep ──────────────────────────────────────────────────
 
-# __dx_sweep_deferred_teardowns <repo_root>
+# __dx_sweep_deferred_teardowns <repo_root> [budget_seconds]
 # Finish the teardown of lifecycles that completed with worktree_teardown:
 # on_merge once GitHub confirms their pull request merged. An open pull
 # request, or one Dex cannot ask about, keeps everything: nothing is removed
 # without a confirmed merge. caller records are left for whoever launched Dex,
-# and a lifecycle that was reopened (phase 0-6) is not touched. Prints the
-# number of lifecycles it finished.
+# and a lifecycle that was reopened (phase 0-6) is not touched. With
+# budget_seconds, no new GitHub lookup starts once that much time has passed;
+# the rest wait for the next run. Prints the number of lifecycles it finished.
 { unalias __dx_sweep_deferred_teardowns; unfunction __dx_sweep_deferred_teardowns; } 2>/dev/null || true
 __dx_sweep_deferred_teardowns() {
-  local repo_root="$1" sid wt_name wt_dir workspace_mode branch deferral
+  local repo_root="$1" budget="${2:-}" sid wt_name wt_dir workspace_mode branch deferral
   local phase_val merged_oid merge_result current default_branch finished=0
+  local sweep_started=$SECONDS
   [[ -n "$repo_root" ]] || { echo 0; return 0; }
-  while IFS=$'\t' read -r sid wt_name wt_dir workspace_mode branch deferral; do
+  while IFS=$'\037' read -r sid wt_name wt_dir workspace_mode branch deferral; do
     [[ -n "$sid" && "$deferral" == "on_merge" && -n "$branch" ]] || continue
     phase_val=$(cat "$(dx_state_file "$sid")" 2>/dev/null || echo "")
     [[ ! "$phase_val" =~ ^[0-6]$ ]] || continue
+    if [[ -n "$budget" ]] && (( SECONDS - sweep_started >= budget )); then
+      dx_info "Stopped checking deferred teardowns after ${budget}s; dxclean or the next dx run checks the rest." >&2
+      break
+    fi
     merge_result=0
     merged_oid=$(dx_pr_merged_head "$repo_root" "$branch") || merge_result=$?
     if [[ "$merge_result" -eq 1 ]]; then
       continue
     elif [[ "$merge_result" -ne 0 ]]; then
       dx_info "Could not confirm whether ${branch} has merged; kept ${wt_name} (worktree_teardown: on_merge)." >&2
+      continue
+    fi
+    # gh matches the head by name only, so a pull request merged from an
+    # earlier lifecycle on the same branch name also answers. Act only when
+    # the merged head contains the local branch.
+    if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${branch}" 2>/dev/null \
+      && ! git -C "$repo_root" merge-base --is-ancestor "refs/heads/${branch}" "$merged_oid" 2>/dev/null; then
+      dx_info "Kept ${wt_name}: ${branch} has commits its merged pull request does not (worktree_teardown: on_merge)." >&2
       continue
     fi
     dx_info "The pull request for ${branch} merged; removing ${wt_name}." >&2
@@ -5767,7 +5784,7 @@ dxclean() {
 
   # Branches Dex recorded for this repository's sessions, so passes 2 and 3
   # also find lifecycle branches that were renamed away from worktree-*.
-  while IFS=$'\t' read -r record_branch record_sid record_wt_name _ record_deferral; do
+  while IFS=$'\037' read -r record_branch record_sid record_wt_name _ record_deferral; do
     [[ -n "$record_branch" ]] || continue
     branch_sids[$record_branch]="$record_sid"
     branch_wt_names[$record_branch]="$record_wt_name"

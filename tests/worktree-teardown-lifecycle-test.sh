@@ -209,6 +209,17 @@ dxz dxclean >"$TMP_DIR/out" 2>&1
 assert_eq main "$(git -C "$TEST_REPO" branch --show-current)" "sweep switched back to main"
 ! has_branch feat/inplace || fail "in-place branch kept after merge: $(cat "$TMP_DIR/out")"
 
+# 10. gh matches a head branch by name only: a pull request merged earlier from
+#     the same branch name does not tear down a lifecycle whose work it lacks.
+set_teardown 'worktree_teardown: on_merge'
+lifecycle ticket-8 feat/eight
+complete ticket-8 >/dev/null 2>&1
+git -C "$TEST_REPO" rev-parse main >"$GH_STUB_DIR/merged/feat_eight"
+dxz dxclean >"$TMP_DIR/out" 2>&1
+[[ -d "$TEST_REPO/.dex/worktrees/ticket-8" ]] || fail "an earlier merge of the same branch name removed the worktree"
+has_branch feat/eight || assert_at $LINENO
+assert_contains "Kept ticket-8: feat/eight has commits its merged pull request does not" "$TMP_DIR/out"
+
 # Nothing above wrote outside the sandbox's DEX_HOME and repository.
 [[ ! -e "$HOME/.dex" && ! -e "$HOME/.claude/.dex-phases" ]] || fail "state written outside DEX_HOME"
 

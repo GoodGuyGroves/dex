@@ -243,6 +243,45 @@ REPO="$REPO" WT="$WT" zsh -fc 'source "$DEX_DIR/lib/common.sh"; dx_wt_remove "$W
 [[ ! -e "$WT" ]] || assert_at $LINENO
 [[ -n "$(find "$DX_RESCUE_DIR" -name 'z file.txt' | head -1)" ]] || fail "zsh rescue missed a file"
 
+# Files under a real .claude directory are content: Dex's unanchored `.claude`
+# exclude must not hide them from the rescue.
+git -C "$REPO" worktree add -q "$WT" -b worktree-ticket-13
+dx_exclude_claude_artifacts "$WT"
+mkdir -p "$WT/.claude/commands" "$WT/pkg/.claude"
+printf 'cmd\n' >"$WT/.claude/commands/new.md"
+printf 'notes\n' >"$WT/pkg/.claude/notes.md"
+dx_wt_remove "$WT" "$REPO" >/dev/null 2>&1 || fail ".claude content blocked the removal"
+[[ ! -e "$WT" ]] || assert_at $LINENO
+[[ -n "$(find "$DX_RESCUE_DIR" -path '*/untracked/.claude/commands/new.md' | head -1)" ]] \
+  || fail "a file under .claude was not rescued"
+[[ -n "$(find "$DX_RESCUE_DIR" -path '*/untracked/pkg/.claude/notes.md' | head -1)" ]] \
+  || fail "a file under a nested .claude was not rescued"
+
+# Submodule work cannot be rescued, so it keeps the worktree in both modes.
+SUB="$TMP_DIR/subsrc"
+git init -q "$SUB"
+git -C "$SUB" commit -q --allow-empty -m init
+git -C "$REPO" -c protocol.file.allow=always submodule add -q "$SUB" sub
+git -C "$REPO" commit -q -m "add sub"
+git -C "$REPO" push -q origin main
+git -C "$REPO" worktree add -q "$WT" -b worktree-ticket-14
+git -C "$WT" -c protocol.file.allow=always submodule update -q --init
+printf 'x\n' >"$WT/sub/scratch.txt"
+result=0
+dx_wt_remove "$WT" "$REPO" >"$TMP_DIR/out" 2>&1 || result=$?
+assert_eq 3 "$result" "untracked submodule content keeps the worktree"
+assert_contains "submodule sub has untracked files or uncommitted changes" "$TMP_DIR/out"
+[[ -f "$WT/sub/scratch.txt" ]] || assert_at $LINENO
+rm "$WT/sub/scratch.txt"
+git -C "$WT/sub" commit -q --allow-empty -m local
+result=0
+dx_wt_remove "$WT" "$REPO" >"$TMP_DIR/out" 2>&1 || result=$?
+assert_eq 3 "$result" "a submodule commit no remote holds keeps the worktree"
+assert_contains "submodule sub has commits that exist nowhere else" "$TMP_DIR/out"
+git -C "$WT/sub" checkout -q --detach HEAD~1
+dx_wt_remove "$WT" "$REPO" >/dev/null 2>&1 || fail "a clean submodule kept the worktree"
+[[ ! -e "$WT" ]] || assert_at $LINENO
+
 # --- merged pull requests and remote deletion -------------------------------
 mkdir -p "$TMP_DIR/bin"
 cat >"$TMP_DIR/bin/gh" <<'GH'
@@ -283,6 +322,19 @@ dx_remote_branch_delete_if_merged "$REPO" main "$(git -C "$REPO.git" rev-parse m
 git -C "$REPO.git" show-ref --verify --quiet refs/heads/main || fail "deleted the default branch"
 dx_remote_branch_delete_if_merged "$REPO" merged-branch "$merged_oid" >/dev/null
 ! git -C "$REPO.git" show-ref --verify --quiet refs/heads/merged-branch || fail "merged remote branch kept"
+# The remote comes from the branch's tracking setting, read before deleting
+# the local branch drops that setting.
+git init -q --bare "$TMP_DIR/fork.git"
+git -C "$REPO" remote add fork "$TMP_DIR/fork.git"
+git -C "$REPO" checkout -q -b fork-branch
+git -C "$REPO" commit -q --allow-empty -m fork
+git -C "$REPO" push -q -u fork fork-branch
+fork_oid=$(git -C "$REPO" rev-parse fork-branch)
+git -C "$REPO" checkout -q main
+git -C "$REPO" merge -q --ff-only fork-branch
+dx_lifecycle_branch_release "$REPO" fork-branch "$fork_oid" >/dev/null 2>&1 || fail "releasing a merged branch failed"
+! git -C "$TMP_DIR/fork.git" show-ref --verify --quiet refs/heads/fork-branch \
+  || fail "kept the merged branch on its tracking remote"
 
 # refuse still lets a squash-merged worktree go: its merged pull request holds
 # the commits no ref has once GitHub deleted the branch.
