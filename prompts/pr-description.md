@@ -1,5 +1,7 @@
 # PR Description Template
 
+This is Dex's default PR template. A project template replaces it, checklist included, when `prompts/pr-template-resolution.md` selects one.
+
 ## PR Title Format
 
 ```
