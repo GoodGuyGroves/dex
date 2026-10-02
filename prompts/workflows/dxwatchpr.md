@@ -93,16 +93,26 @@ PRE_HEAD=$(git rev-parse HEAD)
 ### 2. Check and Fix CI
 
 ```bash
-dx_watch_run_command "$SESSION_ID" gh pr checks "$PR_NUM"
+CI_RC=0
+CI_STATE=$(dx_complete_ci_state "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$PR_NUM") || CI_RC=$?
 ```
 
-Parse each check: name, status (pending/pass/fail), URL.
+Line 1 is `green`, `pending`, `stalled`, `failed` or `error`; each following
+line is a check that has not passed (`name<TAB>bucket<TAB>link`). When
+`.dex/dex.md` § Resources declares `readiness_check`, only that check decides,
+and a missing readiness check is pending. Greptile's own check run is left to
+the reviewer gate when a Greptile reviewer row exists.
 
-**All checks pass:**
+**CI green:**
 - Record that CI is green for this cycle.
 
 **Any checks still pending:**
 - Do not diagnose yet. Continue to review/comment checks, then wait for the next loop invocation.
+
+**Stalled or error:**
+- `stalled` means CI stayed pending on this head longer than
+  `dx_complete_pending_minutes`; `error` means the check query failed. Report
+  it; Phase 6 treats the cycle as idle.
 
 **Any checks failed:**
 - Fetch logs and diagnose:
@@ -168,25 +178,33 @@ If `/dxprreview` reports escalations, proceed to Step 7 (Escalation).
 
 ### 5. Re-Request Reviewers After a Push
 
-If this cycle pushed any new commits (from a CI fix or `/dxprreview`), re-trigger reviewers so they get a fresh notification that there's something new to look at. Read the `## Reviewers` section of `.dex/dex.md`:
+If this cycle pushed any new commits (from a CI fix or `/dxprreview`), re-trigger reviewers so they get a fresh notification that there's something new to look at. Read the reviewer rows with `dx_reviewers_rows "$(git rev-parse --show-toplevel)"` (`handle<TAB>type<TAB>wait<TAB>adapter`); generic rows go to `REQUEST_REVIEWERS` or `MENTION_REVIEWERS` by type, and `greptile` or `copilot` rows are adapter rows (see `$DEX_DIR/prompts/reviewers/<adapter>.md`):
 
 ```bash
 POST_HEAD=$(git rev-parse HEAD)
 if [[ "$PRE_HEAD" != "$POST_HEAD" ]]; then
   source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
-  # For each request-type reviewer:
+  # For each generic request-type reviewer:
   for h in "${REQUEST_REVIEWERS[@]}"; do
     dx_maintenance_request_reviewer "$PR_NUM" "$h"
   done
-  # For each mention-type reviewer, post a fresh comment:
+  # For each adapter row (Copilot by reviewer request, Greptile by comment);
+  # this also restarts the reviewer's wait for the new head:
+  #   dx_reviewer_trigger "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$PR_NUM" "<handle>" "<adapter>"
+  # For each generic mention-type reviewer, post a fresh comment:
   if [[ ${#MENTION_REVIEWERS[@]} -gt 0 ]]; then
     handles=$(printf '%s ' "${MENTION_REVIEWERS[@]}")
     handles="${handles% }"
     # Run this comment body through the `dex:humanizer` (`humanizer` outside Claude Code) skill before posting.
-    gh pr comment "$PR_NUM" --body "Updated: ${handles}, please re-review."
+    dx_reviewer_comment "$SESSION_ID" "$PR_NUM" "Updated: ${handles}, please re-review."
   fi
 fi
 ```
+
+Never mention `@copilot` in a comment or reply: it summons the Copilot coding
+agent, which can push commits. `dx_reviewer_comment` refuses that body and the
+`block-copilot-mention` guard denies the command; Copilot is re-requested as a
+reviewer instead.
 
 `dx_maintenance_request_reviewer` wraps idempotent `gh pr edit --add-reviewer` requests and treats non-requestable reviewers as warnings. Re-running on a reviewer that's already requested triggers a fresh notification on supported clients without duplicating the request.
 
@@ -210,7 +228,18 @@ resolved. Copilot's default `COMMENTED` review does not block completion; an
 `APPROVED` Copilot review is reported and may satisfy GitHub's merge rule when
 repository and organization policy allow it.
 
-**All checks pass and no actionable comments or review threads remain
+Check the reviewers that Phase 6 waits for:
+
+```bash
+GATE_RC=0
+REVIEWER_WAITS=$(dx_reviewer_gate "$SESSION_ID" "$(git rev-parse --show-toplevel)" "$PR_NUM") || GATE_RC=$?
+```
+
+`GATE_RC` 1 means a `wait: yes` reviewer has not finished reviewing the head
+yet. Its comments may still arrive, so the watcher must keep running. `GATE_RC`
+3 means the PR head could not be read; report it and keep watching.
+
+**CI green, `GATE_RC` 0, and no actionable comments or review threads remain
 unresolved, regardless of review or approval state:**
 1. Cancel the PR monitoring loop: use `CronDelete` with the job ID.
 2. Report:
@@ -222,7 +251,7 @@ unresolved, regardless of review or approval state:**
 
 Invoke the `dex:humanizer` skill on any free-form PR comments or status prose before publishing or printing them. Preserve reviewer handles, check names, counts, SHAs, and commands exactly.
 
-**Checks pending or actionable comments unresolved:**
+**Checks pending, a waited reviewer still reviewing, or actionable comments unresolved:**
 - Do nothing further. Wait for the next loop invocation.
 
 ### 7. Escalation
@@ -249,5 +278,7 @@ The scheduled watcher uses Phase 6's current `dx_complete_max_cycles` and `dx_co
 - A push during CI triggers a new run; the old run is cancelled automatically.
 - Some checks only run when specific paths change (check the project's CI configuration).
 - Automated reviewers typically respond within 5-10 minutes and human reviewers
-  may take hours, but Phase 6 does not wait solely for a review or approval.
+  may take hours. Phase 6 waits for a review only from `wait: yes` adapter
+  rows, bounded by `dx_complete_reviewer_wait_minutes`; it never waits for an
+  approval.
 - Do not dismiss review comments. Always reply, even if the fix is trivial.

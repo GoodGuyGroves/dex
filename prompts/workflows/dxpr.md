@@ -207,6 +207,13 @@ Notes:
 
 If the `## Reviewers` section is missing or empty, skip this step entirely.
 
+Rows with an `Adapter` column of `greptile` or `copilot` are adapter rows
+(`dx_reviewers_rows` prints the resolved values). Read
+`$DEX_DIR/prompts/reviewers/<adapter>.md` for them. A Copilot row is requested here like
+any `request` row. Greptile is triggered by Phase 6, not here. Never write
+`@copilot` in the PR body or a comment: it summons the Copilot coding agent,
+and the `block-copilot-mention` guard denies the command.
+
 ### 6. Mark the PR Ready for Review
 
 Before Phase 5 completes, mark the PR ready if it is still a draft, then verify

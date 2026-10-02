@@ -24,6 +24,7 @@ it.
 | `git.sh` | Git helpers, including safe tracker-branch adoption | `dx_default_branch()`, `dx_ticket_branch_prepare()`, `dx_slugify()` |
 | `lifecycle-control.sh` | Human/agent lifecycle pause, stop, phase transition, ownership, and audit receipts | `dx_write_lifecycle_control()`, `dx_lifecycle_control_read()`, `dx_lifecycle_control_lock_acquire()` |
 | `maintenance.sh` | Background maintenance config, workflow install, run IDs, locks, and reviewer normalization | `dx_maintenance_event_mode()`, `dx_maintenance_install_workflow()`, `dx_maintenance_run_id()`, `dx_maintenance_request_reviewer()`, `dx_maintenance_pr_review_state()` |
+| `reviewers.sh` | Reviewers table parsing, Greptile/Copilot adapter triggers, the Phase 6 reviewer wait gate, CI readiness, and cycle accounting | `dx_reviewers_rows()`, `dx_reviewer_trigger()`, `dx_reviewer_comment()`, `dx_reviewer_gate()`, `dx_complete_ci_state()`, `dx_complete_record_cycle()` |
 | `override.sh` | Session policy journal, validation, expiry, and effective-value resolution | `dx_override_set()`, `dx_override_clear()`, `dx_override_list()`, `dx_override_effective()` |
 | `provider.sh` | Provider/model profile resolution, launch wrapping (including the session PATH), and diagnostics | `dx_provider_apply()`, `dx_provider_claude()`, `dx_session_path()`, `dx_provider_command()`, `dx_provider_doctor()` |
 | `project-state.sh` | Init ownership snapshots, conservative project cleanup, and the machine-readable `.dex/dex.md` contract reader | `dx_project_state_begin()`, `dx_project_state_finalize()`, `dx_project_state_remove_managed()`, `dx_project_contract_values()`, `dx_project_worktree_hook()` |
@@ -216,6 +217,8 @@ the gate map.
 | `DEX_WATCH_PAUSE_TTL_SECONDS` | Seconds scheduled Phase 6 watchers stay paused after a direct user prompt | 3600 (1h 0m) |
 | `DEX_COMPLETE_MAX_CYCLES` | Max idle PR watch cycles before Phase 6 pauses for manual follow-up | 3 |
 | `DEX_COMPLETE_WAIT_MINUTES` | Minimum wait window per Phase 6 cycle (minutes) | 5 |
+| `DEX_REVIEWER_WAIT_MINUTES` | Minutes Phase 6 waits for each `wait: yes` reviewer to finish on the current head before recording a timeout (`0` = time out at once) | 20 |
+| `DEX_COMPLETE_PENDING_MINUTES` | Minutes CI may stay pending on one head before Phase 6 counts the cycle as idle | 120 |
 | `DEX_SESSION_ID` | Unique session ID (set by dxloop for stop hook) | unset |
 | `DEX_REVIEW_ASSESSMENT_ACTIVE` | Internal marker for the read-only preflight risk assessor | unset |
 | `DEX_REVIEW_PASS_ACTIVE` | Marks a session as a single-shot review-wave pass so its Stop hook can never run the parent lifecycle's inline phase handoff | unset |

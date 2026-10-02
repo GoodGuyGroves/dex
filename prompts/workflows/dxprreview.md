@@ -131,7 +131,7 @@ Identify **unaddressed comments**: comments with no reply from the PR author and
 - Approval comments with no actionable content
 - Bot comments that are purely informational (CI status, coverage reports, deploy previews)
 
-**Important — `mention`-type reviewers from `.dex/dex.md § Reviewers`**: any reviewer whose Type is `mention` was deliberately invited (we posted an `@<handle>` comment requesting their review). Their substantive feedback IS actionable, even though they're a bot — do NOT classify them as "purely informational". Treat their `mention`-handle responses the same as a human reviewer's. The "purely informational" filter still applies to other bots not listed in the Reviewers section (CI bots, deploy preview bots, etc.).
+**Important — `mention`-type reviewers from `.dex/dex.md § Reviewers`**: any reviewer whose Type is `mention` was deliberately invited (we posted an `@<handle>` comment requesting their review). Their substantive feedback IS actionable, even though they're a bot — do NOT classify them as "purely informational". Treat their `mention`-handle responses the same as a human reviewer's. The same goes for adapter rows (`Adapter: greptile` or `copilot`): a bot posts under its own login, not its mention handle, so treat comments from `dx_reviewer_adapter_logins <adapter>` (for example `greptile-apps[bot]` for `@greptileai`, `copilot-pull-request-reviewer[bot]` for Copilot) as that reviewer's feedback. The "purely informational" filter still applies to other bots not listed in the Reviewers section (CI bots, deploy preview bots, etc.). When a reply needs to name Copilot, write "Copilot", never `@copilot`: that mention summons the Copilot coding agent.
 
 If there are no unaddressed comments, report that and exit immediately.
 

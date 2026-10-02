@@ -2307,7 +2307,6 @@ def has_detached_process(text, depth=0):
     return backgrounded and not waited
 
 
-
 # Words that run the command after them unchanged, so `env git push -f` and
 # `command git push --force` are still the push.
 FORCE_PUSH_PREFIX_WORDS = {'command', 'exec', 'env', 'sudo', 'nohup', 'time', 'nice'}
@@ -2397,6 +2396,212 @@ def has_force_push(text, depth=0):
             continue
         segment.append(token)
     return _segment_force_pushes(segment)
+
+
+# An @copilot (or @github-copilot) mention. A word character, dot or dash before
+# the `@` makes it an address or a longer word instead of a mention.
+COPILOT_MENTION = re.compile(r'(?i)(?:^|[^A-Za-z0-9_.\-])@(?:github-)?copilot')
+# The shell joins quoted pieces and drops escaping backslashes, so `@cop""ilot`
+# and `@\copilot` still post @copilot.
+COPILOT_SHELL_QUOTING = re.compile(r'["\'\\]')
+# Naming Copilot as a requested reviewer is the supported way to ask it for a
+# review, so the value of a reviewer flag is never read as a mention. Only the
+# commands that have the flag count: elsewhere gh rejects it, so it can only
+# reach GitHub as another flag's value. `-r` is --reviewer only for
+# `gh pr create`; for `gh pr review` it is --request-changes.
+COPILOT_REVIEWER_FLAGS = {
+    ('pr', 'create'): ('--reviewer', '-r'),
+    ('pr', 'edit'): ('--add-reviewer', '--remove-reviewer'),
+}
+# Flags of those commands that take no value. Any other flag written without
+# `=value` takes the next argument as its value, even one that starts with `-`,
+# so `--body --add-reviewer=@copilot` posts the reviewer flag as the body.
+GH_PR_BOOLEAN_FLAGS = {
+    '--draft', '-d', '--fill', '-f', '--fill-first', '--fill-verbose',
+    '--web', '-w', '--no-maintainer-edit', '--dry-run', '--remove-milestone',
+}
+GH_POSTING_SUBCOMMANDS = {
+    ('pr', 'comment'), ('pr', 'review'), ('pr', 'create'), ('pr', 'edit'),
+    ('issue', 'comment'), ('issue', 'create'), ('issue', 'edit'),
+}
+# Flags whose value names a file gh reads the posted text from: --body-file
+# (`-F` for comments and bodies), and `gh api` fields (`-F key=@file`) and
+# --input.
+GH_BODY_FILE_FLAGS = ('--body-file', '-F', '--field', '--input')
+COPILOT_BODY_FILE_LIMIT = 1024 * 1024
+
+
+def _copilot_body_file_mentions(path_token):
+    """Whether a literal body file that exists already mentions Copilot.
+
+    The file is the posted text, so a reviewer flag written in it is prose and
+    still a mention. Only regular files are read: a FIFO would block the hook.
+    """
+    if not path_token or path_token == '-' or '$' in path_token:
+        return False
+    path = os.path.expanduser(path_token)
+    try:
+        if not stat.S_ISREG(os.stat(path).st_mode):
+            return False
+        with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+            body = handle.read(COPILOT_BODY_FILE_LIMIT)
+    except OSError:
+        return False
+    return bool(COPILOT_MENTION.search(body))
+
+
+def _gh_body_file_paths(args):
+    """Literal paths a posting gh command reads its text from."""
+    for index, arg in enumerate(args):
+        value = None
+        if arg in GH_BODY_FILE_FLAGS and index + 1 < len(args):
+            value = args[index + 1]
+        elif arg.startswith(('--body-file=', '--field=', '--input=')):
+            value = arg.split('=', 1)[1]
+        if value is None:
+            continue
+        yield value
+        if '=@' in value:
+            yield value.split('=@', 1)[1]
+
+
+def _copilot_reviewer_mentions(args):
+    """How many @copilot mentions are reviewer-flag values in one gh command."""
+    words, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in ('-R', '--repo'):
+            skip = True
+        elif not arg.startswith('-'):
+            words.append(arg)
+    flags = COPILOT_REVIEWER_FLAGS.get(tuple(words[:2]), ())
+    long_prefixes = tuple(flag + '=' for flag in flags if flag.startswith('--'))
+    count = 0
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == '--':
+            break
+        if arg in flags and index + 1 < len(args):
+            count += len(COPILOT_MENTION.findall(args[index + 1]))
+            index += 2
+        elif long_prefixes and arg.startswith(long_prefixes):
+            count += len(COPILOT_MENTION.findall(arg.split('=', 1)[1]))
+            index += 1
+        elif arg.startswith('-') and '=' not in arg and arg not in GH_PR_BOOLEAN_FLAGS:
+            # Skip this flag's value so a reviewer flag passed as it stays text.
+            index += 2
+        else:
+            index += 1
+    return count
+
+
+def _gh_api_writes(args):
+    """Whether a `gh api` call sends data rather than only reading.
+
+    gh switches to POST as soon as a field is given, so fields mean a write
+    unless the method is explicitly GET.
+    """
+    method = ''
+    has_fields = False
+    for index, arg in enumerate(args):
+        if arg in ('-X', '--method') and index + 1 < len(args):
+            method = args[index + 1].upper()
+        elif arg.startswith('--method='):
+            method = arg.split('=', 1)[1].upper()
+        elif arg.startswith('-X') and len(arg) > 2:
+            method = arg[2:].upper()
+        elif arg in ('-f', '-F', '--field', '--raw-field', '--input') or arg.startswith(
+                ('--field=', '--raw-field=', '--input=', '-f', '-F')):
+            has_fields = True
+    if method:
+        return method != 'GET'
+    return has_fields
+
+
+def _gh_posting_segments(text, depth=0):
+    """Yield the argument lists of gh commands that post PR or issue text.
+
+    Covers `gh pr|issue comment`, `gh pr review`, `gh pr|issue create|edit`
+    and `gh api` calls that send data (comments, reviews and GraphQL
+    mutations all go through it), including inside heredocs, command
+    substitutions and `bash -c` payloads.
+    """
+    if depth > 8 or not text.strip():
+        return
+    shell_text, heredoc_substitutions, heredoc_bodies = strip_heredoc_bodies(text)
+    nested = list(heredoc_substitutions) + list(heredoc_bodies)
+    nested += extract_dollar_substitutions(shell_text)
+    nested += extract_executable_backticks(shell_text)
+    tokens = shell_tokens(shell_text)
+    nested += [s for s in shell_c_scripts(shell_text, collect_literal_variables(tokens))
+               if isinstance(s, str)]
+    for fragment in nested:
+        yield from _gh_posting_segments(fragment, depth + 1)
+    segment = []
+    for token in tokens + [';']:
+        if token not in SHELL_SEPARATORS:
+            segment.append(token)
+            continue
+        for index, word in enumerate(segment):
+            if token_basename(word) != 'gh':
+                continue
+            args = segment[index + 1:]
+            # Skip gh's global --repo flag so `gh -R o/r pr comment` still reads
+            # as `pr comment`.
+            words, skip = [], False
+            for arg in args:
+                if skip:
+                    skip = False
+                elif arg in ('-R', '--repo'):
+                    skip = True
+                elif not arg.startswith('-'):
+                    words.append(arg)
+            if tuple(words[:2]) in GH_POSTING_SUBCOMMANDS or (
+                    words[:1] == ['api'] and _gh_api_writes(args)):
+                yield args
+            break
+        segment = []
+
+
+def has_copilot_mention_comment(text):
+    """True when a command would post a PR or issue comment that mentions @copilot.
+
+    Writing @copilot in a comment, review or PR/issue body summons the Copilot
+    coding agent, which can push commits to the branch. Requesting a Copilot
+    review with `gh pr edit --add-reviewer @copilot` does not, so reviewer flag
+    values are ignored. Those are counted on the parsed arguments, not matched
+    in the raw text, so a body that quotes `--add-reviewer @copilot` is still a
+    mention. The mention may sit in the command line, a heredoc, a variable
+    assigned in the same command, or a literal body file that already exists.
+
+    This is a best-effort backstop against an agent writing the mention by
+    mistake, not a boundary against deliberate obfuscation. Text assembled at
+    run time is out of scope: values from earlier commands or the environment,
+    `$(...)` output, `eval`, encoded text, files written after the check, and
+    tools other than `gh`. The guarantee is that Dex itself never posts the
+    mention: dx_reviewer_comment refuses it, Copilot rows are always review
+    requests, and tests/reviewer-adapter-contract-test.sh scans the shipped
+    commands. See docs/guards.md.
+    """
+    segments = list(_gh_posting_segments(text))
+    if not segments:
+        return False
+    # A command substitution is parsed both as a nested fragment and in the
+    # outer command, so count each distinct command once. Counting too few
+    # reviewer values only blocks more; counting one twice lets a real mention
+    # elsewhere through.
+    reviewer_values = sum(_copilot_reviewer_mentions(list(args))
+                          for args in dict.fromkeys(tuple(a) for a in segments))
+    # Count mentions as written (a heredoc body keeps its quotes) and as the
+    # shell reads them (quotes and escapes removed), and take the larger count.
+    mentions = max(len(COPILOT_MENTION.findall(text)),
+                   len(COPILOT_MENTION.findall(COPILOT_SHELL_QUOTING.sub('', text))))
+    if mentions > reviewer_values:
+        return True
+    return any(_copilot_body_file_mentions(path)
+               for args in segments for path in _gh_body_file_paths(args))
 
 HEAVY_COMMAND_CACHE_ENTRIES = 32
 GATE_WRAPPER_SCRIPT = 'run-gate.sh'
@@ -2598,6 +2803,8 @@ def guard_detector_matches(guard, text):
         return has_await_in_loop(text)
     if detector == 'force-push':
         return has_force_push(text)
+    if detector == 'copilot-mention-comment':
+        return has_copilot_mention_comment(text)
     if detector == 'detached-process':
         # One guard, one piece of advice: work the session should own and
         # account for. A detached launch escapes the accounting; a declared

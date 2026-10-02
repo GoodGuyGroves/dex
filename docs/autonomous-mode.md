@@ -325,6 +325,32 @@ absent approval, or GitHub `REVIEW_REQUIRED` merge decision does not block
 Phase 6; Dex reports that state for the maintainer because it never merges the
 PR. Reviewers GitHub says are not requestable are warnings.
 
+AI reviewers can opt into a wait. A `## Reviewers` row may add `Wait` and
+`Adapter` columns:
+
+| Handle | Type | Wait | Adapter | Notes |
+|--------|------|------|---------|-------|
+| @greptileai | mention | yes | greptile | Greptile AI review |
+| Copilot | request | yes | copilot | GitHub Copilot review |
+
+With `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
+the PR's current head commit, or until `DEX_REVIEWER_WAIT_MINUTES` (default 20)
+runs out for that head. A timeout is reported as "not reviewed", never as a
+clean review. The adapter says how to ask and how to tell the review is done:
+`greptile` posts a review comment and watches Greptile's check run, `copilot`
+requests `@copilot` as a reviewer and watches for its review of the head
+commit. See `prompts/reviewers/`. Rows without the columns behave as before.
+Dex never writes `@copilot` in a comment, because that summons the Copilot
+coding agent; the `block-copilot-mention` guard denies such commands.
+
+A cycle where CI is still pending or a waited reviewer is still reviewing is a
+waiting cycle and does not count toward `dx_complete_max_cycles`. CI that stays
+pending on one head for longer than `DEX_COMPLETE_PENDING_MINUTES` (default
+120) counts as idle again. In repositories without required status checks, a
+partly registered check list can look green; declare the roll-up check in the
+`## Resources` block of `.dex/dex.md` (`readiness_check: <check name>`) and
+Phase 6 treats CI as green only when that check has passed.
+
 GitHub Copilot submits `COMMENTED` reviews by default. Its public-preview
 auto-approval can submit `APPROVED` reviews, and a separate policy decides
 whether those approvals satisfy merge requirements. Dex reports either state
@@ -422,6 +448,7 @@ The built-in operational gates are:
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
 | `pr.rebase-attempts` | Times the base may move between Phase 4 and the PR being marked ready before Dex escalates instead of rebasing again; default 2 (see `prompts/base-sync.md`) |
+| `complete.reviewer-wait-minutes`, `complete.pending-minutes` | Phase 6 per-reviewer wait and pending-CI cap |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |
 | `maintain.budget-minutes`, `maintain.respond-budget-minutes` | Maintenance provider budgets |
@@ -990,6 +1017,8 @@ use an override-bound lower target; other assurance gates use
 | `DEX_WATCH_PAUSE_TTL_SECONDS` | `3600` (1h 0m) | Seconds scheduled Phase 6 watchers stay paused after a direct user prompt; set to 0 for no automatic expiry |
 | `DEX_COMPLETE_MAX_CYCLES` | `3` | Max idle cycles before Phase 6 pauses for manual follow-up |
 | `DEX_COMPLETE_WAIT_MINUTES` | `5` | Minimum wait window per Phase 6 cycle (minutes) |
+| `DEX_REVIEWER_WAIT_MINUTES` | `20` | Per-reviewer wait for `wait: yes` reviewers on the current head (minutes) |
+| `DEX_COMPLETE_PENDING_MINUTES` | `120` | How long CI may stay pending on one head before the cycle counts as idle (minutes) |
 | `DX_ARTIFACT_DIR` | `~/.claude/.dex-artifacts` | Screenshots, videos, traces, and logs produced by Dex |
 | `DX_TOOL_DIR` | `~/.claude/.dex-tools` | Dex-managed external tooling cache |
 | `DX_RUN_ROOT` | `~/.dex/runs` | Local run directories, event journals, summaries, and run artifacts |

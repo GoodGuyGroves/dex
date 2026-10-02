@@ -108,10 +108,20 @@ or Copilot aliases to GitHub CLI's special `@copilot` reviewer value. Normal
 GitHub usernames are passed without a leading `@`. If GitHub says a reviewer is
 not requestable for the repository, Dex records a warning and continues.
 
-| Handle | Type | Notes |
-|--------|------|-------|
-| @mitchellfyi | request | Authenticated GitHub user |
-| Copilot | request | GitHub Copilot review |
+`Wait` and `Adapter` are optional. `Adapter` (`greptile`, `copilot` or
+`generic`) says how Dex asks an AI reviewer for a review and tells when it has
+finished (see `prompts/reviewers/`). With `Wait: yes` on an adapter row, Phase 6
+does not complete until that reviewer has reviewed the PR's current head commit
+or `DEX_REVIEWER_WAIT_MINUTES` (default 20) runs out; a timeout is reported as
+not reviewed. Dex never writes `@copilot` in a comment, because that summons the
+Copilot coding agent; a Copilot row is always a `request` row. To make CI green
+depend on one roll-up check, set `readiness_check: <check name>` in the
+`## Resources` block.
+
+| Handle | Type | Wait | Adapter | Notes |
+|--------|------|------|---------|-------|
+| @mitchellfyi | request | no | generic | Authenticated GitHub user |
+| Copilot | request | no | copilot | GitHub Copilot review |
 
 Edit rows directly or rerun `dx config`. Remove a row to skip a reviewer.
 ## Rules

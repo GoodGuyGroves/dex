@@ -13,6 +13,7 @@ codex-inline-handoff-test.sh	slow	all	1200	hermetic
 commit-detection-corpus-test.sh	fast	all	600	hermetic
 completion-receipt-test.sh	fast	all	600	hermetic
 config-reviewer-test.sh	fast	all	600	hermetic
+copilot-mention-guard-test.sh	fast	all	600	hermetic
 cross-session-inbound-test.sh	fast	all	600	hermetic
 dex-home-paths-test.sh	fast	all	600	hermetic
 dexcode-artifact-test.sh	service	all	900	hermetic
@@ -102,6 +103,8 @@ review-report-test.sh	fast	all	600	hermetic
 review-stats-test.sh	fast	all	300	hermetic
 review-tier-derivation-test.sh	fast	all	300	hermetic
 review-timeout-test.sh	serial	all	1200	hermetic
+reviewer-adapter-contract-test.sh	fast	all	600	hermetic
+reviewers-test.sh	fast	all	600	hermetic
 rtk-install-test.sh	fast	all	600	hermetic
 rtk-uninstall-test.sh	fast	all	600	hermetic
 run-gate-test.sh	fast	all	300	hermetic

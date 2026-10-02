@@ -179,13 +179,13 @@ line, including when all fields are unchanged or N/A.
 
 ### Phase 6: Complete (autonomous)
 
-1. Read `## Reviewers` from `dex.md`. On the first cycle: verify the PR is ready and use `gh pr ready` if recovery is needed (after the pre-ready base sync in `$DEX_DIR/prompts/base-sync.md`), re-sync `request` reviewers (idempotent), and post one `@mention` comment listing all `mention` reviewers.
+1. Read `## Reviewers` from `dex.md`. On the first cycle: verify the PR is ready and use `gh pr ready` if recovery is needed (after the pre-ready base sync in `$DEX_DIR/prompts/base-sync.md`), re-sync `request` reviewers (idempotent), trigger adapter reviewers (`Adapter: greptile` or `copilot`) with `dx_reviewer_trigger`, and post one `@mention` comment listing all generic `mention` reviewers. Never mention `@copilot` in a comment.
 2. Set up monitoring: `/loop 5m /dxwatchpr`. The PR watcher handles both CI failures and review feedback.
 3. Re-read `dx_complete_wait_minutes` (default 5) each cycle. The Stop hook re-injects the audit and only authorizes outcome evaluation once the current window has elapsed.
 4. Escalate by default when a loop reaches `dx_complete_ci_fix_attempts`, or encounters architectural review comments, a secrets scan failure, or a scope conflict. Ask for or record a justified waiver when an exception is appropriate.
-5. After each push: re-request `request` reviewers and post a fresh mention comment so reviewers know there's something new.
-6. After the current `dx_complete_max_cycles` value (default 3) is reached with no progress, escalate to the user.
-7. When CI is green and actionable review feedback is resolved, run
+5. After each push: re-request `request` reviewers, re-trigger adapter reviewers, and post a fresh mention comment so reviewers know there's something new.
+6. After the current `dx_complete_max_cycles` value (default 3) is reached with no progress, escalate to the user. A cycle spent waiting for pending CI or a `wait: yes` reviewer does not count; those waits are bounded by `dx_complete_pending_minutes` and `dx_complete_reviewer_wait_minutes`.
+7. When CI is green (honouring `readiness_check`), every `wait: yes` reviewer has finished on the head or timed out (`dx_reviewer_gate`), and actionable review feedback is resolved, run
    `/dxcomplete`'s final verification. Reviewer requests and GitHub's
    merge-time approval state do not gate Phase 6. Update the tracker to Done,
    report review state for the maintainer, and print the summary.

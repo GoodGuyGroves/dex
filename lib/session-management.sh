@@ -63,6 +63,7 @@ loop_suffixes = {
     ".review-control.json",
     ".review-diagnostics",
     ".complete-state",
+    ".complete-waits",
     ".handoff-mode",
     ".pause-state",
     ".watch-pause",
