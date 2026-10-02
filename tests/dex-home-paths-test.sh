@@ -72,6 +72,9 @@ check_mode() {
 check_mode unset "$SANDBOX_HOME/.claude/.dex-phases" "$SANDBOX_HOME/.claude/.dex-loops" \
   "$SANDBOX_HOME/.dex/providers.json"
 check_mode set "$DH/state" "$DH/loops" "$DH/providers.json" DEX_HOME="$DH"
+# Worktree teardown copies untracked files here, so it must follow DEX_HOME.
+assert_contains "DX_RESCUE_DIR=$DH/rescue" <(resolve bash DEX_HOME="$DH")
+assert_contains "DX_RESCUE_DIR=$SANDBOX_HOME/.dex/rescue" <(resolve bash)
 check_mode override "$DH/state" "$TMP_DIR/my-loops" "$TMP_DIR/mine.json" \
   DEX_HOME="$DH" DX_LOOP_DIR="$TMP_DIR/my-loops" DX_PROVIDER_GLOBAL_CONFIG="$TMP_DIR/mine.json"
 # Empty counts as unset, for DEX_HOME and for each override: an empty

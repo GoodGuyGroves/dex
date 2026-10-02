@@ -147,6 +147,7 @@ the gate map.
 | `DX_RUN_ROOT` | Dex run directories, event journals, summaries, and run artifacts | `$DEX_HOME/runs`, else `~/.dex/runs` |
 | `DX_MAINTENANCE_DIR` | `dx maintain` locks and last-success stamps | `$DEX_HOME/maintenance`, else `~/.claude/.dex-maintenance` |
 | `DX_LOG_DIR` | `dx worker` service logs | `$DEX_HOME/logs`, else `~/.dex/logs` |
+| `DX_RESCUE_DIR` | Untracked files and uncommitted edits saved from a removed worktree; see [Worktree teardown](worktree-teardown.md) | `$DEX_HOME/rescue`, else `~/.dex/rescue` |
 | `DX_PROVIDER_GLOBAL_CONFIG` | Global provider profiles and default (`dx provider use`) | `$DEX_HOME/providers.json`, else `~/.dex/providers.json` |
 | `DX_SETUP_FILE` | The `dx setup` routing choice | `$DEX_HOME/setup.json`, else `~/.dex/setup.json` |
 | `DX_INSTALL_STATE_FILE` | Install state: managed worktree directories, the session-messaging answer | `$DEX_HOME/install-state.json`, else `~/.claude/.dex-install-state.json` |
@@ -272,6 +273,7 @@ $DEX_HOME/
   router/              DEX_ROUTER_HOME
   dexcode/             DEXCODE_CONFIG_DIR
   logs/                DX_LOG_DIR
+  rescue/              DX_RESCUE_DIR
   providers.json       DX_PROVIDER_GLOBAL_CONFIG
   setup.json           DX_SETUP_FILE
   install-state.json   DX_INSTALL_STATE_FILE

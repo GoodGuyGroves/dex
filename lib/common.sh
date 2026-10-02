@@ -10,7 +10,7 @@
 # Also sources: lib/lock.sh, lib/git.sh, lib/session.sh, lib/session-process.sh,
 # lib/override.sh, lib/completion.sh,
 # lib/session-runtime.sh, lib/session-catalog.sh, lib/output.sh,
-# lib/host-budget.sh, lib/worktree.sh,
+# lib/host-budget.sh, lib/worktree.sh, lib/teardown.sh,
 # lib/provider.sh, lib/codex.sh, lib/dexcode.sh, lib/ui-capture.sh, lib/rtk.sh,
 # lib/events.sh, lib/review.sh, lib/review-capacity.sh, lib/review-policy.sh,
 # lib/review-controller.sh, lib/review-acceptance.sh, lib/review-diagnostics.sh,
@@ -59,6 +59,7 @@ __dx_path_default() {
     DX_RUN_ROOT) sub=runs legacy=.dex/runs ;;
     DX_MAINTENANCE_DIR) sub=maintenance legacy=.claude/.dex-maintenance ;;
     DX_LOG_DIR) sub=logs legacy=.dex/logs ;;
+    DX_RESCUE_DIR) sub=rescue legacy=.dex/rescue ;;
     DEX_ROUTER_HOME) sub=router legacy=.dex/router ;;
     DEXCODE_CONFIG_DIR) sub=dexcode legacy= ;;
     DX_PROVIDER_GLOBAL_CONFIG) sub=providers.json legacy=.dex/providers.json ;;
@@ -98,7 +99,7 @@ dx_resolve_state_paths() {
   __dx_old="${DX_PATHS_FROM:-}"
   [[ "$__dx_old" != "$__dx_home|$HOME" ]] || __dx_old=""
   for __dx_n in DX_STATE_DIR DX_LOOP_DIR DX_ARTIFACT_DIR DX_TOOL_DIR DX_RUN_ROOT \
-      DX_MAINTENANCE_DIR DX_LOG_DIR DEX_ROUTER_HOME DEXCODE_CONFIG_DIR \
+      DX_MAINTENANCE_DIR DX_LOG_DIR DX_RESCUE_DIR DEX_ROUTER_HOME DEXCODE_CONFIG_DIR \
       DX_PROVIDER_GLOBAL_CONFIG DX_SETUP_FILE DX_INSTALL_STATE_FILE; do
     eval "__dx_v=\${$__dx_n:-}"
     if [[ -n "$__dx_v" && -n "$__dx_old" ]]; then
@@ -263,6 +264,7 @@ __dx_require_lib session-catalog.sh
 __dx_require_lib output.sh
 __dx_require_lib host-budget.sh
 __dx_require_lib worktree.sh
+__dx_require_lib teardown.sh
 __dx_require_lib provider.sh
 __dx_require_lib codex.sh
 __dx_require_lib dexcode.sh
