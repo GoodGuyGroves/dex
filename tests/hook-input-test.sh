@@ -162,4 +162,56 @@ if grep -q '^Ticket ID:' "$TMP_DIR/plain-upper.out"; then
   exit 1
 fi
 
+# Context providers: the SessionStart hook appends a project's recall after
+# Dex's own context, labelled unverified, and keeps the whole output inside
+# Claude Code's 10,000-character hook budget even with the real ticket
+# instructions and a provider that prints far more.
+PROVIDER_REPO="$TMP_DIR/provider-repo"
+git init -q "$PROVIDER_REPO"
+git -C "$PROVIDER_REPO" config user.email test@example.com
+git -C "$PROVIDER_REPO" config user.name Test
+mkdir -p "$PROVIDER_REPO/.dex"
+printf '# Dex\n\n## Context Providers\n\n```yaml\nsession_start: echo "recalled for $DX_TICKET_ID at phase $DX_PHASE"; touch "$HOME/.provider-ran"\n```\n' \
+  > "$PROVIDER_REPO/.dex/dex.md"
+git -C "$PROVIDER_REPO" add .dex/dex.md
+git -C "$PROVIDER_REPO" commit -qm init
+git -C "$PROVIDER_REPO" checkout -qb worktree-ticket-55
+
+provider_hook() {
+  (
+    cd "$PROVIDER_REPO"
+    DEX_SESSION_ID="ticket-hook-test" DEX_LOOP_PHASE=0 bash "$ROOT/hooks/load-ticket-context.sh"
+  )
+}
+
+rm -f "$HOME/.provider-ran"
+DEX_LAUNCHED=1 provider_hook > "$TMP_DIR/provider.out"
+grep -qx 'Ticket number: 55' "$TMP_DIR/provider.out" || assert_at $LINENO
+grep -qx -- '--- External recall (unverified; verify against current code before relying on it) ---' \
+  "$TMP_DIR/provider.out" || assert_at $LINENO
+grep -qx 'recalled for 55 at phase 0' "$TMP_DIR/provider.out" || assert_at $LINENO
+# Dex's own context comes first, the recall after it.
+[[ "$(grep -n '^Ticket number:' "$TMP_DIR/provider.out" | cut -d: -f1)" -lt \
+  "$(grep -n '^--- External recall' "$TMP_DIR/provider.out" | cut -d: -f1)" ]] || assert_at $LINENO
+
+rm -f "$HOME/.provider-ran"
+DEX_LAUNCHED=1 DEX_REVIEW_PASS_ACTIVE=1 provider_hook > "$TMP_DIR/provider-review.out"
+assert_not_contains 'External recall' "$TMP_DIR/provider-review.out"
+assert_no_file "$HOME/.provider-ran"
+DEX_LAUNCHED=1 DEX_REVIEW_ASSESSMENT_ACTIVE=1 provider_hook > "$TMP_DIR/provider-assess.out"
+assert_not_contains 'External recall' "$TMP_DIR/provider-assess.out"
+assert_no_file "$HOME/.provider-ran"
+(unset DEX_LAUNCHED; provider_hook) > "$TMP_DIR/provider-plain.out"
+assert_not_contains 'External recall' "$TMP_DIR/provider-plain.out"
+assert_no_file "$HOME/.provider-ran"
+
+printf '# Dex\n\n## Context Providers\n\n```yaml\nsession_start: python3 -c "print(\\"z\\" * 50000)"\nmax_chars: 32000\n```\n' \
+  > "$PROVIDER_REPO/.dex/dex.md"
+DEX_LAUNCHED=1 provider_hook > "$TMP_DIR/provider-big.out"
+grep -q '^\[truncated: kept ' "$TMP_DIR/provider-big.out" || assert_at $LINENO
+grep -qx 'Ticket number: 55' "$TMP_DIR/provider-big.out" || assert_at $LINENO
+big_chars=$(python3 -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read()))' \
+  "$TMP_DIR/provider-big.out")
+[[ "$big_chars" -le 10000 ]] || fail "SessionStart output is ${big_chars} characters, over 10,000"
+
 printf 'hook input tests passed\n'

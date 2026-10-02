@@ -70,15 +70,25 @@ __dx_context_provider_limit() {
   printf '%s\n' "$limit_raw"
 }
 
-# __dx_context_provider_ticket_id <session_id> <worktree_name>
+# __dx_context_provider_ticket_id <session_id> <worktree_dir>
+# The session's recorded ticket, else the one the worktree's name carries
+# (ticket-142), else the one Dex's lifecycle branch carries (worktree-ticket-142),
+# which is what an in-place session has.
 __dx_context_provider_ticket_id() {
-  local id_value=""
+  local id_value="" id_branch=""
   if [[ -n "$1" ]] && command -v dx_meta_read >/dev/null 2>&1; then
     id_value=$(dx_meta_read "$1" ticket_id 2>/dev/null || true)
     [[ -n "$id_value" ]] || id_value=$(dx_meta_read "$1" tracker_key 2>/dev/null || true)
   fi
-  if [[ -z "$id_value" ]] && command -v dx_ticket_id_from_workspace_name >/dev/null 2>&1; then
-    id_value=$(dx_ticket_id_from_workspace_name "$2" 2>/dev/null || true)
+  command -v dx_ticket_id_from_workspace_name >/dev/null 2>&1 || {
+    printf '%s' "$id_value"
+    return 0
+  }
+  [[ -n "$id_value" ]] || id_value=$(dx_ticket_id_from_workspace_name "${2##*/}" 2>/dev/null || true)
+  if [[ -z "$id_value" ]]; then
+    id_branch=$(git -C "$2" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+    [[ "$id_branch" == worktree-ticket-* ]] \
+      && id_value=$(dx_ticket_id_from_workspace_name "${id_branch#worktree-}" 2>/dev/null || true)
   fi
   printf '%s' "$id_value"
 }
@@ -246,7 +256,7 @@ dx_context_provider_block() {
   fi
 
   dx_run_with_timeout "$timeout_secs" env \
-    DX_TICKET_ID="$(__dx_context_provider_ticket_id "$session_id" "${worktree##*/}")" \
+    DX_TICKET_ID="$(__dx_context_provider_ticket_id "$session_id" "$worktree")" \
     DX_TICKET_TITLE="$(__dx_context_provider_ticket_title "$session_id")" \
     DX_PHASE="$phase" \
     DX_REPO_ROOT="$repo" \
