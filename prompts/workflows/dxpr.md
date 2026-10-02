@@ -284,6 +284,7 @@ Add an implementation summary to the ticket via the configured tracker (see dex.
 Print a summary of the PR for the user:
 - PR link
 - PR description preview (title + summary section)
+- The `PR template:` line, and the `Labels:` line when label rules are declared
 - List of `request` reviewers attached
 - Implementation summary
 - UI proof status and reason, plus MP4/poster/manifest paths when READY
