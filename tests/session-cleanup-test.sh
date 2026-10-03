@@ -391,6 +391,32 @@ assert_eq "$ACTUAL_CHECKOUT_BEFORE" \
   "$(git -C "$ACTUAL_REPO" status --porcelain=v1)" \
   "cleanup preserves checkout state"
 
+# A completed lifecycle created under a default umask, whose .meta files an
+# older Dex left at 0644, is cleaned like any other (#81).
+UMASK_REPO="$TMP_DIR/umask-repo"
+new_repo "$UMASK_REPO"
+umask 022
+make_lifecycle "$UMASK_REPO" cleanup-umask 7 completed 1
+UMASK_PARENT="$LAST_SESSION_ID"
+UMASK_CHILD="${UMASK_PARENT:0:120}-pass-dddddddddddddddddddddddddddddddd"
+dx_meta_write "$UMASK_CHILD" \
+  "session_role=review-child" \
+  "parent_session_id=$UMASK_PARENT" \
+  "child_kind=pass"
+printf '3\n' > "$(dx_state_file "$UMASK_CHILD")"
+chmod 600 "$(dx_state_file "$UMASK_CHILD")"
+umask 077
+chmod 644 "$(dx_meta_file "$UMASK_PARENT")" "$(dx_meta_file "$UMASK_CHILD")"
+run_sessions "$UMASK_REPO" "$TMP_DIR/umask-cleanup.out" cleanup
+if [[ "$COMMAND_RESULT" -ne 0 ]]; then
+  cat "$TMP_DIR/umask-cleanup.out" >&2
+fi
+assert_eq "0" "$COMMAND_RESULT" "cleanup of a session with 0644 .meta files"
+assert_contains "Cleanup finished: 1 completed lifecycle session(s) cleaned." \
+  "$TMP_DIR/umask-cleanup.out"
+assert_no_file "$(dx_meta_file "$UMASK_PARENT")"
+assert_no_file "$(dx_meta_file "$UMASK_CHILD")"
+
 # Contention on one candidate does not stop later candidates. The command
 # reports a partial failure without printing the private claim token.
 PARTIAL_REPO="$TMP_DIR/partial-repo"

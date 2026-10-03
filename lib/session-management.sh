@@ -2117,6 +2117,19 @@ __dx_session_management_remove_transaction_dir() { # <directory>
   command rm -rf -- "$1"
 }
 
+# Dex used to write .meta with the caller's umask, usually 0644, and the
+# cleanup journal reads it only at 0600, so a finished session could not be
+# forgotten. Narrow a regular, unlinked, single-link .meta that this user owns,
+# while the claim and lock are held. This only removes permissions; anything
+# else is left for the journal's reader to refuse.
+__dx_session_management_meta_narrow() { # <sid>
+  local narrow_meta
+  narrow_meta=$(dx_meta_file "$1")
+  [[ -f "$narrow_meta" && ! -L "$narrow_meta" && -O "$narrow_meta" ]] || return 0
+  [[ -n "$(find "$narrow_meta" -maxdepth 0 -links 1 2>/dev/null)" ]] || return 0
+  chmod go-rwx "$narrow_meta" 2>/dev/null || return 1
+}
+
 __dx_session_management_cleanup_exact() { # <repo-dir> <sid> [eligibility-policy]
   [[ $# -ge 2 && $# -le 3 ]] || return 3
   local requested_repo="$1" target_session="$2" repo_dir records_file plan_file
@@ -2192,7 +2205,8 @@ __dx_session_management_cleanup_exact() { # <repo-dir> <sid> [eligibility-policy
               plan_runtime plan_kind plan_snapshot; do
             : "$plan_role" "$plan_runtime" "$plan_kind" "$plan_snapshot"
             [[ -n "$workspace" ]] || workspace="$plan_workspace"
-            if ! __dx_session_management_artifacts validate "$plan_session"; then
+            if ! __dx_session_management_artifacts validate "$plan_session" \
+              || ! __dx_session_management_meta_narrow "$plan_session"; then
               cleanup_result=1
               break
             fi

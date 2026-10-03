@@ -1367,7 +1367,11 @@ dx_meta_write() {
     overrides_input+=$'\n'
   fi
 
+  # .meta is read back as private state (0600), so the replacement is created
+  # private rather than with the caller's umask.
   tmp_file="${meta_file}.tmp.$$"
+  command rm -f "$tmp_file" 2>/dev/null || true
+  (umask 077 && : >| "$tmp_file") || return 1
   if ! printf '%s' "$overrides_input" | awk -F'\t' -v meta="$meta_file" '
     BEGIN {
       ok = 1
@@ -1409,7 +1413,7 @@ dx_meta_write() {
         }
       }
     }
-  ' > "$tmp_file"; then
+  ' >| "$tmp_file"; then
     command rm -f "$tmp_file" 2>/dev/null
     return 1
   fi
@@ -3044,8 +3048,10 @@ __dx_meta_keep_ticket_close() {
   meta_file=$(dx_meta_file "$1")
   [[ -f "$meta_file" ]] || return 1
   tmp_file="${meta_file}.tmp.$$"
-  if awk -F= '$1 ~ /^ticket_close_/ || $1 == "wt_name" || $1 == "ticket_id" || $1 == "created_at" || $1 == "updated_at"' \
-    "$meta_file" > "$tmp_file" 2>/dev/null && mv -f "$tmp_file" "$meta_file"; then
+  rm -f "$tmp_file" 2>/dev/null || true
+  if (umask 077 && : >| "$tmp_file") \
+    && awk -F= '$1 ~ /^ticket_close_/ || $1 == "wt_name" || $1 == "ticket_id" || $1 == "created_at" || $1 == "updated_at"' \
+    "$meta_file" >| "$tmp_file" 2>/dev/null && mv -f "$tmp_file" "$meta_file"; then
     return 0
   fi
   rm -f "$tmp_file" 2>/dev/null || true
