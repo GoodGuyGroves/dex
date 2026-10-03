@@ -111,5 +111,59 @@ check_force_push clean 'git commit -m "--force"'
 check_force_push clean 'git fetch --force origin'
 check_force_push clean 'bash "$DEX_DIR/bin/branch-sync.sh" push'
 
+# A review wave lands its fixes as new commits (#54). Inside a wave an amend or
+# a force push is blocked; ordinary commits and pushes, text that only mentions
+# an amend, and Dex's own branch-sync lease push are not. Outside a wave the
+# guard does nothing.
+check_history_rewrite() {
+  local expected="$1" command="$2" output status
+  shift 2
+  set +e
+  output=$(mkbashpayload "$command" | env "$@" DEX_GUARD_EVENT=bash python3 "$HANDLER" 2>&1)
+  status=$?
+  set -e
+  if [[ "$expected" == block && "$status" -eq 2 \
+      && "$output" == *'block-review-wave-history-rewrite'* ]] \
+    || [[ "$expected" == allow && "$status" -eq 0 \
+      && "$output" != *'block-review-wave-history-rewrite'* ]]; then
+    pass=$((pass + 1))
+  else
+    printf 'FAIL (expected %s): %s (rc=%s)\n%s\n' "$expected" "$command" "$status" "$output" >&2
+    fail=$((fail + 1))
+  fi
+}
+
+for rewrite in 'git commit --amend --no-edit' 'git commit --amend -m "fix: x"' \
+  'git commit -a --amend' 'git -C . commit --amend' "bash -c 'git commit --amend'" \
+  'echo "$(git commit --amend --no-edit)"' 'git push --force-with-lease' \
+  'git -C . push -f origin b' 'git push origin +HEAD:b' \
+  'git add a.txt && git commit --amend --no-edit && git push --force-with-lease'; do
+  check_history_rewrite block "$rewrite" DEX_REVIEW_PASS_ACTIVE=1
+done
+for ordinary in 'git commit -m review-fix' 'git commit -m "--amend"' \
+  'git commit -m fix -m "--amend the docs"' 'echo git commit --amend' 'git push' \
+  'git push -u origin HEAD' 'bash "$DEX_DIR/bin/branch-sync.sh" push' \
+  'bash "$DEX_DIR/bin/branch-sync.sh" sync' 'git commit -- --amend'; do
+  check_history_rewrite allow "$ordinary" DEX_REVIEW_PASS_ACTIVE=1
+done
+check_history_rewrite allow 'git commit --amend --no-edit'
+check_history_rewrite allow 'git commit --amend --no-edit' DEX_REVIEW_PASS_ACTIVE=0
+check_history_rewrite allow 'git commit --amend --no-edit' DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=2
+
+# Codex waves have no PreToolUse hook, so the wave prompt carries the rule too.
+# It names branch-sync as text: the backticks must not run anything.
+for wave_shell in bash zsh; do
+  wave_prompt=$("$wave_shell" -c 'source "$DEX_DIR/lib/common.sh" >/dev/null 2>&1
+    __dx_review_wave_message_template scope branch changes d s n P lifecycle' 2>&1) || true
+  if [[ "$wave_prompt" == *'as a new commit: never amend or otherwise rewrite a commit'* \
+    && "$wave_prompt" == *'`bash "$DEX_DIR/bin/branch-sync.sh"`'* ]]; then
+    pass=$((pass + 1))
+  else
+    printf 'FAIL (%s): the lifecycle wave prompt lacks the new-commit rule\n%s\n' \
+      "$wave_shell" "$wave_prompt" >&2
+    fail=$((fail + 1))
+  fi
+done
+
 printf 'push-guards-test: %d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]] || assert_at $LINENO

@@ -211,6 +211,9 @@ Every wave must:
 5. Batch-fix verified findings that are safe and in scope.
 6. When the caller permits publication, commit and push each coherent
    accepted-fix checkpoint at once; keep failed and pending checks explicit.
+   Every fix, a message or trailer correction included, is a new commit:
+   never amend or rewrite a pushed commit. Base rewrites go only through the
+   lifecycle's `bash "$DEX_DIR/bin/branch-sync.sh"`.
 7. Re-run affected checks and targeted review.
 8. Write one result signal, exactly one lowercase 16-character findings hash,
    and the exact generation-bound receipt supplied for that pass, then stop.
