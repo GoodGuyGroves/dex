@@ -99,6 +99,8 @@ rejects "an until other than post-merge" \
 rejects "a short reason" "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead "later")]")"
 rejects "a placeholder reason" \
   "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead "<reason goes here>")]")"
+rejects "a reason of placeholder words only" \
+  "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead "TODO TODO TODO")]")"
 rejects "a multi-line reason" \
   "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead $'Runs on integration\nafter the merge.')]")"
 rejects "a reason with a Unicode line separator" \

@@ -299,17 +299,17 @@ lanes:
 known_failures: .dex/known-failures.tsv
 ```
 
-- `lanes` are the commands that make up the required Phase 4 gate, run in
-  order under the `full-gate` receipt name instead of the project's aggregate
-  gate. Use it when the full suite is too slow for every unit and its heavier
+- `lanes` are the commands that make up the required Phase 4 gate, all run in
+  order, even after one fails, under the `full-gate` receipt name instead of
+  the project's aggregate gate. Use it when the full suite is too slow for every unit and its heavier
   lanes run elsewhere, for example after merge.
 - `known_failures` names a repository-relative file with one
   `test-id<TAB>base-ref<TAB>issue-ref` line per test already failing on the
   base, plus `#` comments. An entry applies while HEAD contains its base ref.
   Phase 4 reports a listed failure as `baseline (<issue-ref>)` and does not
   fix it in the unit. An absolute path, a path outside the repository, or a
-  missing file is reported and ignored; a malformed line is skipped with a
-  warning.
+  missing file is reported and ignored; a malformed line, or one whose base
+  ref does not resolve, is skipped with a warning.
 - The Phase 4 handoff and every Phase 4 audit print the policy
   (`dx_verification_phase_block`). With no block, Phase 4 is unchanged.
 

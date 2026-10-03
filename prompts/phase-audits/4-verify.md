@@ -36,14 +36,17 @@ When `.dex/dex.md` declares a `## Verification` block, the Phase 4 handoff and
 this audit print its policy (`dx_verification_phase_block`):
 
 - Declared `lanes` are the required Phase 4 gate, run in order in place of the
-  project aggregate gate. Record them under the `full-gate` receipt name, for
-  example `dx run-gate --name full-gate bash -c '<lane 1> && <lane 2>'`.
+  project aggregate gate. Run every lane even when an earlier one fails, so a
+  baseline failure cannot hide a later lane, and record them under the
+  `full-gate` receipt name, for example
+  `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`.
 - A failing test listed under `known_failures` for a base this branch contains
   was failing before this unit. Report it as `baseline (<issue-ref>)` and do
   not fix it here: a fix belongs in its own issue and branch. Rerun it alone
   first when it may be a timing flake. A failure not on that list is this
   unit's to fix.
-- A lane that fails only on listed baseline failures still meets the gate:
+- A lane run that fails only on listed baseline failures, with every lane
+  run to the end, still meets the gate:
   its `full-gate` receipt records the failure (`gate-receipt.sh full-gate`
   answers 3), and the summary names every failing test as
   `baseline (<issue-ref>)`. Any other failing test makes it a gate to fix.

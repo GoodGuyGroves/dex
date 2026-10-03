@@ -39,7 +39,8 @@ its `## Quality Gates` section as authoritative:
 - Do not replace a named gate with an inferred, narrower alternative.
 - A `## Verification` block (`dx_verification_phase_block "$(git rev-parse --show-toplevel)"`
   prints it) narrows Phase 4 on purpose: its `lanes` are the required gate,
-  run in order under the `full-gate` receipt name, and its `known_failures`
+  every one run in order, even after one fails, under the `full-gate` receipt
+  name, and its `known_failures`
   entries are baseline failures to report as `baseline (<issue-ref>)`, never
   fix in this unit.
 - Treat a missing command, stale instruction, or un-runnable gate as a failure

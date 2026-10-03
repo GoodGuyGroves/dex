@@ -221,7 +221,8 @@ dx_project_verification_value() {
 #
 # Returns 1 when nothing is declared, and 2, with the reason on stderr, when
 # the block is malformed or the path is absolute, leaves the repository, or is
-# not a regular file. A malformed line is reported on stderr and skipped.
+# not a regular file. A malformed line, or one whose base ref does not
+# resolve, is reported on stderr and skipped.
 dx_verification_known_failures() {
   [[ $# -eq 1 && -n "$1" ]] || return 2
   local failures_repo="$1" declared="" read_rc=0 failures_file test_id base_ref issue_ref extra
@@ -255,8 +256,13 @@ PY
         "$test_id" >&2
       continue
     fi
-    git -C "$failures_repo" rev-parse --verify --quiet "${base_ref}^{commit}" > /dev/null 2>&1 \
-      || continue
+    # A ref that does not resolve is most likely a typo, so say so; one that
+    # resolves but is not in HEAD's history is simply another base.
+    if ! git -C "$failures_repo" rev-parse --verify --quiet "${base_ref}^{commit}" > /dev/null 2>&1; then
+      printf 'dex: skipping known_failures line for %s: base ref %s does not resolve to a commit\n' \
+        "$test_id" "$base_ref" >&2
+      continue
+    fi
     git -C "$failures_repo" merge-base --is-ancestor "$base_ref" HEAD 2>/dev/null || continue
     printf '%s\t%s\t%s\n' "$test_id" "$base_ref" "$issue_ref"
   done < "$failures_file"
@@ -280,7 +286,7 @@ dx_verification_phase_block() {
     command rm -f "$err_file"
   fi
   if [[ "$lanes_rc" -eq 0 && -n "$lanes" ]]; then
-    body+="- Run these lanes, in order, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"$'\n'
+    body+="- Run every one of these lanes, in order and even after one fails, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"$'\n'
     while IFS= read -r lane; do
       [[ -z "$lane" ]] || body+="    ${lane}"$'\n'
     done <<< "$lanes"

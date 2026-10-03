@@ -279,7 +279,11 @@ if "deferred_criteria" in payload:
             ord(char) < 32 or 127 <= ord(char) <= 159 for char in reason
         ):
             raise SystemExit(1)
-        if reason.casefold() in {"n/a", "na", "tbd", "todo", "placeholder"} or re.fullmatch(r"<[^<>]+>", reason):
+        # The length floor alone lets "TODO TODO TODO" through: refuse a reason
+        # made only of placeholder words.
+        filler = {"n/a", "na", "tbd", "todo", "placeholder", "reason", "fixme", "xxx"}
+        words = re.findall(r"[^\s.,;:!?()-]+", reason.casefold())
+        if not words or all(word in filler for word in words) or re.fullmatch(r"<[^<>]+>", reason):
             raise SystemExit(1)
 PY
 }
