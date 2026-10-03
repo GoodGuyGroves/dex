@@ -251,6 +251,7 @@ refuses "dx ui-capture install" bash "$ROOT/bin/ui-capture.sh" install
 refuses "dx router install" bash "$ROOT/bin/router.sh" router install
 refuses "dx router setup" bash "$ROOT/bin/router.sh" router setup
 refuses "dx router update" bash "$ROOT/bin/router.sh" router update
+refuses "dx router setup" bash "$ROOT/bin/router.sh" router --json setup
 if command -v zsh >/dev/null 2>&1; then
   refuses "dx run --spec-url" zsh -f -c 'source "$DEX_DIR/dx.sh" >/dev/null 2>&1; dx run --spec-url https://dexcode.invalid/spec.json'
 fi

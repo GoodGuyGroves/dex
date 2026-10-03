@@ -390,9 +390,13 @@ if dx_offline && [[ "$narration" -eq 1 ]]; then
   dx_skip "Local narration off (DEX_OFFLINE=1); the video keeps its captions"
 fi
 
-# Offline the install below only reports; tooling that is missing stays missing.
-if { dx_offline && ! dx_ui_capture_tooling_ready && ! dx_offline_refuse "Installing UI capture tooling"; } \
-  || ! dx_install_ui_capture_playwright; then
+tooling_ready=1
+if dx_offline && ! dx_ui_capture_tooling_ready; then
+  dx_offline_refuse "Installing UI capture tooling" || tooling_ready=0
+elif ! dx_install_ui_capture_playwright; then
+  tooling_ready=0
+fi
+if [[ "$tooling_ready" -eq 0 ]]; then
   dx_error "UI capture tooling is not ready"
   if [[ "$mode" == "capture" || "$mode" == "revise" ]]; then
     record_capture_failure "$session_id" "UI capture tooling setup" "$storyboard" \
