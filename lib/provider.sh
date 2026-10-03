@@ -1000,8 +1000,7 @@ dx_provider_claude() {
   # Dex's hooks, status line and settings reach Claude only through this one
   # --settings file, never through ~/.claude/settings.json. DEX_LAUNCHED keeps
   # an opt-in global install (dx install --global-hooks) from running the
-  # same hooks a second time. No trap removes the file: dx.sh is sourced into
-  # the user's shell, so the next launch's sweep collects what a kill leaves.
+  # same hooks a second time.
   local _dx_launch_file="" _dx_launch_mcp_file="" _dx_launch_args=() _dx_launch_rc=0
   if ! __dx_provider_launch_settings "$@"; then
     rm -f ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
@@ -1013,9 +1012,16 @@ dx_provider_claude() {
   if [[ "$DX_PROVIDER_ENGINE" == ccr && -n "$_dx_launch_mcp_file" ]]; then
     local -x DEX_MCP_LAUNCH_CONFIG="$_dx_launch_mcp_file"
   fi
-  __dx_provider_claude_exec "${_dx_launch_args[@]}" || _dx_launch_rc=$?
-  rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} \
-    ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
+  # The launch runs in a subshell whose EXIT trap removes the launch files, so
+  # an interrupted launch cleans up at once. The subshell keeps the trap away
+  # from a caller that sourced dx.sh; INT and TERM traps run only after the
+  # foreground provider has exited. The sweep collects what a SIGKILL leaves.
+  (
+    trap 'rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    __dx_provider_claude_exec "${_dx_launch_args[@]}"
+  ) || _dx_launch_rc=$?
   return "$_dx_launch_rc"
 }
 
