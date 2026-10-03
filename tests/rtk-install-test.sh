@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Drops the caller's DX_RTK_ENABLED, DX_RTK_BIN and the rest of its Dex env.
+# shellcheck source=tests/helpers.sh
+source "$ROOT/tests/helpers.sh"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dex-rtk-install-test.XXXXXX")"
 
 cleanup() {
