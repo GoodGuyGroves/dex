@@ -586,6 +586,10 @@ dx_install_dex_marketplace() {
     dx_ok "Claude plugin marketplace '${name}' is at its pinned commit"
     return 0
   fi
+  if dx_offline; then
+    dx_skip "Claude plugin marketplace '${name}' not fetched (DEX_OFFLINE=1)"
+    return 0
+  fi
   dx_info "Fetching Claude plugin marketplace '${name}' at ${ref}"
   if [[ "$cloned" != 1 ]]; then
     tmp="${dir}.tmp.$$" old="${dir}.old.$$"
@@ -630,6 +634,10 @@ dx_install_safe_official_claude_plugins() {
       "$DX_OPENAI_CODEX_MARKETPLACE_URL" "$DX_OPENAI_CODEX_MARKETPLACE_REF" || failed=1
   fi
   plugins=$(dx_dex_plugins_dir)
+  if dx_offline && [[ ! -d "$plugins/marketplaces" ]]; then
+    dx_skip "Claude plugins not prepared: no marketplace clone yet (DEX_OFFLINE=1)"
+    return 0
+  fi
   while IFS= read -r line; do
     case "$line" in
       "ok "*) ready="${ready:+$ready, }${line#ok }" ;;
@@ -837,6 +845,10 @@ dx_check_safe_official_claude_plugins() {
 }
 
 dx_install_openai_docs_mcp_servers() {
+  if dx_offline; then
+    dx_skip "OpenAI docs MCP (remote) not registered (DEX_OFFLINE=1)"
+    return 0
+  fi
   dx_mcp_registry_set "$DX_OPENAI_DOCS_MCP_NAME" "$DX_OPENAI_DOCS_MCP_URL"
 }
 

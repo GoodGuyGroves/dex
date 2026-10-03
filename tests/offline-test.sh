@@ -137,4 +137,48 @@ assert_not_contains "DEX_OFFLINE" "$OUT"
 assert_eq "$DX_RTK_INSTALL_DIR/rtk" "$(DEX_OFFLINE=1 dx_rtk_resolved_binary)" "offline RTK resolution"
 assert_eq 0 "$(net_calls)" "network calls with RTK installed"
 
+# ── 4. Tools bootstrap ──────────────────────────────────────────────────────
+# git is real, so a wrapper logs the subcommands that reach a remote and then
+# runs it. claude and codex are present so the plugin and marketplace paths run.
+real_git="$(command -v git)"
+cat > "$TMP_DIR/bin/git" <<STUB
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    clone|fetch|ls-remote|pull) printf 'git %s\n' "\$*" >> "\$NET_LOG"; break ;;
+  esac
+done
+exec "$real_git" "\$@"
+STUB
+for tool in claude codex; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP_DIR/bin/$tool"
+done
+chmod +x "$TMP_DIR/bin/git" "$TMP_DIR/bin/claude" "$TMP_DIR/bin/codex"
+# bash already hashed the real git for the repo set up above.
+hash -r
+# A dead remote: if a gate went missing the clone would fail, not quietly pass.
+export DX_CLAUDE_OFFICIAL_MARKETPLACE_URL="https://127.0.0.1:1/offline-guard.git"
+export DX_OPENAI_CODEX_MARKETPLACE_URL="https://127.0.0.1:1/offline-guard-codex.git"
+registry="$(dx_dex_mcp_registry)"
+rm -f "$registry"
+: > "$NET_LOG"
+rc=0; DEX_OFFLINE=1 dx_bootstrap_agent_tooling "$repo" install > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -eq 0 ]] || { cat "$OUT" >&2; assert_at $LINENO; }
+assert_eq 0 "$(net_calls)" "network calls from offline tools bootstrap"
+assert_contains "UI capture tooling install skipped (DEX_OFFLINE=1)" "$OUT"
+assert_contains "RTK available at" "$OUT"
+assert_contains "not fetched (DEX_OFFLINE=1)" "$OUT"
+assert_contains "OpenAI docs MCP (remote) not registered (DEX_OFFLINE=1)" "$OUT"
+[[ ! -d "$(dx_dex_plugins_dir)/marketplaces" ]] || assert_at $LINENO
+rc=0; dx_mcp_registry_has openaiDeveloperDocs || rc=$?
+[[ "$rc" -ne 0 ]] || assert_at $LINENO
+# Positive control: online, the same bootstrap does reach for the marketplace,
+# so the zero above is the gate and not a blind wrapper.
+: > "$NET_LOG"
+dx_install_dex_marketplace "$DX_CLAUDE_OFFICIAL_MARKETPLACE_NAME" \
+  "$DX_CLAUDE_OFFICIAL_MARKETPLACE_URL" "$DX_CLAUDE_OFFICIAL_MARKETPLACE_REF" > "$OUT" 2>&1 || true
+assert_contains "git clone" "$NET_LOG"
+rc=0; dx_install_openai_docs_mcp_servers > "$OUT" 2>&1 || rc=$?
+dx_mcp_registry_has openaiDeveloperDocs || assert_at $LINENO
+
 echo "offline-test: ok"
