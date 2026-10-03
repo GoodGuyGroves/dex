@@ -6254,7 +6254,7 @@ dxclean() {
     echo "  Cleaned ${old_review_credit} old review credit bundle(s)"
     cleaned=$((cleaned + old_review_credit))
   fi
-  old_files=$(dx_cleanup_stale_files "$DX_LOOP_DIR" "state complete active owner prompt config findings debt provider review-state review-result review-context review-criteria.json review-criteria-approval review-selection review-evidence.json review-findings.json review-receipt busy busy-notice started ready watch-pause watch-lock" 7)
+  old_files=$(dx_cleanup_stale_files "$DX_LOOP_DIR" "state complete active owner prompt config findings debt provider review-state review-result review-context review-criteria.json review-criteria-approval review-criteria-deferrals review-selection review-evidence.json review-findings.json review-receipt busy busy-notice started ready watch-pause watch-lock" 7)
   if [[ "$old_files" -gt 0 ]]; then
     echo "  Cleaned ${old_files} old loop state file(s)"
     cleaned=$((cleaned + old_files))
