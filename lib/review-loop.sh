@@ -1017,13 +1017,18 @@ dx_review_loop_run() {
     return 1
   fi
 
-  local parent_criteria_file parent_criteria_approval_file review_criteria_binding="standalone"
+  local parent_criteria_file parent_criteria_approval_file parent_criteria_deferrals_file
+  local review_criteria_binding="standalone"
   parent_criteria_file=$(dx_review_criteria_file "$session_id") || {
     dx_error "Could not resolve the review-criteria state path."
     return 1
   }
   parent_criteria_approval_file=$(dx_review_criteria_approval_file "$session_id") || {
     dx_error "Could not resolve the approved criteria binding path."
+    return 1
+  }
+  parent_criteria_deferrals_file=$(dx_review_criteria_deferrals_file "$session_id") || {
+    dx_error "Could not resolve the sealed deferred-criteria path."
     return 1
   }
   if [[ $standalone_review_prompt -eq 0 ]]; then
@@ -1105,9 +1110,10 @@ dx_review_loop_run() {
       return 1
     fi
     review_startup_claim=1
-    if [[ -e "$parent_criteria_file" || -e "$parent_criteria_approval_file" ]] \
+    if [[ -e "$parent_criteria_file" || -e "$parent_criteria_approval_file" \
+        || -e "$parent_criteria_deferrals_file" ]] \
       && ! command rm -f "$parent_criteria_file" \
-        "$parent_criteria_approval_file"; then
+        "$parent_criteria_approval_file" "$parent_criteria_deferrals_file"; then
       if ! dx_session_claim_release_checked "$session_id"; then
         dx_error "Dex could not release the standalone review startup claim safely."
       fi
