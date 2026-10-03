@@ -171,19 +171,19 @@ line, including when all fields are unchanged or N/A.
 
 ### Phase 5: PR
 
-1. Run `/dxpr` — generate the PR description, refresh any UI after-capture handoff, create or update the PR, attach `request`-type reviewers from `dex.md § Reviewers`, mark the PR ready for review, and update the tracker if available.
+1. Run `/dxpr` — generate the PR description, refresh any UI after-capture handoff, create or update the PR, attach `request`-type reviewers from `dex.md § Reviewers` (none when `dx_reviewers_mode` prints `none`; record `Reviewers: none (pr.reviewers override)`), mark the PR ready for review, and update the tracker if available.
 2. Reconcile the working issue, related issues, and PR under
    `$DEX_DIR/prompts/issue-hygiene.md` before finalizing its copy.
 3. Phase 5 must leave the PR ready for review. Phase 6 verifies readiness and normally owns the `@mention` comments.
-4. Output `PHASE_5_COMPLETE` only when the PR is current, ready for review, and reviewers are attached.
+4. Output `PHASE_5_COMPLETE` only when the PR is current, ready for review, and reviewers are attached (or the summary records `Reviewers: none (pr.reviewers override)`).
 
 ### Phase 6: Complete (autonomous)
 
-1. Read `## Reviewers` from `dex.md`. On the first cycle: verify the PR is ready and use `gh pr ready` if recovery is needed (after the pre-ready base sync in `$DEX_DIR/prompts/base-sync.md`), re-sync `request` reviewers (idempotent), trigger adapter reviewers (`Adapter: greptile` or `copilot`) with `dx_reviewer_trigger`, and post one `@mention` comment listing all generic `mention` reviewers. Never mention `@copilot` in a comment.
+1. Read `## Reviewers` from `dex.md` with `dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --show-toplevel)"`, which prints nothing under the `pr.reviewers none` override. On the first cycle: verify the PR is ready and use `gh pr ready` if recovery is needed (after the pre-ready base sync in `$DEX_DIR/prompts/base-sync.md`), re-sync `request` reviewers (idempotent), trigger adapter reviewers (`Adapter: greptile` or `copilot`) with `dx_reviewer_trigger`, and post one `@mention` comment listing all generic `mention` reviewers. Never mention `@copilot` in a comment.
 2. Set up monitoring: `/loop 5m /dxwatchpr`. The PR watcher handles both CI failures and review feedback.
 3. Re-read `dx_complete_wait_minutes` (default 5) each cycle. The Stop hook re-injects the audit and only authorizes outcome evaluation once the current window has elapsed.
 4. Escalate by default when a loop reaches `dx_complete_ci_fix_attempts`, or encounters architectural review comments, a secrets scan failure, or a scope conflict. Ask for or record a justified waiver when an exception is appropriate.
-5. After each push: re-request `request` reviewers, re-trigger adapter reviewers, and post a fresh mention comment so reviewers know there's something new.
+5. After each push: re-request `request` reviewers, re-trigger adapter reviewers, and post a fresh mention comment so reviewers know there's something new (none of these under `pr.reviewers none`).
 6. After the current `dx_complete_max_cycles` value (default 3) is reached with no progress, escalate to the user. A cycle spent waiting for pending CI or a `wait: yes` reviewer does not count; those waits are bounded by `dx_complete_pending_minutes` and `dx_complete_reviewer_wait_minutes`.
 7. When CI is green (honouring `readiness_check`), every `wait: yes` reviewer has finished on the head or timed out (`dx_reviewer_gate`), and actionable review feedback is resolved, run
    `/dxcomplete`'s final verification. Reviewer requests and GitHub's

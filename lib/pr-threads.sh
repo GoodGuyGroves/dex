@@ -334,7 +334,9 @@ $(dx_reviewer_adapter_logins greptile)
 LOGINS
     resp_handle=""
     # Only when the lookup worked: an unknown thread may already hold a reply.
-    if [[ "$resp_login_greptile" -eq 1 && "$resp_lookup_ok" -eq 1 && "$resp_replied" -eq 0 ]]; then
+    # Under pr.reviewers none the session mentions no reviewer, Greptile included.
+    if [[ "$resp_login_greptile" -eq 1 && "$resp_lookup_ok" -eq 1 && "$resp_replied" -eq 0 ]] \
+      && [[ "$(dx_reviewers_mode "$resp_session")" != "none" ]]; then
       resp_handle=$(__dx_pr_threads_greptile_handle "$resp_repo_dir")
       if [[ "$(head -c "${#resp_handle}" "$resp_body_file")" == "$resp_handle" ]]; then
         resp_handle=""

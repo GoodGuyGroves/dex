@@ -286,6 +286,7 @@ Tests: M new test cases
 Reviews:
   - <reviewer>: <status> (N comments addressed)
   ...
+  (or "Reviewers: none (pr.reviewers override)")
 Merge review state: <none|approved|review-required|changes-requested|unknown> (informational)
 Disagreements left open for the maintainer:
   - <thread url> (<reviewer>)     (or "none")
