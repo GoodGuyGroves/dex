@@ -43,8 +43,10 @@ array must contain one entry per supplied criterion in its original order:
 Outcomes: `met`, `not_met`, `blocked`, `not_applicable`, `deferred`. Use
 `deferred` only for an item the approved criteria file lists under
 `deferred_criteria` (sealed at plan approval as unsatisfiable on this branch,
-with an owner and a reason); any other `deferred` invalidates the report. Each item needs one to
-eight evidence entries. Kinds: `analysis`, `command`, `file`, `test`. Details
+with an owner and a reason); any other `deferred` invalidates the report.
+Report a listed item as `deferred` with evidence of its current state, never
+`blocked`, and do not write `BLOCKED` or a finding for it. Each item needs one
+to eight evidence entries. Kinds: `analysis`, `command`, `file`, `test`. Details
 are concrete observations of 12–500 characters on one line, without `|`.
 Do not insert your own `Evidence-Ref:` markers; the publisher generates them.
 
