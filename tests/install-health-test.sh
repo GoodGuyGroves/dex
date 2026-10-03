@@ -201,7 +201,16 @@ assert_status_row() {
   fi
 }
 
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/status.out"
+# run_status <out> — run `dx status` on the fixture PATH. A command missing
+# from STATUS_BIN still lets status.sh finish and report, just with that code
+# path skipped, so its stderr is the only sign; keep it and fail on it.
+run_status() {
+  local out="$1"
+  env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$out" 2> "$out.err"
+  assert_not_contains "command not found" "$out.err"
+}
+
+run_status "$TMP_DIR/status.out"
 assert_status_row "Hooks" "INCOMPLETE" "$TMP_DIR/status.out"
 assert_status_row "RTK" "disabled \\(DX_RTK_ENABLED=0\\)" "$TMP_DIR/status.out"
 assert_status_row "PR Media" "unavailable — GitHub CLI is not installed" "$TMP_DIR/status.out"
@@ -215,7 +224,7 @@ elif [[ "$*" == "pr edit --help" ]]; then
 fi
 SH
 chmod +x "$STATUS_BIN/gh"
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/legacy-gh-status.out"
+run_status "$TMP_DIR/legacy-gh-status.out"
 assert_status_row "PR Media" "unavailable — upgrade GitHub CLI for --attach" "$TMP_DIR/legacy-gh-status.out"
 
 cat > "$STATUS_BIN/gh" <<'SH'
@@ -227,7 +236,7 @@ elif [[ "$*" == "pr edit --help" ]]; then
 fi
 SH
 chmod +x "$STATUS_BIN/gh"
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/current-gh-status.out"
+run_status "$TMP_DIR/current-gh-status.out"
 assert_status_row "PR Media" "automatic attachments ready" "$TMP_DIR/current-gh-status.out"
 
 dx_check_claude_dex_links() { return 0; }
@@ -252,7 +261,7 @@ dx_install_safe_official_claude_plugins() { return 0; }
 
 dx_bootstrap_agent_tooling "" "install" > "$TMP_DIR/repair.out"
 dx_claude_settings_complete
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/repaired-status.out"
+run_status "$TMP_DIR/repaired-status.out"
 assert_status_row "Hooks" "launch-scoped, plus global in $HOME/.claude/settings.json" "$TMP_DIR/repaired-status.out"
 
 python3 - "$HOME/.claude/settings.json" <<'PY'
@@ -291,7 +300,7 @@ dx_remove_claude_global_hooks > "$TMP_DIR/remove.out"
 assert_eq none "$(dx_claude_global_hooks_state)" 'state after removal'
 grep -Fq '/usr/local/bin/user-pre-compact' "$HOME/.claude/settings.json" || assert_at $LINENO
 dx_check_claude_settings > "$TMP_DIR/none-doctor.out"
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/none-status.out"
+run_status "$TMP_DIR/none-status.out"
 assert_status_row "Hooks" "launch-scoped \\(Dex sessions only\\)" "$TMP_DIR/none-status.out"
 
 # An ungated install from before launch-scoped hooks runs twice in Dex
@@ -301,7 +310,7 @@ python3 "$ROOT/scripts/settings-json.py" merge-settings "$HOME/.claude/settings.
 mv "$TMP_DIR/legacy.json" "$HOME/.claude/settings.json"
 cp "$HOME/.claude/settings.json" "$TMP_DIR/legacy.before"
 assert_eq legacy "$(dx_claude_global_hooks_state)" 'legacy state'
-env PATH="$STATUS_BIN" bash "$ROOT/bin/status.sh" > "$TMP_DIR/legacy-status.out"
+run_status "$TMP_DIR/legacy-status.out"
 assert_status_row "Hooks" "LEGACY global install" "$TMP_DIR/legacy-status.out"
 if dx_check_claude_settings > "$TMP_DIR/legacy-doctor.out" 2>&1; then
   printf 'tooling doctor accepted a legacy global install\n' >&2
