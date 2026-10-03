@@ -585,16 +585,21 @@ dx_provider_apply() {
   effort_override="${DX_EFFORT_OVERRIDE:-${DX_EFFORT:-}}"
   dx_provider_validate_effort_field "DX_EFFORT override" "$effort_override" || return 1
 
+  # Which configured default an agent override kept, so a launch can explain a
+  # profile the user did not name (see __dx_provider_agent_default_ready).
+  DX_PROVIDER_AGENT_DEFAULT_SOURCE=""
   if [[ -n "$agent_override" ]]; then
     default_profile=$(dx_provider_repo_default_profile 2>/dev/null || true)
     if [[ -n "$default_profile" ]] && dx_provider_profile_matches_agent "$default_profile" "repo" "$agent_override"; then
       DX_PROVIDER_PROFILE_RESOLVED="$default_profile"
       preferred_source="repo"
+      DX_PROVIDER_AGENT_DEFAULT_SOURCE="repo"
     else
       default_profile=$(__dx_provider_json_default "$DX_PROVIDER_GLOBAL_CONFIG" 2>/dev/null || true)
       if [[ -n "$default_profile" ]] && dx_provider_profile_matches_agent "$default_profile" "global" "$agent_override"; then
         DX_PROVIDER_PROFILE_RESOLVED="$default_profile"
         preferred_source="global"
+        DX_PROVIDER_AGENT_DEFAULT_SOURCE="global"
       else
         DX_PROVIDER_PROFILE_RESOLVED=$(dx_agent_default_profile "$agent_override") || return 1
         preferred_source="builtin"
@@ -2611,8 +2616,52 @@ dx_provider_command() {
 # Model and effort come from the user's Claude session defaults. Dex only
 # passes --model/--effort when an explicit override is set (dx --model,
 # DX_CLAUDE_MODEL/DX_CLAUDE_EFFORT, or a provider profile that pins them).
+# dx_provider_ccr_has_enabled_account — 0 when CCR's account registry lists an
+# enabled account, 1 when it lists none (or does not exist yet), 2 when it
+# cannot be read; the router itself has the final word then.
+dx_provider_ccr_has_enabled_account() {
+  [[ -n "${DEX_ROUTER_HOME:-}" ]] || return 2
+  python3 - "$DEX_ROUTER_HOME/accounts.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        data = json.load(stream)
+except FileNotFoundError:
+    sys.exit(1)
+except (OSError, ValueError):
+    sys.exit(2)
+accounts = data.get("accounts") if isinstance(data, dict) else None
+if not isinstance(accounts, list):
+    sys.exit(2)
+sys.exit(0 if any(isinstance(item, dict) and item.get("enabled") is True for item in accounts) else 1)
+PY
+}
+
+# __dx_provider_agent_default_ready — an agent override keeps a matching
+# configured default, ccr-subscription included. With no enabled CCR account
+# that profile cannot launch, so say which default was kept and how to choose
+# another before any workspace is set up. An explicit profile is the user's
+# own choice and is left to the router.
+__dx_provider_agent_default_ready() {
+  [[ -n "${DX_PROVIDER_AGENT_DEFAULT_SOURCE:-}" && "${DX_PROVIDER_ENGINE:-}" == ccr ]] || return 0
+  local account_result=0 default_label
+  dx_provider_ccr_has_enabled_account || account_result=$?
+  [[ "$account_result" -eq 1 ]] || return 0
+  if [[ "$DX_PROVIDER_AGENT_DEFAULT_SOURCE" == repo ]]; then
+    default_label="this repository's default in .dex/providers.json"
+  else
+    default_label="your default in ${DX_PROVIDER_GLOBAL_CONFIG}"
+  fi
+  dx_error "The ${DX_PROVIDER_AGENT:-claude} agent resolved to ${DX_PROVIDER_PROFILE_RESOLVED}, ${default_label}, but CCR has no enabled account, so it cannot launch."
+  dx_info "Add an account with 'dx account add', or use direct Claude Code: 'dx provider use claude-subscription' (add --repo for this repository only), or run without --agent and with DX_PROVIDER_PROFILE=claude-subscription."
+  return 1
+}
+
 __dx_refresh_provider() {
   dx_provider_apply || return 1
+  __dx_provider_agent_default_ready || return 1
   DX_CLAUDE_FLAGS=(--chrome --dangerously-skip-permissions --permission-mode bypassPermissions)
   if [[ -n "$DX_CLAUDE_MODEL" ]]; then
     DX_CLAUDE_FLAGS+=(--model "$DX_CLAUDE_MODEL")

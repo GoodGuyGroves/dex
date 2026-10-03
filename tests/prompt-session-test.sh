@@ -155,6 +155,17 @@ __dx_setup_in_place() { print -r -- "IN_PLACE:$1"; return 71; }
                                                    'CLAUDE_CONFIG_DIR': str(store)})
     assert codex.returncode == 0 and hint not in codex.stderr, (codex.returncode, codex.stderr)
     assert snapshot() == before
+    # --agent claude keeps the repository's ccr-subscription default; with no
+    # enabled CCR account it refuses before anything launches, and says why.
+    (repo / '.dex').mkdir(exist_ok=True)
+    (repo / '.dex/providers.json').write_text('{"default":"ccr-subscription"}\n')
+    (base / 'launch.json').unlink(missing_ok=True)
+    refused = invoke(['--session', '--agent', 'claude', 'plain prompt'])
+    assert refused.returncode != 0 and not (base / 'launch.json').exists(), (refused.stdout, refused.stderr)
+    assert 'resolved to ccr-subscription' in refused.stderr, refused.stderr
+    assert 'dx provider use claude-subscription' in refused.stdout + refused.stderr, refused
+    (repo / '.dex/providers.json').unlink()
+    (repo / '.dex').rmdir()
     for args in (['plain prompt'], ['--session', '--workflow', 'plain prompt'], ['--session', '--worktree', 'plain prompt']):
         (base / 'launch.json').unlink(missing_ok=True)
         result = invoke(args)
