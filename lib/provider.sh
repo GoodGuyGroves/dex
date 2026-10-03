@@ -2655,7 +2655,7 @@ __dx_provider_agent_default_ready() {
     default_label="your default in ${DX_PROVIDER_GLOBAL_CONFIG}"
   fi
   dx_error "The ${DX_PROVIDER_AGENT:-claude} agent resolved to ${DX_PROVIDER_PROFILE_RESOLVED}, ${default_label}, but CCR has no enabled account, so it cannot launch."
-  dx_info "Add an account with 'dx account add', or use direct Claude Code: 'dx provider use claude-subscription' (add --repo for this repository only), or run without --agent and with DX_PROVIDER_PROFILE=claude-subscription."
+  dx_info "Add an account with 'dx account add', or use direct Claude Code: 'dx provider use claude-subscription' (add --repo for this repository only), or run without --agent (or DX_AGENT) and with DX_PROVIDER_PROFILE=claude-subscription."
   return 1
 }
 
