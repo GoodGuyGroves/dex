@@ -462,13 +462,20 @@ __dx_check_mcp_server() {
   return "$failed"
 }
 
+# __dx_mcp_local_only — 1 when launches must leave out Dex's remote registry
+# servers. The Python readers take it as DX_MCP_LOCAL_ONLY, so dx_offline stays
+# the one reader of DEX_OFFLINE.
+__dx_mcp_local_only() {
+  if dx_offline; then printf '1\n'; else printf '0\n'; fi
+}
+
 # The per-launch --mcp-config document for the current repository, or nothing.
 dx_dex_launch_mcp_config() {
   local registry root
   registry=$(dx_dex_mcp_registry)
   [[ -f "$registry" ]] || return 0
   root=$(git rev-parse --show-toplevel 2>/dev/null) || root="$PWD"
-  python3 "$DEX_DIR/scripts/settings-json.py" launch-mcp "$registry" "$root"
+  DX_MCP_LOCAL_ONLY="$(__dx_mcp_local_only)" python3 "$DEX_DIR/scripts/settings-json.py" launch-mcp "$registry" "$root"
 }
 
 # ── Per-phase MCP servers ────────────────────────────────────────────────────
@@ -512,7 +519,7 @@ __dx_mcp_report_warn() {
 __dx_mcp_resolve() {
   local mcp_context="$1" mcp_repo="$2" mcp_output mcp_mode
   shift 2
-  mcp_output=$(python3 "$DEX_DIR/scripts/mcp-scope.py" "$@") || return 1
+  mcp_output=$(DX_MCP_LOCAL_ONLY="$(__dx_mcp_local_only)" python3 "$DEX_DIR/scripts/mcp-scope.py" "$@") || return 1
   mcp_mode="${mcp_output%%$'\n'*}"
   case "$mcp_mode" in
     inherit|none|scoped|unset) ;;
@@ -540,7 +547,7 @@ dx_mcp_review_wave_config() {
 # dx_mcp_phase_report <repo> — the resolver's per-phase rows for dx status
 # and dx doctor (see scripts/mcp-scope.py report).
 dx_mcp_phase_report() {
-  python3 "$DEX_DIR/scripts/mcp-scope.py" report "$1" "$(dx_dex_mcp_registry)"
+  DX_MCP_LOCAL_ONLY="$(__dx_mcp_local_only)" python3 "$DEX_DIR/scripts/mcp-scope.py" report "$1" "$(dx_dex_mcp_registry)"
 }
 
 # The registry as Codex `-c` values, one per line.
@@ -548,7 +555,7 @@ dx_dex_codex_mcp_overrides() {
   local registry
   registry=$(dx_dex_mcp_registry)
   [[ -f "$registry" ]] || return 0
-  python3 "$DEX_DIR/scripts/settings-json.py" codex-mcp-overrides "$registry" \
+  DX_MCP_LOCAL_ONLY="$(__dx_mcp_local_only)" python3 "$DEX_DIR/scripts/settings-json.py" codex-mcp-overrides "$registry" \
     "${CODEX_HOME:-$HOME/.codex}/config.toml"
 }
 

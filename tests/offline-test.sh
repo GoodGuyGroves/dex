@@ -181,4 +181,55 @@ assert_contains "git clone" "$NET_LOG"
 rc=0; dx_install_openai_docs_mcp_servers > "$OUT" 2>&1 || rc=$?
 dx_mcp_registry_has openaiDeveloperDocs || assert_at $LINENO
 
+# ── 5. Launches ─────────────────────────────────────────────────────────────
+# A registry an earlier online bootstrap filled: one remote server, one local.
+mkdir -p "$(dirname "$registry")"
+cat > "$registry" <<'JSON'
+{"mcpServers": {
+  "openaiDeveloperDocs": {"type": "http", "url": "https://developers.openai.com/mcp"},
+  "playwright": {"command": "node", "args": ["browser-mcp.cjs", "playwright"]}
+}}
+JSON
+cd "$repo"
+launch_doc="$TMP_DIR/launch.json"
+DEX_OFFLINE=1 dx_dex_launch_mcp_config > "$launch_doc"
+assert_not_contains openaiDeveloperDocs "$launch_doc"
+assert_contains playwright "$launch_doc"
+dx_dex_launch_mcp_config > "$launch_doc"
+assert_contains openaiDeveloperDocs "$launch_doc"
+assert_contains playwright "$launch_doc"
+DEX_OFFLINE=1 dx_dex_codex_mcp_overrides > "$launch_doc"
+assert_not_contains openaiDeveloperDocs "$launch_doc"
+assert_contains playwright "$launch_doc"
+dx_dex_codex_mcp_overrides > "$launch_doc"
+assert_contains openaiDeveloperDocs "$launch_doc"
+# A project that names both servers for a phase gets only the local one.
+printf '%s\n' '# Dex' '## MCP' '```yaml' 'implement: [openaiDeveloperDocs, playwright]' '```' > "$repo/.dex/dex.md"
+scoped="$TMP_DIR/scoped.json"
+mode=$(DEX_OFFLINE=1 dx_mcp_launch_config "$repo" 2 0 "$scoped" 2>"$OUT")
+assert_eq scoped "$mode" "offline phase MCP mode"
+assert_not_contains openaiDeveloperDocs "$scoped"
+assert_contains playwright "$scoped"
+mode=$(dx_mcp_launch_config "$repo" 2 0 "$scoped" 2>"$OUT")
+assert_eq scoped "$mode" "online phase MCP mode"
+assert_contains openaiDeveloperDocs "$scoped"
+# The local-only flag is Dex's, not the caller's: a stray value online is ignored.
+DX_MCP_LOCAL_ONLY=1 dx_dex_launch_mcp_config > "$launch_doc"
+assert_contains openaiDeveloperDocs "$launch_doc"
+cd "$ROOT"
+
+# browser-mcp.cjs reads DEX_OFFLINE itself; it must agree with dx_offline.
+if command -v node >/dev/null 2>&1; then
+  for value in 1 true TRUE yes on On "" 0 false off 2 " 1"; do
+    expected=online
+    DEX_OFFLINE="$value" dx_offline && expected=offline
+    actual=$(DEX_OFFLINE="$value" node -e '
+      const m = require(process.argv[1]); const env = { ...process.env };
+      const on = m.offline(env);
+      console.log(on && env.npm_config_offline === "true" ? "offline" : (!on && !env.npm_config_offline ? "online" : "mixed"));
+    ' "$ROOT/scripts/browser-mcp.cjs")
+    assert_eq "$expected" "$actual" "browser-mcp offline parity for '$value'"
+  done
+fi
+
 echo "offline-test: ok"
