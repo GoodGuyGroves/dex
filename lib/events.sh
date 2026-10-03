@@ -1061,6 +1061,16 @@ dx_run_plan_file() {
   printf '%s/plan.md\n' "$(dx_run_artifacts_dir "$run_id")"
 }
 
+# dx_run_plan_note <session-id> — the Phase 2 pointer to the run's plan copy,
+# not Claude's own file. Prints nothing when there is no run or no plan yet.
+dx_run_plan_note() {
+  local plan_file
+  [[ -n "${1:-}" ]] || return 0
+  plan_file=$(dx_run_plan_file "$1" 2>/dev/null) || return 0
+  [[ -f "$plan_file" ]] || return 0
+  printf '\nThe approved plan is saved at %s. Re-read that copy whenever you need the plan again; files under .dex/plans are scratch.\n' "$plan_file"
+}
+
 # dx_run_archive_plans <session-id> <project-dir> — copy the run's plan files
 # from <project-dir>/.dex/plans into its artifacts: the newest plan becomes
 # plan.md, and every plan file, a planning subagent's `-agent-<id>` ones

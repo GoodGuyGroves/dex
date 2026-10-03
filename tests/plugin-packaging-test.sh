@@ -98,10 +98,22 @@ assert_eq 'skill: "dxplan"' "$(DX_PROVIDER_ENGINE=codex-plugin dx_skill_refs_ren
 # The hook runs when sourced, so take just its phase-message functions.
 eval "$(sed -n '/^dx_inline_phase_message() {$/,/^dx_compact_repeat_audit_prompt() {$/p' \
   "$ROOT/hooks/phase-loop.sh" | sed '$d')"
-phase_text=$(for p in 0 1 2 3 4 5 6; do DX_PROVIDER_ENGINE=claude dx_inline_phase_message "$p"; done)
+phase_text=$(for p in 0 1 2 3 4 5 6; do DX_PROVIDER_ENGINE=claude dx_inline_phase_message "$p"; done 2> "$TMP_DIR/phase.err")
+[[ ! -s "$TMP_DIR/phase.err" ]] || fail "phase messages wrote to stderr: $(cat "$TMP_DIR/phase.err")"
 [[ "$phase_text" == *'skill: "dex:dximplement"'* ]] || fail 'inline phase messages keep bare skill names'
 [[ "$phase_text" != *'skill: "dx'* ]] || fail 'an inline phase message names a bare Dex skill'
 [[ "$phase_text" == *"$ROOT/prompts/commit-format.md"* ]] || assert_at $LINENO
+[[ "$phase_text" != *"The approved plan is saved at"* ]] || fail 'plan note without a run'
+# With a run that holds an approved plan, Phase 2 points at the run's copy.
+SESSION_ID=packaging-plan-session
+dx_run_write_for_session "$SESSION_ID" run_test_packaging
+plan_copy=$(dx_run_plan_file "$SESSION_ID")
+mkdir -p "$(dirname "$plan_copy")"
+printf 'approved\n' > "$plan_copy"
+phase2_text=$(DX_PROVIDER_ENGINE=claude dx_inline_phase_message 2 2> "$TMP_DIR/phase2.err")
+[[ ! -s "$TMP_DIR/phase2.err" ]] || fail "Phase 2 message wrote to stderr: $(cat "$TMP_DIR/phase2.err")"
+[[ "$phase2_text" == *"The approved plan is saved at $plan_copy."* ]] || fail 'Phase 2 message lacks the plan note'
+unset SESSION_ID
 
 # ── opt-in global links ───────────────────────────────────────────────────
 status_skills() { bash "$ROOT/bin/status.sh" 2>/dev/null | grep -E '^  Skills:' || true; }
