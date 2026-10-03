@@ -104,6 +104,7 @@ For each acceptance criterion from the plan, fill in the evidence table:
 - Prose claims ("I verified this") are NOT evidence. Cite specific locations.
 - Every acceptance criterion and verification gate must be exactly `MET`.
 - Any `NOT MET`, `NOT FOUND`, `DEFERRED`, `SKIPPED`, `BLOCKED`, `N/A`, "CI will cover it", "port busy", "tool unavailable", or equivalent entry blocks completion unless the user explicitly approved a plan change.
+- The one standing exception is an item the sealed criteria file (`dx_review_criteria_file`) lists under `deferred_criteria`: mark it `DEFERRED (sealed)` and cite its owner and reason. Any other deferral still blocks.
 - If a local port is busy or a service is unavailable, resolve it locally (for example, use another port or start the missing service) and rerun the required verification. Do not substitute future CI for a required Phase 2 check.
 - Use a plain GitHub Markdown table or short bullets. Do not use Unicode box-drawing tables; they wrap poorly in Claude Code transcripts.
 
@@ -216,11 +217,13 @@ Phase 2 in-scope change.
 
 ALL of these must be true before you stop:
 - Every task from the approved plan is implemented
-- Every acceptance criterion has status MET in the evidence table (Step 3)
+- Every acceptance criterion has status MET in the evidence table (Step 3),
+  or `DEFERRED (sealed)` when the criteria file lists it under `deferred_criteria`
 - The focused tests for every changed surface pass on the final checkout (rerun
   only the tests affected by later fixes), and the complete gate either has a
   passing `dx run-gate` receipt for this tree or is left to Phase 4
-- No acceptance criterion or verification gate is deferred, skipped, blocked, or delegated to future CI
+- No acceptance criterion or verification gate is deferred, skipped, blocked, or delegated to future CI,
+  apart from the items the sealed `deferred_criteria` list names
 - Material implementation discoveries were handled under
   `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`
 - The change was exercised end-to-end locally and passed the manual smoke
