@@ -217,13 +217,16 @@ base_drift_lists() {
     || return 1
   base_ref="${DX_TEST_BASE_REF:-}"
   if [[ -z "$base_ref" ]]; then
-    # shellcheck source=lib/git.sh
-    base_ref=$(source "$ROOT/lib/git.sh" \
-      && dx_default_branch_base_ref "$SUITE_DIR" "" no-fetch 2>/dev/null) || return 1
     # With no default branch to find, the resolver falls back to the current
-    # branch, which would file this branch's own drift as the base's.
-    [[ "$base_ref" != "$(git -C "$SUITE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null)" ]] \
-      || return 1
+    # branch, whose base ref (itself, its upstream or origin/<branch>) would
+    # file this branch's own drift as the base's. On the default branch
+    # itself there is no other base either.
+    # shellcheck source=lib/git.sh
+    base_ref=$(source "$ROOT/lib/git.sh" || exit 1
+      default_branch=$(dx_default_branch "$SUITE_DIR") || exit 1
+      [[ "$default_branch" != "$(git -C "$SUITE_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null)" ]] \
+        || exit 1
+      dx_default_branch_base_ref "$SUITE_DIR" "$default_branch" no-fetch 2>/dev/null) || return 1
   fi
   merge_base=$(git -C "$SUITE_DIR" merge-base HEAD "$base_ref" 2>/dev/null) || return 1
   [[ -n "$merge_base" ]] || return 1
