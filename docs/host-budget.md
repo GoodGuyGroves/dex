@@ -301,7 +301,10 @@ known_failures: .dex/known-failures.tsv
 
 - `lanes` are the commands that make up the required Phase 4 gate, all run in
   order, even after one fails, under the `full-gate` receipt name instead of
-  the project's aggregate gate. Use it when the full suite is too slow for
+  the project's aggregate gate. They run in one call,
+  `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`:
+  a gate keeps one receipt per name, so a call per lane would keep only the
+  last lane's result. Use it when the full suite is too slow for
   every unit and its heavier lanes run elsewhere, for example after merge.
 - `known_failures` names a repository-relative file with one
   `test-id<TAB>base-ref<TAB>issue-ref` line per test already failing on the
