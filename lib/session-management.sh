@@ -20,7 +20,7 @@ completion_receipt_pattern = re.compile(
 )
 phase_marker_pattern = re.compile(
     r"^(.*)\.phase-(?:[0-7]|prompt-loop)\."
-    r"(started|ready|busy|busy-notice|busy-cancel|busy-quiesced)$"
+    r"(started|ready|busy|busy-notice|busy-cancel|busy-quiesced|hold-release)$"
 )
 watch_lock_pattern = re.compile(r"^(.*)\.(?:ci|pr)\.watch-lock$")
 

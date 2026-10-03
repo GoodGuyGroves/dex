@@ -1218,7 +1218,8 @@ dx_completion_loop_activate() {
     "$(dx_owner_file "$session_id")" "$(dx_prompt_file "$session_id")" \
     "$(dx_phase_busy_notice_file "$session_id" 3)" \
     "$(dx_phase_busy_cancel_file "$session_id" 3)" \
-    "$(dx_phase_busy_quiesced_file "$session_id" 3)" 2>/dev/null; then
+    "$(dx_phase_busy_quiesced_file "$session_id" 3)" \
+    "$(dx_phase_hold_release_file "$session_id" 3)" 2>/dev/null; then
     dx_lifecycle_control_lock_release_checked "$session_id" \
       2>/dev/null || true
     return 1
@@ -1749,7 +1750,8 @@ dx_lifecycle_recover_review_fence() {
     "$(dx_phase_busy_file "$session_id" 3)" \
     "$(dx_phase_busy_notice_file "$session_id" 3)" \
     "$(dx_phase_busy_cancel_file "$session_id" 3)" \
-    "$(dx_phase_busy_quiesced_file "$session_id" 3)"; do
+    "$(dx_phase_busy_quiesced_file "$session_id" 3)" \
+    "$(dx_phase_hold_release_file "$session_id" 3)"; do
     rm -f "$fence_file" 2>/dev/null || recovery_rc=1
     [[ ! -e "$fence_file" && ! -L "$fence_file" ]] || recovery_rc=1
   done
@@ -1941,6 +1943,7 @@ dx_phase_busy_finish() {
     "$(dx_phase_busy_notice_file "$session_id" "$phase")" \
     "$(dx_phase_busy_cancel_file "$session_id" "$phase")" \
     "$(dx_phase_busy_quiesced_file "$session_id" "$phase")" \
+    "$(dx_phase_hold_release_file "$session_id" "$phase")" \
     2>/dev/null || return 1
   [[ ! -e "$(dx_phase_busy_file "$session_id" "$phase")" \
     && ! -L "$(dx_phase_busy_file "$session_id" "$phase")" \

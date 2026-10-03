@@ -836,6 +836,15 @@ progress line to the transcript, such as `Dex · Wave 2/6 · complex · scouting
 0/3 clean · 4m 30s/1h 0m`, or the finished wave's verdict. `dx review status`
 prints the same summary on demand, with every finished wave.
 
+Claude Code queues a message typed during the hold and shows it only when the
+hook returns, up to the full hold length. Hooks can't see queued input, so to
+be answered sooner, run `dx review release` (add `--session <id>` from outside
+the worktree) in another pane, then type. The hold checks for that request on
+its usual 2-second poll, so it wakes the session within a few seconds and the
+queued message is delivered. The wave keeps running, and the next stop holds
+again. A request made before the current wave started is ignored and cleared.
+With no request, the hold length and the number of wakes are unchanged.
+
 ## Run Events
 
 Provider-backed Dex commands create a run ID and local run data under

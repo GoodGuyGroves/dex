@@ -191,7 +191,7 @@ EXACT_SUFFIXES = [
 ]
 PHASE_MARKER_RE = re.compile(
     r"^(.*)\.phase-(?:[0-7]|prompt-loop)\."
-    r"(started|ready|busy|busy-notice|busy-cancel|busy-quiesced)$"
+    r"(started|ready|busy|busy-notice|busy-cancel|busy-quiesced|hold-release)$"
 )
 WATCH_LOCK_RE = re.compile(r"^(.*)\.(ci|pr)\.watch-lock$")
 COMPLETION_RECEIPT_RE = re.compile(r"^(.*)\.completion-receipt\.[0-9a-f]{32}$")

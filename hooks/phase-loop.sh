@@ -46,6 +46,24 @@ print(json.dumps(payload, separators=(",", ":")))
 ' "$reason" "$system_message"
 }
 
+# dx_hold_release_pending <release-file> <wave-epoch>
+# True when `dx review release` asked, during this wave, for the Phase 3 hold to
+# wake the session. A request from before the wave started is stale: it is
+# removed, so it cannot cut the first hold of a later wave short.
+dx_hold_release_pending() {
+  local release_file="$1" wave_epoch="$2" requested=""
+  [[ -f "$release_file" || -L "$release_file" ]] || return 1
+  if [[ -f "$release_file" && ! -L "$release_file" && -O "$release_file" ]]; then
+    IFS= read -r requested < "$release_file" 2>/dev/null || true
+    if [[ "$requested" =~ ^[0-9]+$ && "$wave_epoch" =~ ^[0-9]+$ \
+      && "$requested" -ge "$wave_epoch" ]]; then
+      return 0
+    fi
+  fi
+  rm -f "$release_file"
+  return 1
+}
+
 # dx_review_progress_message <running|finished> [wave]
 # The systemMessage a Phase 3 hold release shows the person watching the pane:
 # the review loop's one-line status from dx_review_status. A wave that just
@@ -1658,9 +1676,18 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     fi
     # The hook itself runs under a 30-minute provider budget; leave margin.
     [[ "$BUSY_RECHECK_SECONDS" -le 1740 ]] || BUSY_RECHECK_SECONDS=1740
+    # `dx review release`, run from another pane, ends the hold early so a
+    # message typed during it is delivered. The check rides the same 2s poll,
+    # so without a request the hold and its wakes are unchanged.
+    HOLD_RELEASE_FILE=$(dx_phase_hold_release_file "$SESSION_ID" 3)
+    HOLD_RELEASED=0
     if [[ "$BUSY_RECHECK_SECONDS" -gt 0 ]]; then
       BUSY_POLL_DEADLINE=$(( $(date +%s) + BUSY_RECHECK_SECONDS ))
       while [[ -f "$PHASE_BUSY_FILE" ]]; do
+        if dx_hold_release_pending "$HOLD_RELEASE_FILE" "$BUSY_EPOCH"; then
+          HOLD_RELEASED=1
+          break
+        fi
         BUSY_POLL_NOW=$(date +%s)
         [[ "$BUSY_POLL_NOW" -lt "$BUSY_POLL_DEADLINE" ]] || break
         BUSY_SLEEP_SECONDS=$((BUSY_POLL_DEADLINE - BUSY_POLL_NOW))
@@ -1669,6 +1696,8 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
         sleep "$BUSY_SLEEP_SECONDS"
       done
     fi
+
+    rm -f "$HOLD_RELEASE_FILE"
 
     if [[ ! -f "$PHASE_BUSY_FILE" ]]; then
       rm -f "$PHASE_BUSY_NOTICE_FILE"
@@ -1688,6 +1717,9 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     # the model awake past the prompt cache and resends the conversation
     # uncached, so the instruction is to end the turn at once.
     BUSY_WAIT_REASON="Review wave still running (${BUSY_WAIT_TEXT}). Dex holds this wait and wakes you when the wave finishes. End your turn again now with a one-line status: do not run commands, sleep or poll."
+    if [[ "$HOLD_RELEASED" -eq 1 ]]; then
+      BUSY_WAIT_REASON="The user released this hold with dx review release, so a message from them may follow. ${BUSY_WAIT_REASON}"
+    fi
     # The person watching the pane sees one progress line per release; the
     # wake count and the hold length are unchanged.
     dx_stop_json_block "$BUSY_WAIT_REASON" "$(dx_review_progress_message running)"

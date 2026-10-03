@@ -3669,6 +3669,19 @@ PY
 # session's mapping, or a status for one session would read another's journal.
 # finished_wave limits a between-waves line to that wave's result (see
 # $DEX_DIR/scripts/review_status.py).
+# dx_review_hold_release <session_id>
+# Ask the session's Phase 3 hold to wake it now, so a message typed while Dex
+# holds the review wait is delivered within a few seconds instead of when the
+# hold ends. The review wave keeps running. Returns 3 and changes nothing when
+# no review wave is running.
+dx_review_hold_release() {
+  [[ $# -eq 1 ]] || return 2
+  local session_id="$1"
+  dx_session_id_valid "$session_id" || return 2
+  [[ -f "$(dx_phase_busy_file "$session_id" 3)" ]] || return 3
+  dx_session_private_atomic_write "$(dx_phase_hold_release_file "$session_id" 3)" "$(date +%s)"
+}
+
 dx_review_status() {
   local session_id="$1" format="${2:-text}" finished_wave="${3:-}"
   local run_id="" events_file=""
