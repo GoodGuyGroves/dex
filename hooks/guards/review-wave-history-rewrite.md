@@ -29,5 +29,5 @@ a `+refspec`), including after `git -C <dir>`, behind `env`/`command`/`sudo`,
 and inside a heredoc, a `bash -c` payload or a command substitution. Not
 caught: plain `git commit` and `git push`, text that only mentions an amend
 (`echo git commit --amend`, `git commit -m "--amend"`), and
-`bin/branch-sync.sh`, which makes its lease push itself. Outside a review
+`bash "$DEX_DIR/bin/branch-sync.sh"`, which makes its lease push itself. Outside a review
 wave this guard does nothing; `warn-force-push` still advises there.

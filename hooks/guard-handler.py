@@ -2480,15 +2480,22 @@ def _segment_amends(segment):
             continue
         if token == '--':
             return False
-        if token == '--amend':
+        # git takes any unambiguous prefix of a long option, so --amen is
+        # --amend; --am is the shortest no other commit option shares.
+        if len(token) >= 4 and '--amend'.startswith(token):
             return True
         if token in COMMIT_VALUE_OPTIONS:
             skip_value = True
-        elif (token.startswith('-') and not token.startswith('--') and len(token) > 2
-              and token[-1] in 'mFCct'):
-            # A short-option cluster such as -am ends in an option that takes
-            # the next word as its value.
-            skip_value = True
+        elif token.startswith('-') and not token.startswith('--') and len(token) > 2:
+            # A short-option cluster: the first option that takes a value uses
+            # the rest of the word (-mwait), or the next word when it comes
+            # last (-am). -u and -S take an optional value only when attached.
+            for position, letter in enumerate(token[1:], start=1):
+                if letter in 'mFCct':
+                    skip_value = position == len(token) - 1
+                    break
+                if letter in 'uS':
+                    break
     return False
 
 
