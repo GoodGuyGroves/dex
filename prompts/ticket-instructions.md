@@ -66,9 +66,15 @@ without an issue, treat ticket-specific steps as N/A and keep the task branch.
      ```bash
      source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
      SID="${DEX_SESSION_ID:-$(dx_session_id)}"
-     dx_meta_write "$SID" "tracker_key=<KEY-N>" "current_branch=$(git rev-parse --abbrev-ref HEAD)"
+     dx_meta_write "$SID" "tracker_key=<KEY-N>" "current_branch=$(git rev-parse --abbrev-ref HEAD)" \
+       'ticket_title=<ticket title on one line>'
      ```
-     Use the tracker's key (e.g. `ENG-999`). If no tracker is configured, only the `current_branch` field is required.
+     Use the tracker's key (e.g. `ENG-999`) and the ticket's title, single-quoted
+     so the shell leaves it alone, with each apostrophe written as `'\''`: an
+     unclosed quote fails the whole command and records nothing. Context
+     providers receive the title as `DX_TICKET_TITLE` (see
+     `$DEX_DIR/docs/context-providers.md`). If no tracker is configured, only
+     the `current_branch` field is required.
 
 3. Set the ticket status to "In Progress" via the configured tracker. If no tracker, skip. Leave sub-issues as they are: Phase 6 settles each one per the project's `ticket_close` setting once its acceptance criteria pass (Done at completion by default).
 

@@ -17,115 +17,128 @@ if [[ "${DEX_TRIAGE_ACTIVE:-0}" == 1 ]]; then
   exit 0
 fi
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-# Sanitise the branch name before embedding it in template substitutions.
-# git branch names are constrained, but strip anything outside the safe set
-# to prevent unexpected behaviour in bash ${var//pattern/replacement}.
-BRANCH="${BRANCH//[^A-Za-z0-9._\/\-]/_}"
+# The ticket context, focus areas and memory hints. Captured rather than printed
+# directly so the context provider below knows how much of Claude Code's
+# 10,000-character SessionStart budget is already spent.
+__dx_load_ticket_context() {
+  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+  # Sanitise the branch name before embedding it in template substitutions.
+  # git branch names are constrained, but strip anything outside the safe set
+  # to prevent unexpected behaviour in bash ${var//pattern/replacement}.
+  BRANCH="${BRANCH//[^A-Za-z0-9._\/\-]/_}"
 
-REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+  REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
 
-# Skip ticket extraction for task worktrees (e.g., worktree-task-fix-bug-123)
-TICKET_NUM=""
-TICKET_ID=""
-if [[ "$BRANCH" != worktree-task-* ]]; then
-  # The prefixes a project lists under `## Tickets` in .dex/dex.md. Read from
-  # the main checkout, as dx does, so a worktree sees the same list.
-  TICKET_PREFIXES=$(dx_ticket_prefixes "$(dx_repo_root 2>/dev/null || printf '%s' "$REPO_TOP")")
-  if [[ -n "$TICKET_PREFIXES" ]]; then
-    # Only the listed prefixes, in any case, as a whole word: tracker branches
-    # like user/eng-1234-title are lowercase, and "add-3" or "v-2" must not
-    # count. The list is validated letters and digits, so it is safe in a regex.
-    TICKET_PREFIX_PATTERN=$(printf '%s\n' "$TICKET_PREFIXES" | paste -sd '|' -)
-    TICKET_ID=$(grep -ioE "(^|[^A-Za-z0-9])(${TICKET_PREFIX_PATTERN})-[0-9]+" <<< "${BRANCH}" \
-      | head -1 | sed -E 's/^[^A-Za-z0-9]//' | tr '[:lower:]' '[:upper:]' || true)
-    if [[ -n "$TICKET_ID" ]]; then
-      TICKET_NUM="${TICKET_ID##*-}"
+  # Skip ticket extraction for task worktrees (e.g., worktree-task-fix-bug-123)
+  TICKET_NUM=""
+  TICKET_ID=""
+  if [[ "$BRANCH" != worktree-task-* ]]; then
+    # The prefixes a project lists under `## Tickets` in .dex/dex.md. Read from
+    # the main checkout, as dx does, so a worktree sees the same list.
+    TICKET_PREFIXES=$(dx_ticket_prefixes "$(dx_repo_root 2>/dev/null || printf '%s' "$REPO_TOP")")
+    if [[ -n "$TICKET_PREFIXES" ]]; then
+      # Only the listed prefixes, in any case, as a whole word: tracker branches
+      # like user/eng-1234-title are lowercase, and "add-3" or "v-2" must not
+      # count. The list is validated letters and digits, so it is safe in a regex.
+      TICKET_PREFIX_PATTERN=$(printf '%s\n' "$TICKET_PREFIXES" | paste -sd '|' -)
+      TICKET_ID=$(grep -ioE "(^|[^A-Za-z0-9])(${TICKET_PREFIX_PATTERN})-[0-9]+" <<< "${BRANCH}" \
+        | head -1 | sed -E 's/^[^A-Za-z0-9]//' | tr '[:lower:]' '[:upper:]' || true)
+      if [[ -n "$TICKET_ID" ]]; then
+        TICKET_NUM="${TICKET_ID##*-}"
+      else
+        TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
+      fi
     else
+      # Extract ticket number from branch name (handles: ticket-999, ENG-999, feature/ENG-999, etc.)
       TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
+      if [[ -z "$TICKET_NUM" ]]; then
+        # Fallback: look for UPPERCASE project prefixes (e.g., ENG-123, PROJ-456).
+        # Requires uppercase to avoid false positives on common branch name segments
+        # like "add-3", "feat-1", "v-2" which aren't ticket references.
+        TICKET_NUM=$(echo "$BRANCH" | grep -oE '[A-Z]{2,}-[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+      fi
     fi
-  else
-    # Extract ticket number from branch name (handles: ticket-999, ENG-999, feature/ENG-999, etc.)
-    TICKET_NUM=$(grep -oE 'ticket-[0-9]+' <<< "${BRANCH}" | head -1 | grep -oE '[0-9]+' || true)
-    if [[ -z "$TICKET_NUM" ]]; then
-      # Fallback: look for UPPERCASE project prefixes (e.g., ENG-123, PROJ-456).
-      # Requires uppercase to avoid false positives on common branch name segments
-      # like "add-3", "feat-1", "v-2" which aren't ticket references.
-      TICKET_NUM=$(echo "$BRANCH" | grep -oE '[A-Z]{2,}-[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
-    fi
+    [[ -n "$TICKET_ID" ]] || TICKET_ID="$TICKET_NUM"
   fi
-  [[ -n "$TICKET_ID" ]] || TICKET_ID="$TICKET_NUM"
-fi
+
+  TASK_PROMPT_FILE=$(dx_prompt_file "$SESSION_ID")
+
+  if [[ -n "$TICKET_NUM" ]]; then
+    echo "Ticket number: ${TICKET_NUM}"
+    [[ "$TICKET_ID" == "$TICKET_NUM" ]] || echo "Ticket ID: ${TICKET_ID}"
+    echo "Branch: ${BRANCH}"
+    echo ""
+
+    # Load instructions template and substitute variables
+    INSTRUCTIONS_FILE="$DEX_DIR/prompts/ticket-instructions.md"
+    if [[ -f "$INSTRUCTIONS_FILE" ]]; then
+      # Use bash substitution instead of sed to avoid special character issues
+      # in branch names (& and | break sed replacement/delimiter)
+      TEMPLATE=$(<"$INSTRUCTIONS_FILE")
+      TEMPLATE="${TEMPLATE//\{\{TICKET_NUM\}\}/$TICKET_NUM}"
+      TEMPLATE="${TEMPLATE//\{\{TICKET_ID\}\}/$TICKET_ID}"
+      TEMPLATE="${TEMPLATE//\{\{BRANCH\}\}/$BRANCH}"
+      printf '%s\n' "$TEMPLATE"
+    fi
+  elif [[ -f "$TASK_PROMPT_FILE" ]]; then
+    echo "Branch: ${BRANCH}"
+    echo ""
+    echo "Task: $(cat "$TASK_PROMPT_FILE")"
+    echo ""
+    echo "Use /dex to begin work on this task, or work on it directly."
+  else
+    echo "Branch: ${BRANCH}"
+    echo ""
+    echo "No ticket number detected in branch name."
+    echo "You can still use /dex to begin work — context will be gathered from the user and codebase."
+  fi
+
+  # Context-aware behavioural hints based on changed files.
+  # These generic patterns work without dx init — they detect common directory
+  # conventions (frontend/, backend/, migrations/, etc.). Project-specific focus
+  # areas can be defined in .dex/rules/ after running dx init.
+  # Uses origin/ prefix so the diff compares against the remote default branch,
+  # not a potentially stale local copy (consistent with dx.sh __dx_show_header).
+  DEFAULT_BRANCH=$(dx_default_branch "$REPO_TOP")
+  CHANGED_FILES=$(git diff "origin/${DEFAULT_BRANCH}...HEAD" --name-only 2>/dev/null || echo "")
+  FOCUS_AREAS=""
+
+  if grep -qE '^frontend/|^admin/' <<< "${CHANGED_FILES}" 2>/dev/null; then
+    FOCUS_AREAS="${FOCUS_AREAS} frontend"
+  fi
+  if grep -q '^backend/' <<< "${CHANGED_FILES}" 2>/dev/null; then
+    FOCUS_AREAS="${FOCUS_AREAS} backend"
+  fi
+  if grep -qE 'guard|auth|rls|policy|security' <<< "${CHANGED_FILES}" 2>/dev/null; then
+    FOCUS_AREAS="${FOCUS_AREAS} security"
+  fi
+  if grep -qE '\.migration\.|migrations/' <<< "${CHANGED_FILES}" 2>/dev/null; then
+    FOCUS_AREAS="${FOCUS_AREAS} migration"
+  fi
+
+  if [[ -n "$FOCUS_AREAS" ]]; then
+    echo ""
+    echo "Focus areas detected:${FOCUS_AREAS}"
+    echo "Prioritise reading the relevant rules from .dex/rules/ for these areas."
+  fi
+
+  if [[ -f "$REPO_TOP/.dex/memory/index.md" ]]; then
+    echo ""
+    echo "Repo memory index detected: .dex/memory/index.md"
+    echo "Load only active memory entries whose scope matches the task, changed files, or current phase."
+  fi
+  # Dex launches turn Claude Code's auto-memory off (autoMemoryEnabled: false).
+  if [[ "${DEX_LAUNCHED:-}" == 1 ]]; then
+    echo ""
+    echo "Claude Code auto-memory is off in this Dex session. Record a durable lesson in .dex/memory/ (see $DEX_DIR/prompts/sync-memory.md), never under ~/.claude/projects/*/memory."
+  fi
+}
 
 SESSION_ID="${DEX_SESSION_ID:-$(dx_session_id)}"
-TASK_PROMPT_FILE=$(dx_prompt_file "$SESSION_ID")
+TICKET_CONTEXT=$(__dx_load_ticket_context)
+printf '%s\n' "$TICKET_CONTEXT"
 
-if [[ -n "$TICKET_NUM" ]]; then
-  echo "Ticket number: ${TICKET_NUM}"
-  [[ "$TICKET_ID" == "$TICKET_NUM" ]] || echo "Ticket ID: ${TICKET_ID}"
-  echo "Branch: ${BRANCH}"
-  echo ""
-
-  # Load instructions template and substitute variables
-  INSTRUCTIONS_FILE="$DEX_DIR/prompts/ticket-instructions.md"
-  if [[ -f "$INSTRUCTIONS_FILE" ]]; then
-    # Use bash substitution instead of sed to avoid special character issues
-    # in branch names (& and | break sed replacement/delimiter)
-    TEMPLATE=$(<"$INSTRUCTIONS_FILE")
-    TEMPLATE="${TEMPLATE//\{\{TICKET_NUM\}\}/$TICKET_NUM}"
-    TEMPLATE="${TEMPLATE//\{\{TICKET_ID\}\}/$TICKET_ID}"
-    TEMPLATE="${TEMPLATE//\{\{BRANCH\}\}/$BRANCH}"
-    printf '%s\n' "$TEMPLATE"
-  fi
-elif [[ -f "$TASK_PROMPT_FILE" ]]; then
-  echo "Branch: ${BRANCH}"
-  echo ""
-  echo "Task: $(cat "$TASK_PROMPT_FILE")"
-  echo ""
-  echo "Use /dex to begin work on this task, or work on it directly."
-else
-  echo "Branch: ${BRANCH}"
-  echo ""
-  echo "No ticket number detected in branch name."
-  echo "You can still use /dex to begin work — context will be gathered from the user and codebase."
-fi
-
-# Context-aware behavioural hints based on changed files.
-# These generic patterns work without dx init — they detect common directory
-# conventions (frontend/, backend/, migrations/, etc.). Project-specific focus
-# areas can be defined in .dex/rules/ after running dx init.
-# Uses origin/ prefix so the diff compares against the remote default branch,
-# not a potentially stale local copy (consistent with dx.sh __dx_show_header).
-DEFAULT_BRANCH=$(dx_default_branch "$REPO_TOP")
-CHANGED_FILES=$(git diff "origin/${DEFAULT_BRANCH}...HEAD" --name-only 2>/dev/null || echo "")
-FOCUS_AREAS=""
-
-if grep -qE '^frontend/|^admin/' <<< "${CHANGED_FILES}" 2>/dev/null; then
-  FOCUS_AREAS="${FOCUS_AREAS} frontend"
-fi
-if grep -q '^backend/' <<< "${CHANGED_FILES}" 2>/dev/null; then
-  FOCUS_AREAS="${FOCUS_AREAS} backend"
-fi
-if grep -qE 'guard|auth|rls|policy|security' <<< "${CHANGED_FILES}" 2>/dev/null; then
-  FOCUS_AREAS="${FOCUS_AREAS} security"
-fi
-if grep -qE '\.migration\.|migrations/' <<< "${CHANGED_FILES}" 2>/dev/null; then
-  FOCUS_AREAS="${FOCUS_AREAS} migration"
-fi
-
-if [[ -n "$FOCUS_AREAS" ]]; then
-  echo ""
-  echo "Focus areas detected:${FOCUS_AREAS}"
-  echo "Prioritise reading the relevant rules from .dex/rules/ for these areas."
-fi
-
-if [[ -f "$REPO_TOP/.dex/memory/index.md" ]]; then
-  echo ""
-  echo "Repo memory index detected: .dex/memory/index.md"
-  echo "Load only active memory entries whose scope matches the task, changed files, or current phase."
-fi
-# Dex launches turn Claude Code's auto-memory off (autoMemoryEnabled: false).
-if [[ "${DEX_LAUNCHED:-}" == 1 ]]; then
-  echo ""
-  echo "Claude Code auto-memory is off in this Dex session. Record a durable lesson in .dex/memory/ (see $DEX_DIR/prompts/sync-memory.md), never under ~/.claude/projects/*/memory."
-fi
+# A project's own recall, from `## Context Providers` in .dex/dex.md. It is
+# labelled unverified, and review passes get none (lib/context-providers.sh).
+dx_context_provider_block session_start "${DEX_LOOP_PHASE:-0}" "$SESSION_ID" \
+  "$((${#TICKET_CONTEXT} + 1))"

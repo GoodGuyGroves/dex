@@ -72,10 +72,11 @@ Evidence: tracker output shows the assignee, or N/A.
   ```bash
   source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
   SID="${DEX_SESSION_ID:-$(dx_session_id)}"
-  dx_meta_write "$SID" "tracker_key=<KEY-N>" "current_branch=$(git rev-parse --abbrev-ref HEAD)"
+  dx_meta_write "$SID" "tracker_key=<KEY-N>" "current_branch=$(git rev-parse --abbrev-ref HEAD)" \
+    'ticket_title=<ticket title on one line>'
   ```
 
-  using the tracker's key (e.g. `ENG-999`). This lets future `dx <N>` invocations resume the right worktree even after a rename.
+  using the tracker's key (e.g. `ENG-999`) and the ticket's title, single-quoted with each apostrophe written as `'\''` (an unclosed quote fails the whole command, so nothing is recorded). This lets future `dx <N>` invocations resume the right worktree even after a rename, and gives context providers `DX_TICKET_TITLE`.
 
 Evidence: `git rev-parse --abbrev-ref HEAD` shows the resolved name;
 `git rev-parse --abbrev-ref --symbolic-full-name '@{u}'` and

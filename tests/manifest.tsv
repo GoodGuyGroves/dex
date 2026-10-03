@@ -16,6 +16,7 @@ codex-inline-handoff-test.sh	slow	all	1200	hermetic
 commit-detection-corpus-test.sh	fast	all	600	hermetic
 completion-receipt-test.sh	fast	all	600	hermetic
 config-reviewer-test.sh	fast	all	600	hermetic
+context-providers-test.sh	fast	all	300	hermetic
 copilot-mention-guard-test.sh	fast	all	600	hermetic
 cross-session-inbound-test.sh	fast	all	600	hermetic
 dex-home-paths-test.sh	fast	all	600	hermetic

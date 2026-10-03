@@ -223,7 +223,11 @@ new_sandbox() {
   mkdir -p "$SB_REPO/.dex"
   printf '%s\n' '# Dex' '' '## Worktree Hooks' '' '```yaml' \
     'on_session_end: touch "$HOME/.gw-on-session-end"' '```' '' \
-    '## MCP' '' '```yaml' 'complete: [repoServer]' '```' > "$SB_REPO/.dex/dex.md"
+    '## MCP' '' '```yaml' 'complete: [repoServer]' '```' '' \
+    '## Context Providers' '' '```yaml' \
+    'session_start: touch "$HOME/.gw-context-provider"' \
+    'phase_handoff: echo "recalled-for-phase-$DX_PHASE"; cat "$DX_CHANGED_FILES"' \
+    '```' > "$SB_REPO/.dex/dex.md"
   git -C "$SB_REPO" add -A
   git -C "$SB_REPO" commit -q -m "chore: init"
   git -C "$SB_REPO" branch -M main
@@ -361,6 +365,9 @@ run_scenario() {
   dx_step auto-init-refused "$NO_INPUT" 1 'mkdir -p .gw-fresh && git -C .gw-fresh init -q && cd .gw-fresh
     __dx_auto_init_consent "$PWD"'
   dx_step auto-init "$NO_INPUT" 0 'cd .gw-fresh && DEX_AUTO_INIT=1 __dx_auto_init_consent "$PWD" && __dx_auto_init_run "$PWD"'
+  # A phase handoff's context provider, run in zsh the way dx.sh loads lib/:
+  # its captures and changed-file list go under DEX_HOME and are removed.
+  dx_step context "$NO_INPUT" 0 'out=$(dx_context_provider_block phase_handoff 2 "$(dx_session_id)"); print -r -- "$out"; [[ "$out" == *recalled-for-phase-2* ]]'
   plain_step plain
   if [[ "$2" == 1 ]]; then
     dx_step uninstall "$NO_INPUT" 0 'dx uninstall'
@@ -399,6 +406,12 @@ plain_hooks_ok() { # <hooks.jsonl> <step>
   ! grep -q '/hooks/' "$1" || fail "the $2 session fired a Dex hook"
 }
 plain_hooks_ok "$ISOLATED_STUB/hooks.jsonl" plain
+grep -q 'External recall (unverified' "$ISOLATED_STUB/context.out" \
+  || fail "the context step injected no provider output"
+# The session_start provider writes under HOME on purpose: a session the user
+# started, which Dex did not launch, must never run it.
+[[ ! -e "$TMP_DIR/isolated/home/.gw-context-provider" ]] \
+  || fail "a session Dex did not launch ran the repository's session_start provider"
 grep -q '"hooks": \[[^]]*phase-loop' "$ISOLATED_STUB/launches.jsonl" \
   || fail "no Dex launch carried Dex's hooks in its --settings"
 # The stub writes a plan wherever the launch's settings send Claude's plan

@@ -7,9 +7,9 @@
 # `.dex/dex.md`, one value per line.
 #
 # This is the only entry point for the machine-readable part of the project
-# contract, so every section that grows one — `## Resources` and
-# `## Worktree Hooks` today — parses the same way and a caller never
-# re-implements the reading. The parser is
+# contract, so every section that grows one — `## Resources`,
+# `## Worktree Hooks` and `## Context Providers` among them — parses the same
+# way and a caller never re-implements the reading. The parser is
 # scripts/project-contract.py: stdlib only, a flat mapping of scalars and lists.
 #
 # Returns 0 with the value, 1 when the file, the section, the block or the key
@@ -42,6 +42,25 @@ dx_project_worktree_hook() {
     *) return 2 ;;
   esac
   dx_project_contract_values "$hook_repo" "Worktree Hooks" "$hook_key"
+}
+
+# dx_project_context_provider <repo-dir> <key>
+# One raw setting from the fenced block under `## Context Providers` in the
+# repository's `.dex/dex.md`: the command Dex runs at session start or at a
+# phase handoff, or one of its limits. lib/context-providers.sh runs the
+# command and validates the limits.
+#
+# Same parser and return codes as dx_project_contract_values, with a closed
+# key set like dx_project_worktree_hook: a misspelled key is a Dex bug, so it
+# returns 2 instead of looking like a project that declared nothing.
+dx_project_context_provider() {
+  [[ $# -eq 2 ]] || return 2
+  local provider_repo="$1" provider_key="$2"
+  case "$provider_key" in
+    session_start | phase_handoff | timeout_seconds | max_chars) ;;
+    *) return 2 ;;
+  esac
+  dx_project_contract_values "$provider_repo" "Context Providers" "$provider_key"
 }
 
 # dx_project_pr_template <repo-dir>

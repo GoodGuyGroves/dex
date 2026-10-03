@@ -638,6 +638,8 @@ independent repository maintenance remains available. See
 - [Factory security](docs/factory-security.md) documents the v1 remote worker,
   token, event-ingestion, and credential boundary.
 - [Guards](docs/guards.md) covers hook-based safety rules.
+- [Context providers](docs/context-providers.md) covers injecting a project's
+  own memory or knowledge recall at session start and phase handoff.
 - [UI proof](docs/ui-capture.md) covers manual `/dxproof` captures, lifecycle
   decisions, captioned before/after walkthroughs, temporary artifacts, and PR
   handoff.
