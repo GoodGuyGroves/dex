@@ -32,12 +32,13 @@ ENVELOPE_TAGS = (
     "teammate-message",
 )
 
-# The opening tag has to start a line, so a human writing about "<task-notification>
-# tags" mid-sentence keeps their prompt. A block runs to the last closing tag of
-# its name, because a subagent reporting on notifications can quote one inside
-# its result, and without one it runs to the end of the text. Both choices err
-# towards reading less as human. The attribute scan stops at a newline so a run
-# of unterminated tags cannot make each line rescan the rest of the prompt.
+# The opening tag has to start a line, so a human writing about
+# "<task-notification> tags" mid-sentence keeps their prompt. A block runs to
+# the last closing tag of its name, because a subagent reporting on
+# notifications can quote one inside its result, and without one it runs to the
+# end of the text. Both choices err towards reading less as human. The
+# attribute scan stops at a newline so a run of unterminated tags cannot make
+# each line rescan the rest of the prompt.
 ENVELOPE_BLOCK = re.compile(
     r"^[ \t]*<(" + "|".join(ENVELOPE_TAGS) + r")\b[^>\n]*>(?:.*</\1>|.*)",
     re.MULTILINE | re.DOTALL,
