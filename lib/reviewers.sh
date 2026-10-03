@@ -54,9 +54,11 @@ dx_reviewer_default_adapter() {
 # dx_reviewers_mode [session_id] — `none` when the session's pr.reviewers
 # override says so, else `config` (the `## Reviewers` table applies). The
 # override is how a fork PR avoids pinging the reviewers a tracked dex.md was
-# written for, without editing that file.
+# written for, without editing that file. With no argument the session is
+# resolved the way `dx control override` records it.
 dx_reviewers_mode() {
   local mode_session="${1:-${DEX_SESSION_ID:-}}" mode="config"
+  [[ -n "$mode_session" ]] || mode_session=$(dx_session_id 2>/dev/null) || mode_session=""
   if dx_session_id_valid "$mode_session" 2>/dev/null; then
     # Session-scoped only (dx_override_set refuses a phase scope), so the
     # caller's phase does not matter.
