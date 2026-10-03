@@ -142,6 +142,7 @@ sync-bootstrap-test.sh	fast	all	600	hermetic
 test-command-cli-test.sh	fast	all	600	hermetic
 test-command-dex-test.sh	fast	all	600	hermetic
 test-command-project-test.sh	fast	all	600	hermetic
+test-env-scrub-test.sh	fast	all	600	hermetic
 test-infrastructure-test.sh	fast	all	600	hermetic
 test-manifest-test.sh	fast	all	600	hermetic
 test-timeout-test.sh	fast	all	600	hermetic
