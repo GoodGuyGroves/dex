@@ -60,6 +60,17 @@ Claude reviews its own work critically (audit loop)
 Claude continues with the next phase in the same session
 ```
 
+Under Claude Code (`DX_PROVIDER_AGENT=claude`), the hook passes the handoff to
+the next phase as `hookSpecificOutput.additionalContext` and exits 0. Claude
+Code gives it to the model as a system reminder and the conversation
+continues, so the pane shows the one `Dex · Phase N complete → Phase M` line
+instead of a "Stop hook error". This follows the Claude Code hooks reference
+("Stop decision control") and was confirmed with a probe on Claude Code
+2.1.280. The phase transition is committed before that output, as it is for
+the block. Under Codex, or when the launch names no agent, the handoff stays a
+structured `decision: "block"`. Audit prompts, completion receipts and genuine
+failures still block in every case.
+
 ## Phase Audit Prompts
 
 Each phase has its own audit prompt in `prompts/phase-audits/`:
@@ -506,6 +517,22 @@ remaining gate and advances without a review receipt. Other assurance gates,
 such as `verification.required-gates`, use the named waiver path. Neither form
 labels an unverified check as passed.
 
+A waiver's reason lives in Dex's own state (`.overrides`, `events.jsonl`), so
+whoever merges the PR doesn't see it unless they look. A project can opt in to
+putting it on the PR with `waiver_comment` in the `## Pull Requests` block of
+`.dex/dex.md`:
+
+| Value | Agent waiver on a branch with an open PR |
+|-------|------------------------------------------|
+| `off` (default) | Nothing is posted |
+| `on` | The waiver records, then one PR comment names the gate, source, phase and reason. A failed post warns and the waiver stands |
+| `required` | The comment is posted first. If the PR lookup or the post fails, the waiver is refused and nothing is recorded |
+
+With no open PR, nothing is posted and the waiver records in every mode. Only
+`--source agent` waivers post; a human's waiver is their own decision. The
+comment goes through `dx_reviewer_comment`, and every `@` is removed from its
+text, so it never mentions a person, a team or the Copilot coding agent.
+
 Provider deadlines for review, `dx sync`, and maintenance are live. Their
 supervisors re-read policy once per second, so increasing, shortening,
 disabling, clearing, or expiring an override affects the process already
@@ -819,6 +846,15 @@ While the Stop hook holds a Phase 3 wait, the spinner reads `Dex phase gate
 progress line to the transcript, such as `Dex · Wave 2/6 · complex · scouting ·
 0/3 clean · 4m 30s/1h 0m`, or the finished wave's verdict. `dx review status`
 prints the same summary on demand, with every finished wave.
+
+Claude Code queues a message typed during the hold and shows it only when the
+hook returns, up to the full hold length. Hooks can't see queued input, so to
+be answered sooner, run `dx review release` (add `--session <id>` from outside
+the worktree) in another pane, then type. The hold checks for that request on
+its usual 2-second poll, so it wakes the session within a few seconds and the
+queued message is delivered. The wave keeps running, and the next stop holds
+again. A request made before the current wave started is ignored and cleared.
+With no request, the hold length and the number of wakes are unchanged.
 
 ## Run Events
 

@@ -842,6 +842,9 @@ dx_check_safe_official_claude_plugins() {
     [[ -n "$plugin_ref" ]] || continue
     if dx_claude_plugin_available "$plugin_ref"; then
       dx_ok "Claude plugin '${plugin_ref}' available"
+    elif dx_offline && [[ ! -d "$(dx_dex_plugins_dir)/marketplaces" ]]; then
+      # Offline with no marketplace clone, the install could not prepare it.
+      dx_skip "Claude plugin '${plugin_ref}' not prepared: offline (DEX_OFFLINE=1)"
     else
       dx_warn "Claude plugin '${plugin_ref}' is not prepared; needed for ${reason}. Run 'dx tools bootstrap'"
       failed=1
@@ -860,6 +863,11 @@ dx_install_openai_docs_mcp_servers() {
 }
 
 dx_check_openai_docs_mcp_servers() {
+  # Offline, the remote server is neither registered nor launched.
+  if dx_offline && ! dx_mcp_registry_has "$DX_OPENAI_DOCS_MCP_NAME"; then
+    dx_skip "MCP server '${DX_OPENAI_DOCS_MCP_NAME}' (remote) not registered: offline (DEX_OFFLINE=1)"
+    return 0
+  fi
   __dx_check_mcp_server "$DX_OPENAI_DOCS_MCP_NAME"
 }
 
@@ -868,6 +876,9 @@ dx_check_ui_capture_tooling() {
 
   if dx_ui_capture_tooling_ready; then
     dx_ok "UI capture browser, media, and local narration tooling installed"
+  elif dx_offline; then
+    # The npm install and Chromium download are skipped offline.
+    dx_skip "UI capture tooling not installed: offline (DEX_OFFLINE=1)"
   else
     dx_warn "UI capture browser, media, or local narration tooling is incomplete"
     failed=1

@@ -1492,10 +1492,96 @@ dx_review_result_reason() {
   esac
 }
 
+# The session whose meta holds the review base: the parent lifecycle inside a
+# review child, then the lifecycle session, then the one derived from the path.
+__dx_review_base_session() {
+  local repo_root="$1"
+  if [[ -n "${DEX_POLICY_SESSION_ID:-}" ]]; then
+    printf '%s\n' "$DEX_POLICY_SESSION_ID"
+  elif [[ -n "${DEX_SESSION_ID:-}" ]]; then
+    printf '%s\n' "$DEX_SESSION_ID"
+  else
+    (builtin cd "$repo_root" 2>/dev/null && dx_session_id)
+  fi
+}
+
+# Print the review base dx_review_base_resolve recorded, or nothing. Reads
+# session meta only, so the scope descriptor stays offline and repeatable.
+__dx_review_base_recorded() {
+  local repo_root="$1" session_id base
+  session_id=$(__dx_review_base_session "$repo_root" 2>/dev/null) || return 0
+  dx_session_id_valid "$session_id" || return 0
+  base=$(dx_meta_read "$session_id" review_base_branch 2>/dev/null || true)
+  [[ -n "$base" ]] || return 0
+  git check-ref-format --branch "$base" >/dev/null 2>&1 || return 0
+  printf '%s\n' "$base"
+}
+
+# dx_review_base_resolve <repo_dir> <session_id>
+# Record, once per review loop, the branch the review diffs against: the open
+# PR's base, then session meta base_branch, then none (the default branch). A
+# stacked branch is then reviewed against its parent rather than taking in the
+# parent's changes. A gh failure or timeout falls through instead of blocking
+# the review, and DEX_OFFLINE skips the PR lookup. Writes review_base_branch
+# and review_base_source to an existing session meta and prints the source.
+dx_review_base_resolve() {
+  local repo_dir="${1:-$PWD}" session_id="${2:-}" repo_root branch_name
+  local base="" base_source="default" pr_base="" recorded_base=""
+  repo_root=$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+  dx_session_id_valid "$session_id" || return 1
+  if [[ ! -f "$(dx_meta_file "$session_id")" ]]; then
+    printf '%s\n' "$base_source"
+    return 0
+  fi
+
+  branch_name=$(git -C "$repo_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [[ -n "$branch_name" ]] && ! dx_offline && command -v gh >/dev/null 2>&1 \
+    && __dx_branch_origin_is_github "$repo_root"; then
+    pr_base=$(__dx_ticket_branch_run 60 __dx_ticket_branch_gh "$repo_root" pr list \
+      --state open --head "$branch_name" --limit 1 --json baseRefName \
+      --jq '.[0].baseRefName // ""' 2>/dev/null) || pr_base=""
+    if [[ -n "$pr_base" ]] && git check-ref-format --branch "$pr_base" >/dev/null 2>&1; then
+      base="$pr_base"
+      base_source="pr"
+    fi
+  fi
+
+  if [[ -z "$base" ]]; then
+    recorded_base=$(dx_meta_read "$session_id" base_branch 2>/dev/null || true)
+    if [[ -n "$recorded_base" ]] && git check-ref-format --branch "$recorded_base" >/dev/null 2>&1; then
+      base="$recorded_base"
+      base_source="recorded"
+    fi
+  fi
+
+  dx_meta_write "$session_id" "review_base_branch=${base}" "review_base_source=${base_source}" || return 1
+  printf '%s\n' "$base_source"
+}
+
 dx_review_scope_descriptor() {
   local repo_dir="${1:-$PWD}" repo_root default_branch candidate candidate_oid merge_base upstream ahead
-  local fallback_ref="" fallback_oid="" fallback_merge_base=""
+  local fallback_ref="" fallback_oid="" fallback_merge_base="" review_base=""
   repo_root=$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+
+  # A recorded review base (the PR's or the stacked parent's) decides the
+  # scope on its own: falling through to the default branch would bring the
+  # parent's changes back in. A base with no local ref uses the usual order.
+  review_base=$(__dx_review_base_recorded "$repo_root")
+  if [[ -n "$review_base" ]]; then
+    for candidate in "origin/${review_base}" "$review_base"; do
+      git -C "$repo_root" rev-parse --verify --quiet "${candidate}^{commit}" >/dev/null 2>&1 || continue
+      candidate_oid=$(git -C "$repo_root" rev-parse --verify "${candidate}^{commit}" 2>/dev/null) || return 1
+      merge_base=$(git -C "$repo_root" merge-base "$candidate_oid" HEAD 2>/dev/null || true)
+      [[ -n "$merge_base" ]] || continue
+      if git -C "$repo_root" diff --quiet "$merge_base" HEAD -- 2>/dev/null; then
+        printf 'none\t%s\t%s\t%s\n' "$candidate" "$candidate_oid" "$merge_base"
+      else
+        printf 'changes\t%s\t%s\t%s\n' "$candidate" "$candidate_oid" "$merge_base"
+      fi
+      return 0
+    done
+  fi
+
   default_branch=$(dx_default_branch "$repo_root") || return 1
   candidate="origin/${default_branch}"
 
@@ -3572,6 +3658,19 @@ for raw in sys.argv[1:]:
         payload[key] = value
 print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 PY
+}
+
+# dx_review_hold_release <session_id>
+# Ask the session's Phase 3 hold to wake it now, so a message typed while Dex
+# holds the review wait is delivered within a few seconds instead of when the
+# hold ends. The review wave keeps running. Returns 3 and changes nothing when
+# no review wave is running.
+dx_review_hold_release() {
+  [[ $# -eq 1 ]] || return 2
+  local session_id="$1"
+  dx_session_id_valid "$session_id" || return 2
+  [[ -f "$(dx_phase_busy_file "$session_id" 3)" ]] || return 3
+  dx_session_private_atomic_write "$(dx_phase_hold_release_file "$session_id" 3)" "$(date +%s)"
 }
 
 # dx_review_status <session_id> <text|json|line> [finished_wave]

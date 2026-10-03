@@ -318,4 +318,40 @@ dx_session_runtime_finish "$LIVE_SID" "$LIVE_TOKEN" paused "$$"
 dx_session_runtime_finish \
   "$UNVERIFIABLE_SID" "$UNVERIFIABLE_TOKEN" paused "$$"
 
+# A session created under a default umask (#81). Its .meta is written 0600,
+# and one an older Dex left at 0644 is narrowed and forgotten. A .meta that is
+# a symlink is still refused. This file runs under umask 077, so these cases
+# switch to 022 themselves.
+file_mode() { python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.lstat(sys.argv[1]).st_mode))[2:])' "$1"; }
+
+UMASK_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-umask)"
+umask 022
+make_terminal_session "$REPO_A" "$UMASK_SID" 811 forget-umask
+umask 077
+assert_eq "600" "$(file_mode "$(dx_meta_file "$UMASK_SID")")" "meta written under umask 022 is private"
+run_sessions "$REPO_A" "$TMP_DIR/umask.out" forget "session:$UMASK_SID"
+assert_eq "0" "$COMMAND_RESULT" "forget a session created under umask 022"
+assert_no_file "$(dx_meta_file "$UMASK_SID")"
+
+OLD_META_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-old-meta)"
+umask 022
+make_terminal_session "$REPO_A" "$OLD_META_SID" 812 forget-old-meta
+umask 077
+chmod 644 "$(dx_meta_file "$OLD_META_SID")"
+run_sessions "$REPO_A" "$TMP_DIR/old-meta.out" forget "session:$OLD_META_SID"
+assert_eq "0" "$COMMAND_RESULT" "forget a session whose .meta an older Dex left at 0644"
+assert_contains "Session $OLD_META_SID was forgotten." "$TMP_DIR/old-meta.out"
+assert_no_file "$(dx_meta_file "$OLD_META_SID")"
+
+LINK_META_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-link-meta)"
+make_terminal_session "$REPO_A" "$LINK_META_SID" 813 forget-link-meta
+mv "$(dx_meta_file "$LINK_META_SID")" "$TMP_DIR/link-meta-target"
+chmod 644 "$TMP_DIR/link-meta-target"
+ln -s "$TMP_DIR/link-meta-target" "$(dx_meta_file "$LINK_META_SID")"
+run_sessions "$REPO_A" "$TMP_DIR/link-meta.out" forget "session:$LINK_META_SID"
+[[ "$COMMAND_RESULT" -ne 0 ]] || assert_at $LINENO
+[[ -L "$(dx_meta_file "$LINK_META_SID")" ]] || assert_at $LINENO
+assert_eq "644" "$(file_mode "$TMP_DIR/link-meta-target")" "a symlinked .meta target is not narrowed"
+rm -f "$(dx_meta_file "$LINK_META_SID")"
+
 printf '%s\n' "session forget tests passed"

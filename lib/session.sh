@@ -1367,7 +1367,11 @@ dx_meta_write() {
     overrides_input+=$'\n'
   fi
 
+  # .meta is read back as private state (0600), so the replacement is created
+  # private rather than with the caller's umask.
   tmp_file="${meta_file}.tmp.$$"
+  command rm -f "$tmp_file" 2>/dev/null || true
+  (umask 077 && : >| "$tmp_file") || return 1
   if ! printf '%s' "$overrides_input" | awk -F'\t' -v meta="$meta_file" '
     BEGIN {
       ok = 1
@@ -1409,7 +1413,7 @@ dx_meta_write() {
         }
       }
     }
-  ' > "$tmp_file"; then
+  ' >| "$tmp_file"; then
     command rm -f "$tmp_file" 2>/dev/null
     return 1
   fi
@@ -2749,6 +2753,10 @@ dx_phase_busy_cancel_file() { echo "${DX_LOOP_DIR}/${1}.phase-${2}.busy-cancel";
 # dx_phase_busy_quiesced_file <session_id> <phase> — matching owner acknowledgement
 dx_phase_busy_quiesced_file() { echo "${DX_LOOP_DIR}/${1}.phase-${2}.busy-quiesced"; }
 
+# dx_phase_hold_release_file <session_id> <phase> — `dx review release` asks the
+# Phase 3 hold to wake the session early; holds the request's epoch seconds.
+dx_phase_hold_release_file() { echo "${DX_LOOP_DIR}/${1}.phase-${2}.hold-release"; }
+
 # dx_log_phase <session_id> <step> <phase_name> <start_epoch> <end_epoch> <duration_s> <iterations> <status> <exit_code>
 # Append a TSV row to the structured phase log. Creates the header on first write.
 dx_log_phase() {
@@ -3040,8 +3048,10 @@ __dx_meta_keep_ticket_close() {
   meta_file=$(dx_meta_file "$1")
   [[ -f "$meta_file" ]] || return 1
   tmp_file="${meta_file}.tmp.$$"
-  if awk -F= '$1 ~ /^ticket_close_/ || $1 == "wt_name" || $1 == "ticket_id" || $1 == "created_at" || $1 == "updated_at"' \
-    "$meta_file" > "$tmp_file" 2>/dev/null && mv -f "$tmp_file" "$meta_file"; then
+  rm -f "$tmp_file" 2>/dev/null || true
+  if (umask 077 && : >| "$tmp_file") \
+    && awk -F= '$1 ~ /^ticket_close_/ || $1 == "wt_name" || $1 == "ticket_id" || $1 == "created_at" || $1 == "updated_at"' \
+    "$meta_file" >| "$tmp_file" 2>/dev/null && mv -f "$tmp_file" "$meta_file"; then
     return 0
   fi
   rm -f "$tmp_file" 2>/dev/null || true
@@ -3075,7 +3085,7 @@ dx_cleanup_session() {
     rm -f "$(dx_loop_file "$sid")" "$(dx_complete_file "$sid")" "$(dx_active_file "$sid")" "$(dx_owner_file "$sid")" "$(dx_prompt_file "$sid")" "$(dx_findings_file "$sid")" "$(dx_debt_file "$sid")" "$(dx_loop_config_file "$sid")" "$(dx_handoff_mode_file "$sid")" "$(dx_paused_file "$sid")" "$(dx_pause_state_file "$sid")" "$(dx_watch_pause_file "$sid")" "${DX_LOOP_DIR}/${sid}.control" "$(dx_watch_lock_file "$sid" ci)" "$(dx_watch_lock_file "$sid" pr)" "$(dx_review_state_file "$sid")" "$(dx_review_result_file "$sid")" "$(dx_review_context_file "$sid")" "$(dx_review_baseline_file "$sid")" "$(dx_review_metrics_file "$sid")" "$(dx_review_criteria_file "$sid")" "$(dx_review_criteria_approval_file "$sid")" "$(dx_review_evidence_file "$sid")" "$(dx_review_selection_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-selection.revoked" "$(dx_review_receipt_file "$sid")" "${DX_LOOP_DIR}/${sid}.review-receipt.revoked" "$(dx_complete_state_file "$sid")" "$(dx_complete_wait_file "$sid")" "$(dx_provider_state_file "$sid")" "${DEX_HOME:-$DX_LOOP_DIR}/launch-settings/launch.review-${sid}.json" 2>/dev/null
     rm -f "${DX_LOOP_DIR}/${sid}.control-lock/owner" 2>/dev/null || true
     rmdir "${DX_LOOP_DIR}/${sid}.control-lock" 2>/dev/null || true
-    find "$DX_LOOP_DIR" -maxdepth 1 -type f \( -name "${sid}.phase-*.started" -o -name "${sid}.phase-*.ready" -o -name "${sid}.phase-*.busy" -o -name "${sid}.phase-*.busy-notice" -o -name "${sid}.phase-*.busy-cancel" -o -name "${sid}.phase-*.busy-quiesced" -o -name "${sid}.context-provider.*" \) -exec rm -f {} + 2>/dev/null || true
+    find "$DX_LOOP_DIR" -maxdepth 1 -type f \( -name "${sid}.phase-*.started" -o -name "${sid}.phase-*.ready" -o -name "${sid}.phase-*.busy" -o -name "${sid}.phase-*.busy-notice" -o -name "${sid}.phase-*.busy-cancel" -o -name "${sid}.phase-*.busy-quiesced" -o -name "${sid}.phase-*.hold-release" -o -name "${sid}.context-provider.*" \) -exec rm -f {} + 2>/dev/null || true
   fi
   # `&&` here would make a missing state directory the function's exit status,
   # which contradicts the promise above and would abort a `set -e` caller.

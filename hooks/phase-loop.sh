@@ -46,6 +46,45 @@ print(json.dumps(payload, separators=(",", ":")))
 ' "$reason" "$system_message"
 }
 
+# A phase handoff under Claude Code. A decision:block is shown in the pane as
+# a hook error, while hookSpecificOutput.additionalContext reaches the model
+# as a system reminder and continues the conversation (Claude Code hooks
+# reference, "Stop decision control"; probed on 2.1.280). The systemMessage
+# keeps the one visible progress line.
+dx_stop_json_continue() {
+  local context="$1" system_message="${2:-}"
+  python3 -c '
+import json
+import sys
+
+payload = {
+    "hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": sys.argv[1]},
+    "suppressOutput": True,
+}
+if sys.argv[2]:
+    payload["systemMessage"] = sys.argv[2]
+print(json.dumps(payload, separators=(",", ":")))
+' "$context" "$system_message"
+}
+
+# dx_hold_release_pending <release-file> <wave-epoch>
+# True when `dx review release` asked, during this wave, for the Phase 3 hold to
+# wake the session. A request from before the wave started is stale: it is
+# removed, so it cannot cut the first hold of a later wave short.
+dx_hold_release_pending() {
+  local release_file="$1" wave_epoch="$2" requested=""
+  [[ -f "$release_file" || -L "$release_file" ]] || return 1
+  if [[ -f "$release_file" && ! -L "$release_file" && -O "$release_file" ]]; then
+    IFS= read -r requested < "$release_file" 2>/dev/null || true
+    if [[ "$requested" =~ ^[0-9]+$ && "$wave_epoch" =~ ^[0-9]+$ \
+      && "$requested" -ge "$wave_epoch" ]]; then
+      return 0
+    fi
+  fi
+  rm -f "$release_file"
+  return 1
+}
+
 # dx_review_progress_message <running|finished> [wave]
 # The systemMessage a Phase 3 hold release shows the person watching the pane:
 # the review loop's one-line status from dx_review_status. A wave that just
@@ -1658,9 +1697,18 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     fi
     # The hook itself runs under a 30-minute provider budget; leave margin.
     [[ "$BUSY_RECHECK_SECONDS" -le 1740 ]] || BUSY_RECHECK_SECONDS=1740
+    # `dx review release`, run from another pane, ends the hold early so a
+    # message typed during it is delivered. The check rides the same 2s poll,
+    # so without a request the hold and its wakes are unchanged.
+    HOLD_RELEASE_FILE=$(dx_phase_hold_release_file "$SESSION_ID" 3)
+    HOLD_RELEASED=0
     if [[ "$BUSY_RECHECK_SECONDS" -gt 0 ]]; then
       BUSY_POLL_DEADLINE=$(( $(date +%s) + BUSY_RECHECK_SECONDS ))
       while [[ -f "$PHASE_BUSY_FILE" ]]; do
+        if dx_hold_release_pending "$HOLD_RELEASE_FILE" "$BUSY_EPOCH"; then
+          HOLD_RELEASED=1
+          break
+        fi
         BUSY_POLL_NOW=$(date +%s)
         [[ "$BUSY_POLL_NOW" -lt "$BUSY_POLL_DEADLINE" ]] || break
         BUSY_SLEEP_SECONDS=$((BUSY_POLL_DEADLINE - BUSY_POLL_NOW))
@@ -1669,6 +1717,8 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
         sleep "$BUSY_SLEEP_SECONDS"
       done
     fi
+
+    rm -f "$HOLD_RELEASE_FILE"
 
     if [[ ! -f "$PHASE_BUSY_FILE" ]]; then
       rm -f "$PHASE_BUSY_NOTICE_FILE"
@@ -1688,6 +1738,9 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     # the model awake past the prompt cache and resends the conversation
     # uncached, so the instruction is to end the turn at once.
     BUSY_WAIT_REASON="Review wave still running (${BUSY_WAIT_TEXT}). Dex holds this wait and wakes you when the wave finishes. End your turn again now with a one-line status: do not run commands, sleep or poll."
+    if [[ "$HOLD_RELEASED" -eq 1 ]]; then
+      BUSY_WAIT_REASON="The user released this hold with dx review release, so a message from them may follow. ${BUSY_WAIT_REASON}"
+    fi
     # The person watching the pane sees one progress line per release; the
     # wake count and the hold length are unchanged.
     dx_stop_json_block "$BUSY_WAIT_REASON" "$(dx_review_progress_message running)"
@@ -2051,9 +2104,19 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
     # The project's own recall for the phase it is handing to, labelled
     # unverified. Empty when .dex/dex.md declares no phase_handoff provider.
     HANDOFF_RECALL=$(dx_context_provider_block phase_handoff "$NEXT_PHASE" "$SESSION_ID")
+    # Claude Code takes the handoff as additionalContext, which it shows to the
+    # model as a system reminder; its docs advise factual wording there. Codex
+    # and an unknown agent keep the structured block.
+    HANDOFF_QUIET=0
+    [[ "${DX_PROVIDER_AGENT:-}" == "claude" ]] && HANDOFF_QUIET=1
     HANDOFF_REASON=$(
-      printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
-      printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
+      if [[ "$HANDOFF_QUIET" -eq 1 ]]; then
+        printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} is complete, and Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE")) is now active in this same agent session."
+        printf '%s\n\n' "The lifecycle continues here without asking the user whether to proceed. The Phase ${NEXT_PHASE} instructions follow."
+      else
+        printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
+        printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
+      fi
       # An inline handoff does not relaunch the provider, so the snapshot it was
       # started with is as old as the session. This line is the refresh.
       printf '%s\n\n' "$(dx_host_handoff_line)"
@@ -2061,8 +2124,12 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       [[ -z "$HANDOFF_RECALL" ]] || printf '\n%s\n' "$HANDOFF_RECALL"
       printf '\n%s\n' "When Phase ${NEXT_PHASE} is genuinely complete, stop so the Stop hook can audit it."
     )
-    dx_stop_json_block "$HANDOFF_REASON" \
-      "Dex · Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} · $(dx_phase_name "$NEXT_PHASE")"
+    HANDOFF_MESSAGE="Dex · Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} · $(dx_phase_name "$NEXT_PHASE")"
+    if [[ "$HANDOFF_QUIET" -eq 1 ]]; then
+      dx_stop_json_continue "$HANDOFF_REASON" "$HANDOFF_MESSAGE"
+    else
+      dx_stop_json_block "$HANDOFF_REASON" "$HANDOFF_MESSAGE"
+    fi
     exit 0
   fi
 

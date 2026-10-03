@@ -770,4 +770,135 @@ assert_contains "Usage: dx control" "$TMP_DIR/bare-help.out"
 assert_rejected "$LINENO" bash "$CONTROL" stop > "$TMP_DIR/bare-stop.out" 2>&1
 assert_contains "No active Dex lifecycle" "$TMP_DIR/bare-stop.out"
 
+# waiver_comment (#60): an agent waiver's reason goes on the open PR when the
+# project opts in. gh is faked: FAKE_GH_PR is the open PR number (empty for
+# none), and FAKE_GH_LIST / FAKE_GH_COMMENT=error make that call fail.
+FAKE_GH_BIN="$TMP_DIR/fake-gh-bin"
+export FAKE_GH_LOG="$TMP_DIR/fake-gh.log" FAKE_GH_COMMENTS="$TMP_DIR/fake-gh-comments"
+mkdir -p "$FAKE_GH_BIN"
+cat > "$FAKE_GH_BIN/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+case "$1 $2" in
+  "pr list")
+    [[ "${FAKE_GH_LIST:-}" != error ]] || exit 1
+    printf '%s\n' "${FAKE_GH_PR:-}"
+    ;;
+  "pr comment")
+    [[ "${FAKE_GH_COMMENT:-}" != error ]] || exit 1
+    while [[ $# -gt 0 && "$1" != --body-file ]]; do shift; done
+    { printf 'PR %s\n' "${FAKE_GH_PR:-}"; cat "$2"; printf '%s\n' '---'; } >> "$FAKE_GH_COMMENTS"
+    ;;
+  *) exit 1 ;;
+esac
+GH
+chmod +x "$FAKE_GH_BIN/gh"
+
+set_waiver_comment() { # <value>
+  mkdir -p "$REPO/.dex"
+  printf '# Test\n\n## Pull Requests\n\n```yaml\nwaiver_comment: %s\n```\n' "$1" > "$REPO/.dex/dex.md"
+}
+
+run_waiver() { # <sid> <out> [extra control args...]
+  local run_sid="$1" run_out="$2"
+  shift 2
+  setup_attribution_lifecycle "$run_sid"
+  : > "$FAKE_GH_LOG"
+  : > "$FAKE_GH_COMMENTS"
+  env PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$run_sid" bash "$CONTROL" waive \
+    verification.required-gates "$@" > "$run_out" 2>&1
+}
+
+waiver_row_count() { # <sid>
+  local count_file
+  count_file=$(dx_override_file "$1")
+  [[ -f "$count_file" ]] || { printf '0\n'; return 0; }
+  awk -F '\t' '$3 == "waive"' "$count_file" | wc -l | tr -d ' '
+}
+
+WC_SESSION="$(dx_session_repo_key)-waiver-comment"
+
+# No setting: nothing reaches gh and the waiver records as before.
+rm -rf "$REPO/.dex"
+FAKE_GH_PR=7 run_waiver "$WC_SESSION" "$TMP_DIR/wc-unset.out" --reason "Only the dex#1 baseline fails"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "unset waiver_comment makes no gh call"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "unset waiver_comment records the waiver"
+dx_cleanup_session "$WC_SESSION"
+
+# off: the same.
+set_waiver_comment off
+FAKE_GH_PR=7 run_waiver "$WC_SESSION" "$TMP_DIR/wc-off.out" --reason "Only the dex#1 baseline fails"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "waiver_comment off makes no gh call"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "waiver_comment off records the waiver"
+dx_cleanup_session "$WC_SESSION"
+
+# on, with an open PR: one comment naming the gate, source, phase and reason,
+# with every @ stripped so nobody is mentioned.
+set_waiver_comment on
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-on.out" \
+  --reason "Flaky upstream check; ask @someone or @copilot later"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "waiver_comment on records the waiver"
+assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "waiver_comment on posts one comment"
+assert_contains 'the `verification.required-gates` gate was waived in Phase 2' "$FAKE_GH_COMMENTS"
+assert_contains "Source: agent" "$FAKE_GH_COMMENTS"
+assert_contains "Reason: Flaky upstream check; ask someone or copilot later" "$FAKE_GH_COMMENTS"
+! grep -Fq '@' "$FAKE_GH_COMMENTS" || assert_at $LINENO
+assert_contains "pr list --state open --head" "$FAKE_GH_LOG"
+dx_cleanup_session "$WC_SESSION"
+
+# on, with no open PR: nothing is posted and the waiver still records.
+FAKE_GH_PR='' run_waiver "$WC_SESSION" "$TMP_DIR/wc-on-no-pr.out" --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "no PR still records the waiver"
+assert_eq "" "$(cat "$FAKE_GH_COMMENTS")" "no PR posts nothing"
+dx_cleanup_session "$WC_SESSION"
+
+# on, when the post fails: the waiver is recorded and the failure only warns.
+FAKE_GH_PR=42 FAKE_GH_COMMENT=error run_waiver "$WC_SESSION" "$TMP_DIR/wc-on-fail.out" \
+  --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "a failed post under on keeps the waiver"
+assert_contains "its PR comment could not be posted" "$TMP_DIR/wc-on-fail.out"
+dx_cleanup_session "$WC_SESSION"
+
+# A human waiver never posts.
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-human.out" --source human \
+  --reason "The operator accepted the baseline failure"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "a human waiver makes no gh call"
+dx_cleanup_session "$WC_SESSION"
+
+# required: a failed post, or a failed PR lookup, refuses the waiver.
+set_waiver_comment required
+if FAKE_GH_PR=42 FAKE_GH_COMMENT=error run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-fail.out" \
+  --reason "Only the dex#1 baseline fails"; then
+  assert_at $LINENO
+fi
+assert_contains "The waiver was not recorded" "$TMP_DIR/wc-required-fail.out"
+assert_eq "0" "$(waiver_row_count "$WC_SESSION")" "a failed required post records nothing"
+dx_cleanup_session "$WC_SESSION"
+if FAKE_GH_LIST=error run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-list.out" \
+  --reason "Only the dex#1 baseline fails"; then
+  assert_at $LINENO
+fi
+assert_contains "could not look up the open PR" "$TMP_DIR/wc-required-list.out"
+assert_eq "0" "$(waiver_row_count "$WC_SESSION")" "a failed required lookup records nothing"
+dx_cleanup_session "$WC_SESSION"
+
+# required, posted: the comment goes up before the waiver records.
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-required.out" --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with a posted comment records the waiver"
+assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required posts one comment"
+dx_cleanup_session "$WC_SESSION"
+
+# required, with no open PR: nothing to post, so the waiver records.
+FAKE_GH_PR='' run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-no-pr.out" --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with no PR records the waiver"
+dx_cleanup_session "$WC_SESSION"
+
+# An unrecognised value warns and behaves as off.
+set_waiver_comment always
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-bad.out" --reason "Only the dex#1 baseline fails"
+assert_contains "expected off, on or required" "$TMP_DIR/wc-bad.out"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "an unrecognised waiver_comment makes no gh call"
+dx_cleanup_session "$WC_SESSION"
+rm -rf "$REPO/.dex"
+
 printf 'lifecycle control CLI tests passed\n'

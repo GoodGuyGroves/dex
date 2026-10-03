@@ -1016,6 +1016,9 @@ dx_review_loop_run() {
     dx_error "Could not derive a safe review session id."
     return 1
   fi
+  # The review base and policy are read through this id, here and in every
+  # child (each child gets it explicitly), so all of them see one scope.
+  local -x DEX_POLICY_SESSION_ID="$session_id"
 
   local parent_criteria_file parent_criteria_approval_file review_criteria_binding="standalone"
   parent_criteria_file=$(dx_review_criteria_file "$session_id") || {
@@ -1230,6 +1233,8 @@ dx_review_loop_run() {
   local branch
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
   [[ -n "$branch" ]] || branch="HEAD"
+  # Once per loop, so every wave and acceptance check reads the same base.
+  dx_review_base_resolve "$PWD" "$session_id" >/dev/null 2>&1 || true
   scope_snapshot=$(__dx_review_scope_snapshot "$PWD") || {
     dx_error "Could not resolve the review comparison scope."
     return 1

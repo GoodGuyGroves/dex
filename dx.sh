@@ -40,6 +40,7 @@
 #   dx worktree audit       Compare Dex, git and the project's own worktree resources
 #   dx review stats         Report review-loop history per risk tier
 #   dx review status        Summarise the current review loop and running wave
+#   dx review release       Wake a session Dex holds during a review wave
 #   dx ui-capture           Capture or inspect temporary UI proof
 #   dex                   Alias for dx
 #   dexter                Alias for dx
@@ -201,6 +202,7 @@ __dx_cli() {
       echo "  dx worktree audit   Compare Dex, git and the project's own worktree resources"
       echo "  dx review stats     Review-loop history per risk tier, from telemetry"
       echo "  dx review status    The current review loop: wave, clean streak, running stage"
+      echo "  dx review release   Wake a session Dex holds during a review wave, so your message gets through"
       echo "  dx ui-capture       Capture, revise, inspect, or skip temporary UI proof"
       echo "  dx research         Run autonomous research orchestrator"
       echo "                        Defaults: --max-cycles 20; SCENARIO_TIMEOUT 3600s (1h) per scenario"
@@ -4335,7 +4337,7 @@ dx() {
         # Management commands own their --session selector.
         if [[ -z "$dx_prompt_mode" && ${#dx_args[@]} -gt 0 ]]; then
           case "${dx_args[1]}" in
-            route|model|context|control|sessions|run)
+            route|model|context|control|sessions|run|review)
               dx_args+=("$@")
               break
               ;;

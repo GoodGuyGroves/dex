@@ -29,7 +29,7 @@ unset DEX_LOOP_ACTIVE DEX_REVIEW_PASS_ACTIVE DEX_PHASE_HANDOFF DEX_LOOP_PHASE \
   DEX_LOOP_PROMISE DEX_LOOP_PROMPT DEX_LOOP_MIN_AUDITS DEX_LOOP_MAX_ITERATIONS \
   DEX_LOOP_STALL_TIMEOUT DEX_LOOP_STALL_ESCALATE DEX_COMPLETE_WAIT_MINUTES \
   DEX_REVIEW_PASS_TIMEOUT \
-  DEX_REVIEW_PASS_RECHECK_SECONDS DEX_SESSION_ID
+  DEX_REVIEW_PASS_RECHECK_SECONDS DEX_SESSION_ID DX_PROVIDER_AGENT
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dex-phase-loop-test.XXXXXX")"
 cleanup() {
@@ -734,6 +734,63 @@ python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["systemMessage"
 dx_completion_cleanup "$SID"
 rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
 
+# --- case 5d: dx review release ends the hold early (#71) ---
+# Claude Code holds a message typed during the Phase 3 hold until the hook
+# returns. `dx review release`, run from another pane, ends the hold within a
+# poll or two while the wave keeps running. A request older than the wave is
+# stale and is cleared when the hold starts.
+SID="repo-test-5d-hold-release"
+printf '%s\n' "3" > "$DX_STATE_DIR/$SID.phase"
+printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+configure_lifecycle_completion "$SID" 3 "$ROOT/prompts/phase-audits/3-review-loop.md"
+touch "$DX_LOOP_DIR/$SID.active"
+dx_phase_busy_begin "$SID" 3 "Wave 1 · scouting · 0/2 clean" 3600 >/dev/null
+RELEASE_FILE="$(dx_phase_hold_release_file "$SID" 3)"
+printf '1\n' > "$RELEASE_FILE"
+chmod 600 "$RELEASE_FILE"
+RELEASE_OUT="$TMP_DIR/release.out"
+printf '1:0:0\n' > "$(dx_loop_file "$SID")"
+printf '{"session_id":"claude-release"}' | env \
+  DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
+  DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=60 \
+  bash "$HOOK" > "$RELEASE_OUT" 2>&1 &
+RELEASE_PID=$!
+wait_for_hold "$SID"
+sleep 3
+if kill -0 "$RELEASE_PID" 2>/dev/null; then report "stale release request does not end the hold" 0; else report "stale release request does not end the hold" 1; fi
+if [[ ! -e "$RELEASE_FILE" ]]; then report "stale release request is cleared" 0; else report "stale release request is cleared" 1; fi
+env DEX_SESSION_ID="$SID" bash "$ROOT/bin/review.sh" release > "$TMP_DIR/release-cli.out" 2>&1 \
+  || fail "dx review release failed during an active hold"
+grep -Fq "Asked Dex to wake ${SID}" "$TMP_DIR/release-cli.out" || fail "dx review release did not confirm the request"
+RELEASE_WAITED=0
+while kill -0 "$RELEASE_PID" 2>/dev/null && [[ "$RELEASE_WAITED" -lt 100 ]]; do
+  sleep 0.1
+  RELEASE_WAITED=$((RELEASE_WAITED + 1))
+done
+if kill -0 "$RELEASE_PID" 2>/dev/null; then
+  kill "$RELEASE_PID" 2>/dev/null || true
+  fail "dx review release did not end the hold within 10s"
+fi
+set +e
+wait "$RELEASE_PID"
+RC=$?
+set -e
+OUT="$(cat "$RELEASE_OUT")"
+assert_rc "released hold exits cleanly" 0
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block" and p["suppressOutput"] is True, p; assert "released this hold with dx review release" in p["reason"], p; assert "Review wave still running" in p["reason"], p; assert p["systemMessage"].startswith("Dex · "), p' "$OUT" \
+  || fail "released hold did not return the still-running block"
+if [[ -f "$(dx_phase_busy_file "$SID" 3)" ]]; then report "the wave keeps running after a release" 0; else report "the wave keeps running after a release" 1; fi
+if [[ ! -e "$RELEASE_FILE" ]]; then report "a release request is consumed" 0; else report "a release request is consumed" 1; fi
+
+# With no wave running there is nothing to release, and nothing is written.
+rm -f "$(dx_phase_busy_file "$SID" 3)"
+env DEX_SESSION_ID="$SID" bash "$ROOT/bin/review.sh" release > "$TMP_DIR/release-idle.out" 2>&1 \
+  || fail "dx review release with no wave should succeed"
+grep -Fq "nothing to release" "$TMP_DIR/release-idle.out" || fail "idle release did not say so"
+if [[ ! -e "$RELEASE_FILE" ]]; then report "idle release writes nothing" 0; else report "idle release writes nothing" 1; fi
+dx_completion_cleanup "$SID"
+rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+
 # --- case 6: every centralized review result alias is accepted ---
 VALID_REVIEW_RESULTS=(
   "CHURN:repeated-fingerprint"
@@ -940,6 +997,51 @@ assert_out_contains "Phase 3 handoff records accepted fixes" "Commit and push ac
 assert_out_lacks "Phase 3 handoff does not defer review-fix history" "Do not commit, push, or create a PR in Phase 3"
 assert_file_eq "Phase 2 selection advances to Phase 3" "$DX_STATE_DIR/$SID.phase" "3"
 rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+
+# Under Claude Code the same handoff is additionalContext with exit 0, which
+# continues the conversation without the pane reporting a Stop hook error.
+# Codex, and a launch that names no agent (above), keep the structured block.
+for HANDOFF_AGENT in claude codex; do
+  SID="repo-test-7-handoff-${HANDOFF_AGENT}"
+  touch "$DX_LOOP_DIR/$SID.active" "$DX_LOOP_DIR/$SID.phase-2.ready"
+  printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+  printf '%s\n' "2" > "$DX_STATE_DIR/$SID.phase"
+  configure_lifecycle_completion "$SID" 2 "$ROOT/prompts/phase-audits/2-implement.md"
+  write_review_criteria "$SID"
+  dx_review_approve_criteria "$SID" initial "$(dx_review_criteria_hash "$(dx_review_criteria_file "$SID")")" >/dev/null
+  dx_review_write_selection "$SID" normal lifecycle-agent bounded-production-change "$REVIEW_REPO"
+  write_lifecycle_completion "$SID" 2
+  set +e
+  OUT="$(cd "$REVIEW_REPO" && printf '{"session_id":"claude-phase-2-handoff"}' | env DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=2 DEX_PHASE_HANDOFF=inline DX_PROVIDER_AGENT="$HANDOFF_AGENT" bash "$HOOK" 2>&1)"
+  RC=$?
+  set -e
+  assert_rc "${HANDOFF_AGENT} Phase 2 handoff exits 0" 0
+  if [[ "$HANDOFF_AGENT" == claude ]]; then
+    python3 -c 'import json,sys
+p = json.loads(sys.argv[1])
+assert "decision" not in p and "reason" not in p, p
+out = p["hookSpecificOutput"]
+assert out["hookEventName"] == "Stop", p
+ctx = out["additionalContext"]
+assert "Phase 2 is complete, and Phase 3 (Review) is now active in this same agent session." in ctx, ctx
+assert "Commit and push accepted review fixes" in ctx, ctx
+assert "When Phase 3 is genuinely complete" in ctx, ctx
+assert p["systemMessage"] == "Dex · Phase 2 complete → Phase 3 · Review", p
+assert p["suppressOutput"] is True, p
+' "$OUT" || fail "Claude Phase 2 handoff was not quiet additionalContext"
+  else
+    python3 -c 'import json,sys
+p = json.loads(sys.argv[1])
+assert p["decision"] == "block", p
+assert "Phase Handoff: Phase 2 complete" in p["reason"], p
+assert "hookSpecificOutput" not in p, p
+assert p["systemMessage"] == "Dex · Phase 2 complete → Phase 3 · Review", p
+' "$OUT" || fail "Codex Phase 2 handoff did not keep the structured block"
+  fi
+  assert_file_eq "${HANDOFF_AGENT} handoff advances to Phase 3" "$DX_STATE_DIR/$SID.phase" "3"
+  rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+done
+SID="repo-test-7-main"
 
 # --- case 8: a legacy Phase 3 marker is rejected before review gates run ---
 SID="repo-test-8-main"

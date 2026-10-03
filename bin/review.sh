@@ -7,12 +7,17 @@ usage() {
   cat <<USAGE
 Usage: dx review stats [--json] [--root <dir>]
        dx review status [--json | --line] [--session <id>]
+       dx review release [--session <id>]
        dx review -h | --help
 
 status: the current review loop for this session (or --session): tier, wave N
 of the budget, clean streak, the running wave's stage and elapsed time against
 its timeout, and each finished wave's verdict. It reads the run's events.jsonl
 and the Phase 3 busy record, and changes nothing.
+
+release: wake a Phase 3 session that Dex is holding while a review wave runs,
+so a message you type in that session is delivered within a few seconds instead
+of when the hold ends. Run it from another pane. The wave keeps running.
 
 stats: report what the review loop actually did, per risk tier, from the telemetry
 Dex already writes under $DX_RUN_ROOT/*/events.jsonl.
@@ -29,7 +34,7 @@ in the pull request that changes it.
 Options:
   --json         Emit the rows (stats) or the summary (status) as JSON
   --line         status only: one line, as the Phase 3 wait shows it
-  --session <id> status only: summarise this Dex session instead of the current one
+  --session <id> status, release: act on this Dex session instead of the current one
   --root <dir>   stats only: read telemetry from this directory instead of $DX_RUN_ROOT
   -h, --help     Show this help
 USAGE
@@ -69,6 +74,33 @@ case "$REVIEW_COMMAND" in
       exit 2
     fi
     dx_review_status "$STATUS_SESSION" "$STATUS_FORMAT"
+    ;;
+  release)
+    RELEASE_SESSION="${DEX_SESSION_ID:-}"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --session)
+          [[ $# -ge 2 ]] || { dx_error "--session needs a session id"; exit 2; }
+          RELEASE_SESSION="$2"
+          shift
+          ;;
+        -h|--help) usage; exit 0 ;;
+        *) dx_error "Unknown review release option: $1"; usage; exit 2 ;;
+      esac
+      shift
+    done
+    [[ -n "$RELEASE_SESSION" ]] || RELEASE_SESSION=$(dx_session_id)
+    if ! dx_session_id_valid "$RELEASE_SESSION"; then
+      dx_error "Not a valid Dex session id: ${RELEASE_SESSION}"
+      exit 2
+    fi
+    RELEASE_RC=0
+    dx_review_hold_release "$RELEASE_SESSION" || RELEASE_RC=$?
+    case "$RELEASE_RC" in
+      0) dx_done "Asked Dex to wake ${RELEASE_SESSION}; a message typed there is delivered within a few seconds" ;;
+      3) dx_info "No review wave is running for ${RELEASE_SESSION}; nothing to release" ;;
+      *) dx_error "Could not write the release request for ${RELEASE_SESSION}"; exit 1 ;;
+    esac
     ;;
   *)
     dx_error "Unknown review command: ${REVIEW_COMMAND}"

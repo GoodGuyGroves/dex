@@ -244,7 +244,8 @@ If the table is empty or only contains `_none_` rows, Phase 6 skips review-reque
 ## Pull Requests
 
 Optional, like `## Resources`. Omit the section unless the project has its own
-PR template file or path-based label conventions.
+PR template file, path-based label conventions, or wants agent waivers posted
+on the PR.
 
 ```yaml
 # template replaces Dex's default PR description structure in Phase 5.
@@ -253,6 +254,7 @@ template: [repo-relative path to the PR template]
 # a matching path; the label must already exist in the repository.
 labels_when:
   - "[glob] => [label]"
+# waiver_comment: off  # or on (post an agent waiver's reason on the open PR), or required (refuse the waiver if that post fails)
 ```
 
 ## Rules
