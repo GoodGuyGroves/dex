@@ -4337,7 +4337,7 @@ dx() {
         # Management commands own their --session selector.
         if [[ -z "$dx_prompt_mode" && ${#dx_args[@]} -gt 0 ]]; then
           case "${dx_args[1]}" in
-            route|model|context|control|sessions|run)
+            route|model|context|control|sessions|run|review)
               dx_args+=("$@")
               break
               ;;

@@ -3660,15 +3660,6 @@ print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 PY
 }
 
-# dx_review_status <session_id> <text|json|line> [finished_wave]
-# Summarise the session's current review loop from its run journal and the
-# Phase 3 busy record (`dx review status`, and the Stop hook's progress line
-# while it holds a review wait). The busy record is parsed here by its
-# validating reader, so the python formatter only sees checked values.
-# DEX_RUN_ID names the caller's own run; another session's run comes from that
-# session's mapping, or a status for one session would read another's journal.
-# finished_wave limits a between-waves line to that wave's result (see
-# $DEX_DIR/scripts/review_status.py).
 # dx_review_hold_release <session_id>
 # Ask the session's Phase 3 hold to wake it now, so a message typed while Dex
 # holds the review wait is delivered within a few seconds instead of when the
@@ -3682,6 +3673,15 @@ dx_review_hold_release() {
   dx_session_private_atomic_write "$(dx_phase_hold_release_file "$session_id" 3)" "$(date +%s)"
 }
 
+# dx_review_status <session_id> <text|json|line> [finished_wave]
+# Summarise the session's current review loop from its run journal and the
+# Phase 3 busy record (`dx review status`, and the Stop hook's progress line
+# while it holds a review wait). The busy record is parsed here by its
+# validating reader, so the python formatter only sees checked values.
+# DEX_RUN_ID names the caller's own run; another session's run comes from that
+# session's mapping, or a status for one session would read another's journal.
+# finished_wave limits a between-waves line to that wave's result (see
+# $DEX_DIR/scripts/review_status.py).
 dx_review_status() {
   local session_id="$1" format="${2:-text}" finished_wave="${3:-}"
   local run_id="" events_file=""
