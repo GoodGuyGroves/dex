@@ -506,6 +506,22 @@ remaining gate and advances without a review receipt. Other assurance gates,
 such as `verification.required-gates`, use the named waiver path. Neither form
 labels an unverified check as passed.
 
+A waiver's reason lives in Dex's own state (`.overrides`, `events.jsonl`), so
+whoever merges the PR doesn't see it unless they look. A project can opt in to
+putting it on the PR with `waiver_comment` in the `## Pull Requests` block of
+`.dex/dex.md`:
+
+| Value | Agent waiver on a branch with an open PR |
+|-------|------------------------------------------|
+| `off` (default) | Nothing is posted |
+| `on` | The waiver records, then one PR comment names the gate, source, phase and reason. A failed post warns and the waiver stands |
+| `required` | The comment is posted first. If the PR lookup or the post fails, the waiver is refused and nothing is recorded |
+
+With no open PR, nothing is posted and the waiver records in every mode. Only
+`--source agent` waivers post; a human's waiver is their own decision. The
+comment goes through `dx_reviewer_comment`, and every `@` is removed from its
+text, so it never mentions a person, a team or the Copilot coding agent.
+
 Provider deadlines for review, `dx sync`, and maintenance are live. Their
 supervisors re-read policy once per second, so increasing, shortening,
 disabling, clearing, or expiring an override affects the process already

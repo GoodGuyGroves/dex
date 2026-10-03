@@ -198,6 +198,32 @@ record_control_waiver() {
     "$CONTROL_ORIGIN" "$CONTROL_REASON"
 }
 
+# The checkout an agent waiver's PR comment belongs to: the lifecycle's
+# worktree, else the repository the command runs in.
+waiver_comment_repo() {
+  local repo
+  repo=$(dx_meta_read "$SESSION_ID" wt_dir 2>/dev/null || true)
+  if [[ -n "$repo" && -d "$repo" ]]; then
+    git -C "$repo" rev-parse --show-toplevel 2>/dev/null && return 0
+  fi
+  git rev-parse --show-toplevel 2>/dev/null
+}
+
+# Under waiver_comment: required the comment is posted before the waiver is
+# recorded, so the arguments are checked the way dx_override_waive checks them.
+waiver_preflight() {
+  dx_override_gate_valid "$CONTROL_GATE" \
+    && dx_override_gate_supported "$CONTROL_GATE" \
+    && [[ "$CONTROL_GATE" != "review.max-waves" ]] \
+    && dx_override_phase_valid "$CURRENT_PHASE" \
+    && dx_override_reason_valid "$CONTROL_REASON"
+}
+
+post_waiver_comment() {
+  dx_waiver_comment_post "$SESSION_ID" "$WAIVER_COMMENT_REPO" "$CONTROL_GATE" \
+    "$CURRENT_PHASE" "$CONTROL_ORIGIN" "$CONTROL_REASON" >/dev/null
+}
+
 EXACT_SESSION_ID=""
 if [[ "${1:-}" == "--session" ]]; then
   if [[ $# -lt 2 || -z "${2:-}" ]]; then
@@ -509,10 +535,30 @@ case "$COMMAND" in
     }
     [[ "$CURRENT_PHASE" =~ ^[0-6]$ ]] || { dx_error "No resumable lifecycle phase was found."; exit 1; }
     if [[ "$COMMAND" == "waive" ]]; then
+      # waiver_comment (off by default) puts an agent waiver's reason on the PR.
+      WAIVER_COMMENT_MODE="off"
+      WAIVER_COMMENT_REPO=""
+      if [[ "$CONTROL_ORIGIN" == "agent" ]] \
+        && WAIVER_COMMENT_REPO=$(waiver_comment_repo) && [[ -n "$WAIVER_COMMENT_REPO" ]]; then
+        WAIVER_COMMENT_MODE=$(dx_waiver_comment_setting "$WAIVER_COMMENT_REPO")
+      fi
+      if [[ "$WAIVER_COMMENT_MODE" == "required" ]]; then
+        waiver_preflight || {
+          dx_error "Could not record the waiver. Check its gate and lifecycle state."
+          exit 1
+        }
+        post_waiver_comment || {
+          dx_error "waiver_comment is required, and the waiver's PR comment could not be posted. The waiver was not recorded."
+          exit 1
+        }
+      fi
       record_control_waiver || {
         dx_error "Could not record the waiver. Check its gate and lifecycle state."
         exit 1
       }
+      if [[ "$WAIVER_COMMENT_MODE" == "on" ]] && ! post_waiver_comment; then
+        dx_warn "The waiver is recorded, but its PR comment could not be posted."
+      fi
     elif [[ -n "$CONTROL_REASON" ]]; then
       record_control_policy phase.completion waived || exit 1
     fi

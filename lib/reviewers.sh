@@ -255,6 +255,81 @@ dx_reviewer_comment() {
   return "$rc"
 }
 
+# --- Waiver comments ----------------------------------------------------------
+
+# dx_waiver_comment_setting <repo-dir>
+# The project's waiver_comment under `## Pull Requests`: off (the default), on
+# or required. A value Dex does not recognise, or a block that is not a flat
+# mapping, gives off with a warning.
+dx_waiver_comment_setting() {
+  local waiver_repo="${1:-}" waiver_value="" waiver_rc=0
+  # Most repositories never set this: spare them the python3 start.
+  if [[ -z "$waiver_repo" ]] || ! grep -q 'waiver_comment' "$waiver_repo/.dex/dex.md" 2>/dev/null; then
+    printf 'off\n'
+    return 0
+  fi
+  waiver_value=$(dx_project_contract_values "$waiver_repo" "Pull Requests" waiver_comment 2>/dev/null) \
+    || waiver_rc=$?
+  if [[ "$waiver_rc" -eq 1 ]]; then
+    printf 'off\n'
+    return 0
+  fi
+  if [[ "$waiver_rc" -ne 0 ]]; then
+    dx_warn "Ignoring '## Pull Requests' in ${waiver_repo}/.dex/dex.md: it is not a flat mapping. Using waiver_comment: off."
+    printf 'off\n'
+    return 0
+  fi
+  case "$waiver_value" in
+    off|on|required) printf '%s\n' "$waiver_value" ;;
+    *)
+      dx_warn "Ignoring waiver_comment: '${waiver_value}' in ${waiver_repo}/.dex/dex.md (expected off, on or required). Using off."
+      printf 'off\n'
+      ;;
+  esac
+}
+
+# __dx_waiver_comment_body <gate> <phase> <source> <reason>
+# Every @ is removed, so the comment can never mention a person, a team or the
+# Copilot coding agent, whatever the reason text says.
+__dx_waiver_comment_body() {
+  printf 'Dex waiver: the `%s` gate was waived in Phase %s.\n\nSource: %s\nReason: %s\n' \
+    "$1" "$2" "$3" "$4" | LC_ALL=C tr -d '@'
+}
+
+# dx_waiver_comment_post <session> <repo-dir> <gate> <phase> <source> <reason>
+# Post one comment naming a waiver on the checked-out branch's open PR. Prints
+# `posted <pr>` or `no-pr` and returns 0. Returns 1 when the open PR could not
+# be looked up and 3 when the post failed, with the reason on stderr.
+dx_waiver_comment_post() {
+  [[ $# -eq 6 ]] || return 2
+  local waiver_session="$1" waiver_repo="$2" waiver_branch="" waiver_pr="" waiver_body
+  waiver_branch=$(git -C "$waiver_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  if [[ -z "$waiver_branch" ]]; then
+    printf 'no-pr\n'
+    return 0
+  fi
+  if ! command -v gh >/dev/null 2>&1; then
+    printf '%s\n' "dex: gh is not available, so the open PR for ${waiver_branch} could not be looked up" >&2
+    return 1
+  fi
+  if ! waiver_pr=$(builtin cd "$waiver_repo" && __dx_reviewers_gh "$waiver_session" pr list \
+    --state open --head "$waiver_branch" --limit 1 --json number --jq '.[0].number // ""' 2>/dev/null) \
+    || [[ -n "$waiver_pr" && ! "$waiver_pr" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "dex: could not look up the open PR for ${waiver_branch}; check gh authentication" >&2
+    return 1
+  fi
+  if [[ -z "$waiver_pr" ]]; then
+    printf 'no-pr\n'
+    return 0
+  fi
+  waiver_body=$(__dx_waiver_comment_body "$3" "$4" "$5" "$6")
+  if ! (builtin cd "$waiver_repo" && dx_reviewer_comment "$waiver_session" "$waiver_pr" "$waiver_body"); then
+    printf '%s\n' "dex: could not post the waiver comment on PR #${waiver_pr}" >&2
+    return 3
+  fi
+  printf 'posted %s\n' "$waiver_pr"
+}
+
 # Prints "status<TAB>conclusion" for the newest Greptile check run on a commit,
 # or nothing when Greptile has not registered one there.
 __dx_reviewers_greptile_check() {

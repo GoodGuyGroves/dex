@@ -24,7 +24,7 @@ it.
 | `git.sh` | Git helpers, including safe tracker-branch adoption | `dx_default_branch()`, `dx_ticket_branch_prepare()`, `dx_slugify()` |
 | `lifecycle-control.sh` | Human/agent lifecycle pause, stop, phase transition, ownership, and audit receipts | `dx_write_lifecycle_control()`, `dx_lifecycle_control_read()`, `dx_lifecycle_control_lock_acquire()` |
 | `maintenance.sh` | Background maintenance config, workflow install, run IDs, locks, and reviewer normalization | `dx_maintenance_event_mode()`, `dx_maintenance_install_workflow()`, `dx_maintenance_run_id()`, `dx_maintenance_request_reviewer()`, `dx_maintenance_pr_review_state()` |
-| `reviewers.sh` | Reviewers table parsing, Greptile/Copilot adapter triggers, the Phase 6 reviewer wait gate, CI readiness, and cycle accounting | `dx_reviewers_rows()`, `dx_reviewer_trigger()`, `dx_reviewer_comment()`, `dx_reviewer_gate()`, `dx_complete_ci_state()`, `dx_complete_record_cycle()` |
+| `reviewers.sh` | Reviewers table parsing, Greptile/Copilot adapter triggers, the Phase 6 reviewer wait gate, CI readiness, cycle accounting, and the opt-in waiver PR comment | `dx_reviewers_rows()`, `dx_reviewer_trigger()`, `dx_reviewer_comment()`, `dx_waiver_comment_setting()`, `dx_waiver_comment_post()`, `dx_reviewer_gate()`, `dx_complete_ci_state()`, `dx_complete_record_cycle()` |
 | `pr-threads.sh` | The review-thread policy: per-outcome replies, reactions and resolves, open-thread listing for Phase 6, and backup-then-delete of a stray pending review | `dx_pr_thread_policy()`, `dx_pr_thread_respond()`, `dx_pr_threads_open()`, `dx_pr_pending_review_clear()` |
 | `override.sh` | Session policy journal, validation, expiry, and effective-value resolution | `dx_override_set()`, `dx_override_clear()`, `dx_override_list()`, `dx_override_effective()` |
 | `provider.sh` | Provider/model profile resolution, launch wrapping (including the session PATH), and diagnostics | `dx_provider_apply()`, `dx_provider_claude()`, `dx_session_path()`, `dx_provider_command()`, `dx_provider_doctor()` |
@@ -146,7 +146,8 @@ The environment values below are launch defaults. Active lifecycle consumers
 re-read the corresponding `dx control override` records without a provider
 relaunch. Review can use an override-bound lower target; named assurance
 waivers remain separate from passed results. See `docs/autonomous-mode.md` for
-the gate map.
+the gate map, and for `waiver_comment`, which can post an agent waiver's reason
+on the open PR.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
