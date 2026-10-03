@@ -265,7 +265,7 @@ Otherwise, for normal Phase 6/manual `/dxprreview` runs:
 2. **Commit format:** `fix(review): <description>`
    - Single fix: `fix(review): handle nil check in user lookup`
    - Multiple related fixes: `fix(review): address review feedback — nil check, error message, naming`
-   - Include `Co-Authored-By: Dex <noreply@dexcode.ai>` and do not include Claude attribution.
+   - Use the attribution the project's mode asks for (`$DEX_DIR/prompts/commit-format.md` § Attribution; in the default `dex` mode, `Co-Authored-By: Dex <noreply@dexcode.ai>` and no Claude attribution).
 3. **Push once:**
    ```bash
    git push

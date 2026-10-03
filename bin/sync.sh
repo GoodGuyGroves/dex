@@ -61,6 +61,8 @@ Options:
   --include-working-tree            Allow uncommitted changes as promotion evidence
   --bootstrap                       Also install or refresh Claude/Codex tooling
                                     (otherwise sync only checks it)
+  --no-attribution-hooks            Do not install or refresh the commit-msg attribution hooks
+  --no-pr-template                  Do not install .github/pull_request_template.md
   -h, --help                        Show this help
 USAGE
 }
@@ -87,6 +89,8 @@ TRACE_RETRIEVAL=""
 PHASE=""
 INCLUDE_WORKING_TREE=0
 BOOTSTRAP=0
+SYNC_ATTRIBUTION_OPT_OUTS=()
+SYNC_INIT_OPT_OUTS=()
 SYNC_BUDGET_MINUTES="${DEX_SYNC_BUDGET_MINUTES:-60}"
 SYNC_BUDGET_EXPLICIT=0
 
@@ -144,6 +148,16 @@ while [[ $# -gt 0 ]]; do
       ;;
     --bootstrap)
       BOOTSTRAP=1
+      shift
+      ;;
+    --no-attribution-hooks)
+      SYNC_ATTRIBUTION_OPT_OUTS+=(--no-hooks)
+      SYNC_INIT_OPT_OUTS+=(--no-attribution-hooks)
+      shift
+      ;;
+    --no-pr-template)
+      SYNC_ATTRIBUTION_OPT_OUTS+=(--no-pr-template)
+      SYNC_INIT_OPT_OUTS+=(--no-pr-template)
       shift
       ;;
     -h|--help)
@@ -230,7 +244,7 @@ if [[ $DEX_PROJECT_WAS_MISSING -eq 1 ]]; then
     dx_info "No .dex/ directory found; read-only sync will report the missing scaffold"
   else
     dx_info "No .dex/ directory found; running baseline project analysis first"
-    DEX_SKIP_TOOL_BOOTSTRAP=1 bash "$DEX_DIR/bin/init.sh" --skip-config
+    DEX_SKIP_TOOL_BOOTSTRAP=1 bash "$DEX_DIR/bin/init.sh" --skip-config ${SYNC_INIT_OPT_OUTS[@]+"${SYNC_INIT_OPT_OUTS[@]}"}
     BASELINE_ANALYSIS_RAN=1
   fi
 fi
@@ -238,7 +252,7 @@ fi
 if [[ "$READ_ONLY" -eq 0 && "$BASELINE_ANALYSIS_RAN" -eq 0 ]]; then
   if ! __dx_sync_project_context_complete "$repo_root"; then
     dx_info "Dex project context is incomplete; running baseline project analysis first"
-    DEX_SKIP_TOOL_BOOTSTRAP=1 bash "$DEX_DIR/bin/init.sh" --skip-config
+    DEX_SKIP_TOOL_BOOTSTRAP=1 bash "$DEX_DIR/bin/init.sh" --skip-config ${SYNC_INIT_OPT_OUTS[@]+"${SYNC_INIT_OPT_OUTS[@]}"}
     BASELINE_ANALYSIS_RAN=1
   fi
 fi
@@ -267,7 +281,7 @@ if [[ "$READ_ONLY" -eq 0 ]]; then
   fi
   dx_project_state_begin "$repo_root"
   SYNC_PROJECT_STATE_ACTIVE=1
-  dx_install_repo_attribution "$repo_root"
+  dx_install_repo_attribution "$repo_root" ${SYNC_ATTRIBUTION_OPT_OUTS[@]+"${SYNC_ATTRIBUTION_OPT_OUTS[@]}"}
 fi
 
 if [[ ! -f "$repo_root/.dex/memory/index.md" ]]; then
@@ -312,6 +326,10 @@ fi
 dx_info "Preparing DXSync provider session"
 dx_provider_apply || exit 1
 dx_provider_agent_ready_check || exit 1
+# The provider may rewrite dex.md. An `## Attribution` block it drops would
+# silently turn a hooks or template opt-out back into an install next time.
+SYNC_HAD_ATTRIBUTION=0
+grep -q '^## Attribution[[:space:]]*$' "$repo_root/.dex/dex.md" 2>/dev/null && SYNC_HAD_ATTRIBUTION=1
 sync_prompt=$(cat "$DEX_DIR/prompts/sync-memory.md")
 provider_prompt=$(dx_provider_prompt)
 invocation=$(cat <<EOF
@@ -373,6 +391,10 @@ if [[ $CLAUDE_EXIT -ne 0 ]]; then
     dx_error "Sync exited with code $CLAUDE_EXIT."
   fi
   exit "$CLAUDE_EXIT"
+fi
+
+if [[ "$SYNC_HAD_ATTRIBUTION" == "1" ]] && ! grep -q '^## Attribution[[:space:]]*$' "$repo_root/.dex/dex.md" 2>/dev/null; then
+  dx_warn "Sync removed the '## Attribution' block from .dex/dex.md; restore it to keep its settings"
 fi
 
 sync_status_after=$(git -C "$repo_root" status --porcelain=v1 -- .dex 2>/dev/null || true)

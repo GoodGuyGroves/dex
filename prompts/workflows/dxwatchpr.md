@@ -130,7 +130,7 @@ the reviewer gate when a Greptile reviewer row exists.
   - **Flaky tests**: if the same test fails intermittently with different error messages or passes on local rerun, retry once via `gh run rerun <id> --failed`. If it fails again on the same test, escalate with the test name and both failure outputs rather than attempting code fixes.
 - After fixing:
   1. Verify the fix locally with the specific failed check.
-  2. Commit with `fix(ci): <description>` and the Dex co-author trailer from `$DEX_DIR/prompts/commit-format.md`. Do not add Claude attribution.
+  2. Commit with `fix(ci): <description>` and the attribution the project's mode asks for (`$DEX_DIR/prompts/commit-format.md` § Attribution).
   3. Push. This triggers a new CI run.
   4. Continue to review/comment checks in this cycle if there is enough budget; otherwise exit and let the next loop invocation pick up the new run.
 

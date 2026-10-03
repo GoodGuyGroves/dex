@@ -53,8 +53,8 @@ commits relative to the default branch:
 - Commits are logically understandable rather than arbitrary splits made only
   to increase the commit count.
 - Every commit followed `$DEX_DIR/prompts/commit-format.md`: specific-file staging,
-  forbidden and sensitive file review, a conventional message, and Dex-only
-  attribution.
+  forbidden and sensitive file review, a conventional message, and the
+  attribution the project's mode asks for (`dx attribution mode`).
 - The newly created branch stayed local until its first branch-specific commit;
   no empty bootstrap commit was used to publish it.
 - The first implementation commit established upstream tracking, and every

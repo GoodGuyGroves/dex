@@ -456,6 +456,7 @@ validate_text(workflow_name, "workflow.name", 100)
 validate_text(workflow_version, "workflow.version", 100)
 requires_plan_approval = bool_at(workflow, "requires_plan_approval", "workflow", True)
 auto_merge = bool_at(workflow, "auto_merge", "workflow", False)
+auto_init = bool_at(workflow, "auto_init", "workflow", False)
 requires_ui_evidence = workflow.get("requires_ui_evidence", "auto")
 if isinstance(requires_ui_evidence, bool):
     requires_ui_evidence = "always" if requires_ui_evidence else "never"
@@ -544,6 +545,7 @@ normalized["workflow"] = {
     "requires_plan_approval": requires_plan_approval,
     "requires_ui_evidence": requires_ui_evidence,
     "auto_merge": auto_merge,
+    "auto_init": auto_init,
 }
 if ticket_close is not None:
     normalized["workflow"]["ticket_close"] = ticket_close

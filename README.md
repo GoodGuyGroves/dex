@@ -435,6 +435,14 @@ Dex skills are codebase-agnostic. They discover local commands and conventions a
 runtime, then use `.dex/` to avoid rediscovering stable project knowledge on
 every run.
 
+`dx init` also installs a commit-msg hook that adds Dex attribution and a PR
+template. The optional `## Attribution` block in `.dex/dex.md` chooses whose
+attribution commits and PRs carry, can add an `AI-Model` trailer naming the
+model that wrote each commit, and can turn either install off. If you start a
+lifecycle in a repository without `.dex/`, `dx` asks first, and a headless run
+needs `--init`, `DEX_AUTO_INIT=1` or `workflow.auto_init: true`. See
+[docs/reference.md#attribution](docs/reference.md#attribution).
+
 ## Provider Profiles
 
 A **profile** chooses how Dex launches its agent. A CCR **account** is a named

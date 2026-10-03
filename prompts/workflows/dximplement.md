@@ -85,7 +85,7 @@ For each task in the approved plan:
    deterministic check when practical. The result informs the next step but
    does not decide whether the work may be committed. Read
    `$DEX_DIR/prompts/commit-format.md` before the first commit and apply its staging,
-   forbidden-file, message, and Dex-attribution rules to every commit.
+   forbidden-file, message, and attribution rules to every commit.
 5. Commit and push each coherent checkpoint immediately. Do not wait for the
    task, full test suite, phase, or final verification to finish, and do not
    hide a known failing or unrun check. Large tasks should build their own

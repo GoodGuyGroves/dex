@@ -53,11 +53,11 @@ For each logical group, finish all four steps before starting the next group:
    git diff --cached --name-only
    ```
 
-3. **Write a conventional commit message** following the format in `$DEX_DIR/prompts/commit-format.md`. Include the Dex `Co-Authored-By` trailer and no Claude attribution:
+3. **Write a conventional commit message** following the format in `$DEX_DIR/prompts/commit-format.md`. Use the attribution the project's mode asks for: run `dx attribution mode` and follow its row in `$DEX_DIR/prompts/commit-format.md` § Attribution. In `dex` mode, the default, that is the Dex `Co-Authored-By` trailer and no Claude attribution:
    ```
    Co-Authored-By: Dex <noreply@dexcode.ai>
    ```
-   Do not include `Generated with Claude Code`, `Co-Authored-By: Claude ...`, or any similar Claude Code footer.
+   and no `Generated with Claude Code`, `Co-Authored-By: Claude ...`, or similar Claude Code footer.
 
 4. **Push immediately.** The first real commit on a new local branch establishes
    its upstream; every later commit pushes to that upstream before another

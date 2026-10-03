@@ -57,9 +57,11 @@ commit_change() {
   DEX_TEST_HOOK_LOG="$log" git -C "$repo" commit -q -m "$message"
 }
 
-# Local Git config is shared by linked worktrees, so Dex uses one stable proxy
-# in the common Git directory. Relative original hook paths are resolved at hook
-# runtime against whichever worktree is committing.
+# An install from the main checkout writes --local config, which every linked
+# worktree shares by design: one stable proxy in the common Git directory.
+# Relative original hook paths are resolved at hook runtime against whichever
+# worktree is committing. (An install started in a linked worktree never writes
+# that shared config; see the cases after this block.)
 IFS=$'\t' read -r local_main local_linked < <(new_repo_with_worktree local-scope)
 write_logging_hook "$local_main/.githooks/commit-msg" main-relative
 write_logging_hook "$local_linked/.githooks/commit-msg" linked-relative
@@ -82,6 +84,66 @@ dx_uninstall_repo_attribution "$local_main" > "$TMP_DIR/local-uninstall.out"
 [[ "$(git -C "$local_main" config --local --get core.hooksPath)" == ".githooks" ]] || assert_at $LINENO
 [[ "$(git -C "$local_linked" config --local --get core.hooksPath)" == ".githooks" ]] || assert_at $LINENO
 [[ ! -e "$local_proxy" ]] || assert_at $LINENO
+
+# An install started in a linked worktree without extensions.worktreeConfig
+# would have to write the shared config, so it writes nothing and says how to
+# enable hooks instead.
+IFS=$'\t' read -r shared_main shared_linked < <(new_repo_with_worktree linked-skip)
+dx_install_repo_attribution "$shared_linked" > "$TMP_DIR/linked-skip.out" 2>&1
+[[ -z "$(git -C "$shared_main" config --local --get core.hooksPath || true)" ]] || assert_at $LINENO
+[[ -z "$(git -C "$shared_linked" config --get core.hooksPath || true)" ]] || assert_at $LINENO
+shared_common=$(git -C "$shared_linked" rev-parse --path-format=absolute --git-common-dir)
+assert_no_file "$shared_common/dex-attribution-state.json"
+[[ ! -e "$shared_common/dex-hooks" ]] || assert_at $LINENO
+assert_contains "git config extensions.worktreeConfig true && dx sync" "$TMP_DIR/linked-skip.out"
+# A user's own shared value is left exactly as it was.
+git -C "$shared_main" config --local core.hooksPath .githooks
+dx_install_repo_attribution "$shared_linked" > /dev/null 2>&1
+[[ "$(git -C "$shared_main" config --local --get core.hooksPath)" == ".githooks" ]] || assert_at $LINENO
+assert_no_file "$shared_common/dex-attribution-state.json"
+
+# With extensions.worktreeConfig on and no worktree value yet, the linked
+# install uses --worktree and the main checkout is untouched.
+IFS=$'\t' read -r wtconf_main wtconf_linked < <(new_repo_with_worktree linked-worktree-config)
+git -C "$wtconf_main" config extensions.worktreeConfig true
+dx_install_repo_attribution "$wtconf_linked" > "$TMP_DIR/linked-wtconf.out"
+wtconf_proxy=$(dx_attribution_hook_dir "$wtconf_linked")
+[[ "$(git -C "$wtconf_linked" config --worktree --get core.hooksPath)" == "$wtconf_proxy" ]] || assert_at $LINENO
+[[ -z "$(git -C "$wtconf_main" config --get core.hooksPath || true)" ]] || assert_at $LINENO
+[[ -z "$(git -C "$wtconf_main" config --local --get core.hooksPath || true)" ]] || assert_at $LINENO
+commit_change "$wtconf_linked" linked "feat: linked worktree config" "$TMP_DIR/wtconf-hooks.log"
+assert_contains "Co-Authored-By: Dex <noreply@dexcode.ai>" <(git -C "$wtconf_linked" log -1 --format=%B)
+dx_uninstall_repo_attribution "$wtconf_linked" > /dev/null
+[[ -z "$(git -C "$wtconf_linked" config --get core.hooksPath || true)" ]] || assert_at $LINENO
+
+# `dx init` run inside a linked worktree takes the same path.
+IFS=$'\t' read -r init_main init_linked < <(new_repo_with_worktree linked-init)
+(
+  cd "$init_linked"
+  DEX_SKIP_TOOL_BOOTSTRAP=1 DX_RTK_ENABLED=0 DEXCODE_SYNC=0 DEXCODE_CONTEXT_SYNC=0 \
+    bash "$ROOT/bin/init.sh" --skip-analysis --skip-config
+) > "$TMP_DIR/linked-init.out" 2>&1 || { cat "$TMP_DIR/linked-init.out" >&2; assert_at $LINENO; }
+[[ -z "$(git -C "$init_main" config --local --get core.hooksPath || true)" ]] || assert_at $LINENO
+assert_contains "Not installing Dex attribution hooks from a linked worktree" "$TMP_DIR/linked-init.out"
+
+# A linked worktree of a repository the main checkout already set up keeps
+# using that install and does not rewrite the shared value.
+IFS=$'\t' read -r inherit_main inherit_linked < <(new_repo_with_worktree linked-inherit)
+dx_install_repo_attribution "$inherit_main" > /dev/null
+inherit_proxy=$(dx_attribution_hook_dir "$inherit_main")
+inherit_config_before=$(git -C "$inherit_main" config --local --list)
+dx_install_repo_attribution "$inherit_linked" > "$TMP_DIR/linked-inherit.out"
+assert_contains "installed from the main checkout" "$TMP_DIR/linked-inherit.out"
+[[ "$(git -C "$inherit_linked" config --get core.hooksPath)" == "$inherit_proxy" ]] || assert_at $LINENO
+[[ "$(git -C "$inherit_main" config --local --list)" == "$inherit_config_before" ]] || assert_at $LINENO
+
+# dx uninit gives core.hooksPath back only while it still points at Dex's
+# proxy. A value the user set afterwards is theirs.
+IFS=$'\t' read -r changed_main _changed_linked < <(new_repo_with_worktree changed-after)
+dx_install_repo_attribution "$changed_main" > /dev/null
+git -C "$changed_main" config --local core.hooksPath .user-hooks
+dx_uninstall_repo_attribution "$changed_main" > "$TMP_DIR/changed-uninstall.out"
+[[ "$(git -C "$changed_main" config --local --get core.hooksPath)" == ".user-hooks" ]] || assert_at $LINENO
 
 # Worktree-scoped config needs independent receipts and restoration values. A
 # linked worktree uninit must not remove or restore the main worktree's proxy.

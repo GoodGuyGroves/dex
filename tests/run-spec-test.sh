@@ -201,6 +201,7 @@ assert spec["project_slug"] == "web"
 assert spec["repo"] == "org/repo"
 assert spec["repo_path"] == sys.argv[2]
 assert spec["workflow"]["requires_plan_approval"] is False
+assert spec["workflow"]["auto_init"] is False
 assert "Task details from the run spec." in spec["input"]
 assert spec["workspace_name"] == "headless run_test_local"
 assert "Example task" not in spec["workspace_name"]
@@ -374,6 +375,31 @@ spec_ticket_close() {
 [[ "$(spec_ticket_close "$TMP_DIR/absent-normalized.json" never)" == never ]] || assert_at $LINENO
 [[ -z "$(spec_ticket_close "$TMP_DIR/absent-normalized.json" "")" ]] || assert_at $LINENO
 
+# workflow.auto_init lets a headless run set up .dex/ in a repository that has
+# none. It must be a real boolean.
+for auto_init_value in true '"yes"'; do
+  AUTO_INIT_SPEC="$TMP_DIR/auto-init-run-spec.json"
+  write_spec "$AUTO_INIT_SPEC" "run_test_auto_init" "$REPO_DIR"
+  python3 - "$AUTO_INIT_SPEC" "$auto_init_value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+spec = json.loads(path.read_text(encoding="utf-8"))
+spec["workflow"]["auto_init"] = json.loads(sys.argv[2])
+path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  if [[ "$auto_init_value" == "true" ]]; then
+    dx_run_spec_normalize "$AUTO_INIT_SPEC" "$TMP_DIR/auto-init-normalized.json"
+    [[ "$(dx_run_spec_field "$TMP_DIR/auto-init-normalized.json" workflow.auto_init)" == "true" ]] || assert_at $LINENO
+  elif dx_run_spec_normalize "$AUTO_INIT_SPEC" "$TMP_DIR/auto-init-bad.json" > "$TMP_DIR/auto-init-bad.out" 2>&1; then
+    assert_at $LINENO
+  else
+    assert_contains "workflow.auto_init must be true or false" "$TMP_DIR/auto-init-bad.out"
+  fi
+done
+
 RELATIVE_SPEC="$TMP_DIR/relative-run-spec.json"
 write_spec "$RELATIVE_SPEC" "run_test_relative" "relative/repo"
 if dx_run_spec_normalize "$RELATIVE_SPEC" "$TMP_DIR/relative-normalized.json" > "$TMP_DIR/relative.out" 2>&1; then
@@ -478,11 +504,39 @@ if dx_run_spec_normalize "$BAD_SYNC_SPEC" "$TMP_DIR/bad-sync-normalized.json" > 
 fi
 assert_contains "sync.factory_url port must be numeric" "$TMP_DIR/bad-sync.out"
 
+# A headless run refuses to set up .dex/ in a repository that has none unless
+# it opted in, and names every way to opt in.
+NOINIT_REPO="$TMP_DIR/no-init-repo"
+create_repo "$NOINIT_REPO"
+NOINIT_SPEC="$TMP_DIR/no-init-run-spec.json"
+write_spec "$NOINIT_SPEC" "run_test_no_init" "$NOINIT_REPO"
+export NOINIT_SPEC
+noinit_branch=$(git -C "$NOINIT_REPO" branch --show-current)
+if zsh -fc 'source "$DEX_DIR/dx.sh"; unset DEX_AUTO_INIT; dx run --spec "$NOINIT_SPEC"' > "$TMP_DIR/no-init.out" 2>&1; then
+  printf 'headless auto-init without an opt-in unexpectedly passed\n' >&2
+  exit 1
+fi
+assert_contains "dx --init" "$TMP_DIR/no-init.out"
+assert_contains "DEX_AUTO_INIT=1" "$TMP_DIR/no-init.out"
+assert_contains "workflow.auto_init: true" "$TMP_DIR/no-init.out"
+[[ ! -e "$NOINIT_REPO/.dex" ]] || assert_at $LINENO
+[[ "$(git -C "$NOINIT_REPO" branch --show-current)" == "$noinit_branch" ]] || assert_at $LINENO
+
 DIRTY_REPO="$TMP_DIR/dirty-repo"
 create_repo "$DIRTY_REPO"
 printf 'dirty\n' > "$DIRTY_REPO/dirty.txt"
 DIRTY_SPEC="$TMP_DIR/dirty-run-spec.json"
 write_spec "$DIRTY_SPEC" "run_test_setup_failure" "$DIRTY_REPO"
+python3 - "$DIRTY_SPEC" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+spec = json.loads(path.read_text(encoding="utf-8"))
+spec["workflow"]["auto_init"] = True
+path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 export DIRTY_SPEC
 if zsh -fc 'source "$DEX_DIR/dx.sh"; dx run --spec "$DIRTY_SPEC"' > "$TMP_DIR/setup-failure.out" 2>&1; then
   printf 'dirty checkout setup unexpectedly passed\n' >&2

@@ -351,6 +351,16 @@ run_scenario() {
   dx_step maintain "$NO_INPUT" 0 'dx maintain --no-sync --no-pr --dry-run --include-working-tree'
   dx_step provider "$NO_INPUT" 0 'dx provider use claude-subscription'
   dx_step setup "$NO_INPUT" 0 'dx setup --direct'
+  # A commit with the model trailer reads the session's transcript under
+  # ~/.claude and writes nothing outside the repository.
+  dx_step attribution "$NO_INPUT" 0 'printf "%s\n" "" "## Attribution" "" "\`\`\`yaml" "model_trailer: AI-Model" "\`\`\`" >> .dex/dex.md
+    DEX_SESSION_ID=gw-attribution git -c user.email=dex@example.test -c user.name="Dex Test" commit -q --allow-empty -m "chore: gw attribution"
+    dx attribution mode && DEX_SESSION_ID=gw-attribution dx attribution model'
+  # Auto-init in a repository without .dex/: refused without an opt-in, then
+  # set up with DEX_AUTO_INIT=1. The repository sits inside the excluded one.
+  dx_step auto-init-refused "$NO_INPUT" 1 'mkdir -p .gw-fresh && git -C .gw-fresh init -q && cd .gw-fresh
+    __dx_auto_init_consent "$PWD"'
+  dx_step auto-init "$NO_INPUT" 0 'cd .gw-fresh && DEX_AUTO_INIT=1 __dx_auto_init_consent "$PWD" && __dx_auto_init_run "$PWD"'
   plain_step plain
   if [[ "$2" == 1 ]]; then
     dx_step uninstall "$NO_INPUT" 0 'dx uninstall'

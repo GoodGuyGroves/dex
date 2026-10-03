@@ -55,6 +55,8 @@ Options:
   --skip-analysis                    Create/update local files without provider analysis
   --skip-config                      Skip interactive reviewer/config prompts
   --install-maintenance-workflow     Install .github/workflows/dx-maintain.yml
+  --no-attribution-hooks             Do not install the commit-msg attribution hooks
+  --no-pr-template                   Do not install .github/pull_request_template.md
   -h, --help                         Show this help
 USAGE
 }
@@ -97,11 +99,14 @@ __dx_init_atomic_write() {
 SKIP_ANALYSIS=0
 SKIP_CONFIG=0
 INSTALL_MAINTENANCE_WORKFLOW=0
+ATTRIBUTION_OPT_OUTS=()
 for arg in "$@"; do
   case "$arg" in
     --skip-analysis) SKIP_ANALYSIS=1 ;;
     --skip-config)   SKIP_CONFIG=1 ;;
     --install-maintenance-workflow) INSTALL_MAINTENANCE_WORKFLOW=1 ;;
+    --no-attribution-hooks) ATTRIBUTION_OPT_OUTS+=(--no-hooks) ;;
+    --no-pr-template) ATTRIBUTION_OPT_OUTS+=(--no-pr-template) ;;
     -h|--help|help)
       usage
       exit 0
@@ -188,9 +193,42 @@ else
   dx_done "Added worktrees/ to .dex/.gitignore"
 fi
 
+# The `## Attribution` block a new dex.md starts with. An opt-out given to this
+# init is written into it, so a later `dx sync` does not install what this run
+# left out.
+__dx_init_attribution_block() {
+  local opt_out hooks_value=true template_value=true
+  for opt_out in ${ATTRIBUTION_OPT_OUTS[@]+"${ATTRIBUTION_OPT_OUTS[@]}"}; do
+    case "$opt_out" in
+      --no-hooks) hooks_value=false ;;
+      --no-pr-template) template_value=false ;;
+    esac
+  done
+  printf '\n## Attribution\n\n'
+  printf '```yaml\n'
+  printf '# dex | claude | both | none: whose attribution commits and PRs carry.\n'
+  printf '# attribution: dex\n'
+  printf '# Adds "AI-Model: <model>" to commits made in a Dex session.\n'
+  printf '# model_trailer: AI-Model\n'
+  printf '# pr_models: false  # list the models used in the PR description\n'
+  if [[ "$hooks_value" == "false" ]]; then
+    printf 'hooks: false  # dx init and dx sync install no commit-msg attribution hooks\n'
+  else
+    printf '# hooks: true  # dx init and dx sync install the commit-msg attribution hooks\n'
+  fi
+  if [[ "$template_value" == "false" ]]; then
+    printf 'pr_template: false  # dx init and dx sync install no PR template\n'
+  else
+    printf '# pr_template: true  # dx init and dx sync install .github/pull_request_template.md\n'
+  fi
+  printf '```\n'
+}
+
 # Minimal dex.md (will be overwritten by codebase analysis if run)
 dex_md="$repo_root/.dex/dex.md"
+DEX_MD_CREATED=0
 if [[ ! -f "$dex_md" ]]; then
+  DEX_MD_CREATED=1
   __dx_init_atomic_write "$dex_md" << 'DEXMD'
 # Dex
 
@@ -253,6 +291,7 @@ Remove and reapply it to retry. Set `issue_label` to `_none_` to pause automatic
 ticket intake. Installation does not create labels or enable GitHub workflows.
 See `docs/maintenance.md` in the Dex installation for setup and upgrade guidance.
 DEXMD
+  { cat "$dex_md"; __dx_init_attribution_block; } | __dx_init_atomic_write "$dex_md"
   dx_done "Created .dex/dex.md (minimal)"
 else
   dx_ok ".dex/dex.md already exists"
@@ -316,7 +355,7 @@ echo "Skeleton created."
 
 # ── 2. Install repo-local attribution defaults ───────────────────────
 
-dx_install_repo_attribution "$repo_root"
+dx_install_repo_attribution "$repo_root" ${ATTRIBUTION_OPT_OUTS[@]+"${ATTRIBUTION_OPT_OUTS[@]}"}
 
 # ── 3. Ensure global Dex tooling is available ─────────────────────
 
@@ -417,6 +456,11 @@ else
   command rm -f "$INIT_ANALYSIS_OUTPUT_FILE"
   INIT_ANALYSIS_OUTPUT_FILE=""
   ANALYSIS_COMPLETED=1
+  # The analysis rewrites dex.md. A dex.md this run created keeps the
+  # attribution choice it was created with.
+  if [[ "$DEX_MD_CREATED" == "1" ]] && ! grep -q '^## Attribution[[:space:]]*$' "$dex_md"; then
+    { cat "$dex_md"; __dx_init_attribution_block; } | __dx_init_atomic_write "$dex_md"
+  fi
 fi
 
 # ── 5. Configure integrations ─────────────────────────────────────────
@@ -448,7 +492,7 @@ echo "  - .dex/ created (worktrees, config, gitignored artifacts)"
 echo "  - .dex/AGENTS.md imports .dex/dex.md"
 echo "  - .dex/CLAUDE.md points to .dex/AGENTS.md"
 echo "  - .dex/memory/index.md is ready for durable repo memory"
-echo "  - Dex commit and PR attribution defaults installed"
+echo "  - Dex commit and PR attribution set up as .dex/dex.md's ## Attribution block says"
 if [[ "$CODEX_SKILL_COUNT" -gt 0 ]]; then
   echo "  - ${CODEX_SKILL_COUNT} Dex skill link(s) available in $(dx_codex_skills_dir) for Codex CLI"
 fi

@@ -131,6 +131,7 @@ __dx_cli() {
       fi
       ;;
     uninit)    bash "$DEX_DIR/bin/uninit.sh" "$@" ;;
+    attribution) bash "$DEX_DIR/bin/attribution.sh" "$@" ;;
     reload)
       if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
         echo "Usage: dx reload"
@@ -204,6 +205,7 @@ __dx_cli() {
       echo "                        Override timeout: dx research --scenario-timeout 7200"
       echo "                        On main/master, pass --allow-main"
       echo "  dx uninit           Remove Dex from current repo"
+      echo "  dx attribution      Show this repo's commit and PR attribution mode and models"
       echo "  dx reload           Reload shell functions and refresh Claude hooks"
       echo "  dx status           Show installation status"
       echo "  dex                 Alias for dx"
@@ -907,6 +909,66 @@ __dx_startup_claim_release() {
   return 1
 }
 
+{ unalias __dx_auto_init_consent; unfunction __dx_auto_init_consent; } 2>/dev/null || true
+# __dx_auto_init_consent <repo-root>
+# Decide whether Dex may set up .dex/ in a repository that has none. On a
+# terminal it asks; anywhere else it needs `dx --init`, DEX_AUTO_INIT=1 or
+# `workflow.auto_init: true` in the run spec, and refuses otherwise. The
+# commit-msg attribution hooks and the PR template are left out unless the user
+# says yes to each. The init arguments are left in _dx_auto_init_args for
+# __dx_auto_init_run, which writes the choice into the new .dex/dex.md.
+__dx_auto_init_consent() {
+  local repo_root="$1" opted_in=0 answer=""
+  _dx_auto_init_args=(--skip-analysis --skip-config --no-attribution-hooks --no-pr-template)
+
+  if [[ "${DX_INIT_REQUESTED:-0}" == "1" || "${DEX_AUTO_INIT:-0}" == "1" ]]; then
+    opted_in=1
+  elif [[ -n "${DEX_HEADLESS_RUN_SPEC_FILE:-}" ]] \
+    && [[ "$(dx_run_spec_field "$DEX_HEADLESS_RUN_SPEC_FILE" workflow.auto_init 2>/dev/null)" == "true" ]]; then
+    opted_in=1
+  fi
+
+  if [[ -t 0 && -t 1 && "${DEX_HEADLESS_RUN:-0}" != "1" ]]; then
+    if [[ $opted_in -eq 0 ]]; then
+      printf 'This repository has no .dex/ yet. Set up Dex in %s? [y/N] ' "$repo_root"
+      read -r answer || answer=""
+      case "$answer" in
+        y|Y|yes|YES) ;;
+        *)
+          dx_info "Nothing set up. Run 'dx init' here when you want Dex in this repository."
+          return 1
+          ;;
+      esac
+    fi
+    printf 'Install the commit-msg hook that adds Dex attribution to commits? [y/N] '
+    read -r answer || answer=""
+    case "$answer" in
+      y|Y|yes|YES) _dx_auto_init_args=("${(@)_dx_auto_init_args:#--no-attribution-hooks}") ;;
+    esac
+    printf 'Install a GitHub PR template (.github/pull_request_template.md)? [y/N] '
+    read -r answer || answer=""
+    case "$answer" in
+      y|Y|yes|YES) _dx_auto_init_args=("${(@)_dx_auto_init_args:#--no-pr-template}") ;;
+    esac
+  elif [[ $opted_in -eq 0 ]]; then
+    dx_error "This repository has no .dex/, and Dex sets one up only when asked."
+    dx_info "Opt in with any one of: 'dx --init <task>', DEX_AUTO_INIT=1, or 'workflow.auto_init: true' in the run spec."
+    dx_info "Or run 'dx init' in the repository first."
+    return 1
+  fi
+}
+
+{ unalias __dx_auto_init_run; unfunction __dx_auto_init_run; } 2>/dev/null || true
+# __dx_auto_init_run <repo-root> — run the init __dx_auto_init_consent allowed.
+__dx_auto_init_run() {
+  if [[ ${#_dx_auto_init_args[@]} -eq 0 ]]; then
+    dx_error "Dex has no setup decision for $1; run 'dx init' there first."
+    return 1
+  fi
+  echo "Auto-initialising Dex for this repo..."
+  (cd "$1" && bash "$DEX_DIR/bin/init.sh" "${_dx_auto_init_args[@]}")
+}
+
 { unalias __dx_setup_worktree; unfunction __dx_setup_worktree; } 2>/dev/null || true
 __dx_setup_worktree() {
   local raw_input="$1" setup_result=0
@@ -979,8 +1041,8 @@ __dx_setup_worktree_claimed() {
 
   # Auto-init if .dex doesn't exist yet
   if [[ ! -d "${_dx_repo_root}/.dex" ]]; then
-    echo "Auto-initialising Dex for this repo..."
-    (cd "$_dx_repo_root" && bash "$DEX_DIR/bin/init.sh" --skip-analysis --skip-config)
+    __dx_auto_init_consent "$_dx_repo_root" || return 1
+    __dx_auto_init_run "$_dx_repo_root" || return 1
   fi
 
   # Create worktree
@@ -1095,6 +1157,12 @@ __dx_setup_in_place_claimed() {
 
   dx_info "Running lifecycle in current checkout (no worktree): ${_dx_wt_dir}"
 
+  # Ask (or check the opt-in) before touching any branch, so a refusal leaves
+  # the checkout as it was. The init itself runs after branch setup below.
+  if [[ ! -d "${_dx_repo_root}/.dex" ]]; then
+    __dx_auto_init_consent "$_dx_repo_root" || return 1
+  fi
+
   local current_branch has_changes
   current_branch=$(git -C "$_dx_wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
   has_changes=0
@@ -1183,8 +1251,7 @@ __dx_setup_in_place_claimed() {
   # Auto-init after branch setup so a newly initialized repo records .dex/
   # on the lifecycle branch instead of dirtying the starting checkout first.
   if [[ ! -d "${_dx_repo_root}/.dex" ]]; then
-    echo "Auto-initialising Dex for this repo..."
-    bash "$DEX_DIR/bin/init.sh" --skip-analysis --skip-config
+    __dx_auto_init_run "$_dx_repo_root" || return 1
   fi
 
   __dx_record_session_branch "$_dx_session_id" "$_dx_wt_dir" || return 1
@@ -4050,7 +4117,7 @@ __dx_show_header() {
 { unalias __dx_task_commands; unfunction __dx_task_commands; } 2>/dev/null || true
 __dx_task_commands() {
   printf '%s\n' init sync login logout whoami dexcode worker maintain tools \
-    test config provider run control sessions ps doctor run-gate worktree review ui-capture research install uninstall uninit status \
+    test config provider run control sessions ps doctor run-gate worktree review ui-capture research install uninstall uninit attribution status \
     reload help revert log triage refine setup account accounts model route profile router context
 }
 
@@ -4168,6 +4235,7 @@ dx() {
   local dx_agent_flag=""
   local dx_model_flag=""
   local dx_title_flag=""
+  local dx_init_flag=0
   local -a dx_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -4249,6 +4317,10 @@ dx() {
         dx_workspace_flag=1
         shift
         ;;
+      --init)
+        dx_init_flag=1
+        shift
+        ;;
       --worktree)
         use_worktree=1
         dx_workspace_flag=1
@@ -4272,6 +4344,9 @@ dx() {
   fi
   if [[ -n "$dx_title_flag" ]]; then
     local -x DEX_SESSION_TITLE="$dx_title_flag"
+  fi
+  if [[ $dx_init_flag -eq 1 ]]; then
+    local -x DX_INIT_REQUESTED=1
   fi
 
   if [[ $# -eq 0 ]]; then
@@ -4299,7 +4374,7 @@ dx() {
 
   # Route management subcommands to the internal Dex dispatcher.
   case "$dx_command_input" in
-    init|sync|login|logout|whoami|dexcode|worker|maintain|tools|test|config|provider|setup|router|account|accounts|model|route|profile|context|run|run-gate|worktree|review|control|sessions|ps|doctor|ui-capture|research|install|uninstall|uninit|status|reload|help|--help|-h|revert|log)
+    init|sync|login|logout|whoami|dexcode|worker|maintain|tools|test|config|provider|setup|router|account|accounts|model|route|profile|context|run|run-gate|worktree|review|control|sessions|ps|doctor|ui-capture|research|install|uninstall|uninit|attribution|status|reload|help|--help|-h|revert|log)
       __dx_cli "$@"
       return $?
       ;;

@@ -497,9 +497,57 @@ def __resolve_provider_engine_uncached():
     return PROVIDER_BUILTIN_ENGINES['claude-subscription']
 
 
+ATTRIBUTION_HEADING = re.compile(r'^#{1,6}[ \t]+Attribution[ \t]*$', re.MULTILINE | re.IGNORECASE)
+
+
+def declared_attribution_mode():
+    """The repository's `## Attribution` → `attribution` mode, `dex` by default.
+
+    Read through scripts/attribution.py, the same reading the commit-msg hook
+    uses. A contract without the heading costs one file read: the parser is
+    imported only when the section is there.
+    """
+    if 'attribution_mode' in _GUARD_PROCESS_CACHE:
+        return _GUARD_PROCESS_CACHE['attribution_mode']
+    mode = 'dex'
+    root = git_toplevel()
+    text = ''
+    if root:
+        try:
+            with open(os.path.join(root, '.dex', 'dex.md'), 'r',
+                      encoding='utf-8', errors='replace') as handle:
+                text = handle.read()
+        except OSError:
+            text = ''
+    if ATTRIBUTION_HEADING.search(text):
+        try:
+            import importlib.util
+            dex_dir = os.environ.get('DEX_DIR') or os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
+            source = os.path.join(dex_dir, 'scripts', 'attribution.py')
+            spec = importlib.util.spec_from_file_location('dex_attribution', source)
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                block = module.attribution_block(root) or {}
+                value = block.get('attribution')
+                if isinstance(value, str) and value.strip().lower() in module.MODES:
+                    mode = value.strip().lower()
+        except Exception:  # noqa: BLE001 - an unreadable contract keeps the default
+            mode = 'dex'
+    _GUARD_PROCESS_CACHE['attribution_mode'] = mode
+    return mode
+
+
 def resolved_guard_environment_value(env_var):
     if env_var == 'DX_PROVIDER_ENGINE':
         return resolved_provider_engine()
+    if env_var == 'DX_ATTRIBUTION_CLAUDE_FORBIDDEN':
+        # Claude attribution is unwanted inside a Dex session whose project
+        # mode drops it (dex, none); claude and both keep it.
+        if not os.environ.get('DEX_SESSION_ID'):
+            return ''
+        return '1' if declared_attribution_mode() in ('dex', 'none') else ''
     return ''
 
 

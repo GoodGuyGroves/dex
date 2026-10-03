@@ -130,8 +130,8 @@ assert_sensitive_clean() {
   fi
 }
 
-# The attribution guard is scoped by `env_var: DEX_SESSION_ID`, so it only
-# applies inside a Dex lifecycle session.
+# The attribution guard is scoped by `env_var: DX_ATTRIBUTION_CLAUDE_FORBIDDEN`,
+# which is set only inside a Dex session whose attribution mode drops Claude's.
 run_attribution_guard() {
   set +e
   GUARD_OUT="$(printf '%s' "$1" | env DEX_GUARD_EVENT=bash DEX_SESSION_ID="${2:-guards-test}" python3 "$HANDLER" 2>&1)"
@@ -443,6 +443,48 @@ assert_attribution_clean "an ordinary commit" \
   'git commit -m "fix: thing"'
 assert_attribution_clean "the phrase outside a commit or PR command" \
   'echo "Generated with Claude Code"'
+
+# The attribution guard follows the project's attribution mode: it warns in
+# dex (the default) and none, and stays quiet in claude and both.
+ATTRIBUTION_MODE_REPO="$GUARD_HOME_TMP/attribution-mode-repo"
+git init -q "$ATTRIBUTION_MODE_REPO"
+mkdir -p "$ATTRIBUTION_MODE_REPO/.dex"
+attribution_mode_payload="$(mkbashpayload 'git commit -m "x" -m "Co-Authored-By: Claude <noreply@anthropic.com>"')"
+for attribution_mode in dex none claude both; do
+  printf '## Attribution\n\n```yaml\nattribution: %s\n```\n' "$attribution_mode" \
+    > "$ATTRIBUTION_MODE_REPO/.dex/dex.md"
+  set +e
+  GUARD_OUT="$(cd "$ATTRIBUTION_MODE_REPO" && printf '%s' "$attribution_mode_payload" \
+    | env DEX_GUARD_EVENT=bash DEX_SESSION_ID=guards-test python3 "$HANDLER" 2>&1)"
+  set -e
+  case "$attribution_mode" in
+    dex|none) expected_attribution_warning=1 ;;
+    *) expected_attribution_warning=0 ;;
+  esac
+  if [[ "${GUARD_OUT}" == *'warn-claude-attribution'* ]]; then
+    actual_attribution_warning=1
+  else
+    actual_attribution_warning=0
+  fi
+  if [[ "$actual_attribution_warning" == "$expected_attribution_warning" ]]; then
+    pass=$((pass + 1))
+  else
+    printf 'FAIL (attribution guard in %s mode)\n' "$attribution_mode" >&2
+    fail=$((fail + 1))
+  fi
+done
+# Outside a Dex session the guard never applies, whatever the mode.
+printf '## Attribution\n\n```yaml\nattribution: dex\n```\n' > "$ATTRIBUTION_MODE_REPO/.dex/dex.md"
+set +e
+GUARD_OUT="$(cd "$ATTRIBUTION_MODE_REPO" && printf '%s' "$attribution_mode_payload" \
+  | env -u DEX_SESSION_ID DEX_GUARD_EVENT=bash python3 "$HANDLER" 2>&1)"
+set -e
+if [[ "${GUARD_OUT}" == *'warn-claude-attribution'* ]]; then
+  printf 'FAIL (attribution guard outside a Dex session)\n' >&2
+  fail=$((fail + 1))
+else
+  pass=$((pass + 1))
+fi
 
 # --- destructive-command bypass regressions ---
 assert_destructive_blocks "dd raw-device output" \
