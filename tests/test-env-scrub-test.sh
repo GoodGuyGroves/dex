@@ -26,7 +26,7 @@ child_env() {
     DEX_SESSION_ID=caller-session DEX_RUN_ID=caller-run DEX_HOME=/caller/dex-home \
     DX_STATE_DIR=/caller/state DEX_ROUTER_HOME=/caller/router \
     DEX_DIR=/checkout/under/test DX_TEST_LANES=fast DEX_TEST_CURRENT_NAME=caller-test \
-    DX_HOST_MEMORY_FREE_PERCENT=7 \
+    DX_HOST_MEMORY_FREE_PERCENT=7 DEX_PROBE_REAL_CLAUDE=1 \
     bash -c 'if [[ "$1" == 1 ]]; then export DX_TEST_HERMETIC=1; fi
       source "$2/tests/helpers.sh"
       env' child "$hermetic" "$ROOT" > "$TMP_DIR/env.$hermetic"
@@ -44,6 +44,8 @@ grep -qx 'DEX_DIR=/checkout/under/test' "$TMP_DIR/env.0" || fail 'a direct run d
 grep -qx 'DX_TEST_LANES=fast' "$TMP_DIR/env.0" || fail 'a direct run dropped DX_TEST_* settings'
 grep -qx 'DEX_TEST_CURRENT_NAME=caller-test' "$TMP_DIR/env.0" || fail 'a direct run dropped DEX_TEST_CURRENT_NAME'
 grep -qx 'DX_HOST_MEMORY_FREE_PERCENT=7' "$TMP_DIR/env.0" || fail 'a direct run dropped DX_HOST_MEMORY_FREE_PERCENT'
+# The real-CLI probe tests read their opt-in after sourcing helpers.
+grep -qx 'DEX_PROBE_REAL_CLAUDE=1' "$TMP_DIR/env.0" || fail 'a direct run dropped DEX_PROBE_REAL_CLAUDE'
 # Dex state goes to a fresh temporary DEX_HOME, never the caller's.
 dex_home=$(sed -n 's/^DEX_HOME=//p' "$TMP_DIR/env.0")
 [[ -n "$dex_home" && "$dex_home" != /caller/dex-home ]] || fail "a direct run kept DEX_HOME=$dex_home"

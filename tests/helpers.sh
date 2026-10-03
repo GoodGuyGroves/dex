@@ -30,10 +30,10 @@ export DX_HOST_MEMORY_FREE_PERCENT="${DX_HOST_MEMORY_FREE_PERCENT:-50}"
 # ~/.claude/.dex-*), opt-outs such as DEXCODE_SYNC=0 or DX_RTK_ENABLED=0 that
 # change what the test exercises, and a live DEX_SESSION_ID or DEX_RUN_ID that
 # sends events into the caller's run. So drop every DEX_*, DX_* and DEXCODE_*
-# variable except the test runner's own settings and the checkout under test,
-# and root Dex's state in a fresh temporary DEX_HOME. A test that sets its own
-# HOME and wants the legacy layout under it unsets DEX_HOME itself, as it must
-# under run-all.
+# variable except the test runner's own settings, the real-CLI probe opt-ins
+# (DEX_PROBE_REAL_*) and the checkout under test, and root Dex's state in a
+# fresh temporary DEX_HOME. A test that sets its own HOME and wants the legacy
+# layout under it unsets DEX_HOME itself, as it must under run-all.
 if [[ "${DX_TEST_HERMETIC:-}" != 1 ]]; then
   __dx_test_inherited=""
   # `env`, not `compgen -e`: a bash built without programmable completion (the
@@ -41,7 +41,7 @@ if [[ "${DX_TEST_HERMETIC:-}" != 1 ]]; then
   # that is not set, and unsetting that is a no-op.
   for __dx_test_inherited in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
     case "$__dx_test_inherited" in
-      DX_TEST_* | DEX_TEST_CURRENT_NAME | DX_HOST_MEMORY_FREE_PERCENT | DEX_DIR) ;;
+      DX_TEST_* | DEX_TEST_CURRENT_NAME | DX_HOST_MEMORY_FREE_PERCENT | DEX_PROBE_REAL_* | DEX_DIR) ;;
       DEX_* | DX_* | DEXCODE_*) unset "$__dx_test_inherited" ;;
     esac
   done
