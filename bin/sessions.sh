@@ -1035,13 +1035,22 @@ print(session_id)
     return 3
   fi
 
-  # A session with no .meta cannot go through the cleanup journal; the orphan
-  # path takes only a finished, dead .runtime and its run ID (#88).
+  # A session with no .meta cannot start a cleanup journal; the orphan path
+  # takes only a finished, dead .runtime and its run ID (#88). A journal an
+  # interrupted cleanup left behind is resumed by the exact cleanup instead.
   if printf '%s\n' "$selected_record" | python3 -c '
 import json
 import sys
 
-raise SystemExit(0 if json.load(sys.stdin).get("metadata_health") == "missing" else 1)
+record = json.load(sys.stdin)
+artifacts = record.get("artifacts")
+raise SystemExit(
+    0
+    if record.get("metadata_health") == "missing"
+    and isinstance(artifacts, list)
+    and "cleanup-journal" not in artifacts
+    else 1
+)
 '; then
     if __dx_session_management_cleanup_orphan_runtime "$repo_root" "$session_id"; then
       dx_done "Session ${session_id} was forgotten."

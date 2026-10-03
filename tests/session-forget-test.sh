@@ -433,4 +433,36 @@ dx_lifecycle_atomic_write "$(dx_state_file "$ORPHAN_EXTRA_SID")" 7
 assert_orphan_kept "$ORPHAN_EXTRA_SID" orphan-extra-phase
 assert_file "$(dx_state_file "$ORPHAN_EXTRA_SID")"
 
+# An exact cleanup that stopped after removing .meta keeps its journal. Forget
+# resumes that journal through the exact cleanup, not the orphan path.
+# Its own repo keeps the orphan fixtures above out of its cleanup plan.
+REPO_C="$TMP_DIR/repos/charlie"
+new_repo "$REPO_C"
+JOURNAL_SID="$(cd "$REPO_C" && dx_scoped_session_id forget-journal-resume)"
+make_terminal_session "$REPO_C" "$JOURNAL_SID" 88 journal-resume
+# A separate bash runs the fault seam, away from this suite's ERR trap.
+if JOURNAL_SID="$JOURNAL_SID" REPO_C="$REPO_C" bash -c '
+  source "$DEX_DIR/lib/common.sh"
+  source "$DEX_DIR/lib/session-management.sh"
+  eval "$(declare -f __dx_session_management_artifacts | \
+    sed "1s/^__dx_session_management_artifacts /__journal_artifacts_original /")"
+  __dx_session_management_artifacts() {
+    if [[ "$1" == "remove-payload" && "$2" == "$JOURNAL_SID" ]]; then
+      command rm -f "$(dx_meta_file "$2")"
+      return 1
+    fi
+    __journal_artifacts_original "$@"
+  }
+  __dx_session_management_cleanup_exact "$REPO_C" "$JOURNAL_SID"
+' > "$TMP_DIR/journal-partial.out" 2>&1; then
+  fail "the partial cleanup fixture did not fail"
+fi
+assert_no_file "$(dx_meta_file "$JOURNAL_SID")"
+assert_file "$(dx_session_cleanup_journal_file "$JOURNAL_SID")"
+run_sessions "$REPO_C" "$TMP_DIR/journal-resume.out" forget "session:$JOURNAL_SID"
+assert_eq "0" "$COMMAND_RESULT" "journal resume result"
+assert_contains "Session $JOURNAL_SID was forgotten." "$TMP_DIR/journal-resume.out"
+assert_no_file "$(dx_session_cleanup_journal_file "$JOURNAL_SID")"
+assert_no_file "$(dx_session_runtime_file "$JOURNAL_SID")"
+
 printf '%s\n' "session forget tests passed"
