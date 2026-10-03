@@ -437,4 +437,17 @@ assert_not_contains '"token"' "$TMP_DIR/partial.out"
 assert_file "$(dx_meta_file "$CONTENDED_SID")"
 assert_no_file "$(dx_meta_file "$CONTINUED_SID")"
 
+# dxrm's cleanup drops the run ID with the rest of the session state, so the
+# next lifecycle in that workspace starts a run of its own instead of reusing
+# a failed one. The runtime lease is not a plain state file and stays.
+RUN_SID="session-cleanup-run-id"
+printf 'run_20261003T000000Z_1_deadbeef\n' > "$(dx_run_id_file "$RUN_SID")"
+printf '0:1\n' > "$(dx_times_file "$RUN_SID")"
+printf 'lease\n' > "$DX_STATE_DIR/${RUN_SID}.runtime"
+assert_file "$(dx_run_id_file "$RUN_SID")"
+dx_cleanup_session "$RUN_SID" || assert_at $LINENO
+assert_no_file "$(dx_run_id_file "$RUN_SID")"
+assert_no_file "$(dx_times_file "$RUN_SID")"
+assert_file "$DX_STATE_DIR/${RUN_SID}.runtime"
+
 printf '%s\n' "session cleanup tests passed"

@@ -157,6 +157,43 @@ assert_contains "Usage: dx control" "$TMP_DIR/claude.control"
 )
 [[ "$(cat "$TMP_DIR/zsh.path")" == "$ROOT/shims:"* ]] || assert_at $LINENO
 
+# The host budget, host snapshot and prompt-cache lifetime are exported to the
+# launched session only. In a zsh that sourced Dex they must not outlive the
+# call, or the user's later builds inherit MAKEFLAGS=-j2 and the next launch
+# mistakes the stale budget for an operator's choice.
+ENV_STUB_BIN="$TMP_DIR/env-stub-bin"
+mkdir -p "$ENV_STUB_BIN"
+cat > "$ENV_STUB_BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+env > "$DX_TEST_OUT.env"
+STUB
+chmod +x "$ENV_STUB_BIN/claude"
+(
+  launch_env
+  # A test run started from inside a Dex session inherits that launch's values.
+  unset DX_TEST_JOBS VITEST_MAX_THREADS VITEST_MAX_FORKS PYTEST_XDIST_AUTO_NUM_WORKERS
+  unset CARGO_BUILD_JOBS RUST_TEST_THREADS GOFLAGS MAKEFLAGS
+  unset CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH
+  unset CLAUDE_CODE_PROMPT_CACHE_TTL DEX_PROMPT_CACHE_TTL
+  unset DX_HOST_CPUS DX_HOST_MEM_GB DX_HOST_LOAD1 DX_HOST_ACTIVE_SESSIONS
+  unset DX_HOST_ACTIVE_HEAVY DX_HOST_FALLBACKS
+  export PATH="$ENV_STUB_BIN:$PATH" DX_TEST_OUT="$TMP_DIR/zsh-env"
+  zsh -fc 'source "$DEX_DIR/lib/common.sh"
+    DEX_LOOP_ACTIVE=1 dx_provider_claude -p hello
+    leaked=()
+    for name in CARGO_BUILD_JOBS MAKEFLAGS DX_TEST_JOBS VITEST_MAX_THREADS \
+      VITEST_MAX_FORKS CLAUDE_CODE_PROMPT_CACHE_TTL DEX_PROMPT_CACHE_TTL \
+      DX_HOST_CPUS DX_HOST_LOAD1 DX_HOST_ACTIVE_SESSIONS; do
+      [[ -n "${(P)name+set}" ]] && leaked+=("$name")
+    done
+    (( ${#leaked} == 0 )) || { print -u2 "zsh caller kept: ${leaked[*]}"; exit 1; }'
+) || assert_at $LINENO
+for name in CARGO_BUILD_JOBS MAKEFLAGS DX_TEST_JOBS CLAUDE_CODE_PROMPT_CACHE_TTL \
+  DEX_PROMPT_CACHE_TTL DX_HOST_CPUS DX_HOST_LOAD1; do
+  grep -q "^${name}=" "$TMP_DIR/zsh-env.env" \
+    || { printf 'launched session lacks %s\n' "$name" >&2; assert_at $LINENO; }
+done
+
 # Codex launches get the same PATH.
 (
   launch_env

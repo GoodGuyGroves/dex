@@ -98,6 +98,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 printf '%s\n' "$count" > "$STUB_OUT.count"
+# An interrupted launch: signal the shell that launched us, then exit as a
+# provider does on Ctrl-C (or, with STUB_SIGNAL_EXIT, as Claude does when it
+# took the Ctrl-C itself and the session went on).
+if [[ -n "${STUB_SIGNAL:-}" ]]; then
+  kill -"$STUB_SIGNAL" "$PPID"
+  exit "${STUB_SIGNAL_EXIT:-130}"
+fi
 exit "${STUB_EXIT:-0}"
 STUB
 chmod +x "$TMP_DIR/bin/claude"
@@ -169,6 +176,57 @@ esac
 assert_no_file "$(cat "$TMP_DIR/home.path")"
 assert_no_file "$TMP_DIR/dex-home/launch-settings/launch.stale"
 assert_file "$TMP_DIR/dex-home/launch-settings/launch.recent"
+# An interrupted launch removes its files at once instead of leaving them for
+# the sweep, and leaves the caller's own traps as they were, whether Dex runs
+# as its own process or is sourced into a zsh.
+launch_listing() { ls -A "$DX_LOOP_DIR/launch-settings" | LC_ALL=C sort; }
+for signal in INT TERM; do
+  before=$(launch_listing)
+  rc=0
+  (
+    trap 'echo caller-usr1' USR1
+    STUB_SIGNAL="$signal" launch "bash-$signal" "go" || exit "$?"
+  ) || rc=$?
+  [[ "$rc" -ne 0 ]] || fail "bash $signal: the interrupted launch reported success"
+  assert_no_file "$(cat "$TMP_DIR/bash-$signal.path")"
+  assert_eq "$before" "$(launch_listing)" "bash $signal: launch files removed"
+  (
+    trap 'echo caller-usr1' USR1
+    STUB_EXIT=0 launch "bash-$signal-trap" "go"
+    [[ "$(trap -p USR1)" == *caller-usr1* ]] || exit 9
+  ) || fail "bash $signal: the caller's trap did not survive the launch"
+
+  rc=0
+  PATH="$TMP_DIR/bin:$PATH" STUB_OUT="$TMP_DIR/zsh-$signal" STUB_SIGNAL="$signal" \
+    DX_PROVIDER_APPLIED=1 DX_PROVIDER_ENGINE=claude DX_PROVIDER_PROFILE_RESOLVED=claude \
+    zsh -fc 'source "$DEX_DIR/lib/common.sh"
+      trap "print caller-usr1" USR1
+      launch_rc=0
+      dx_provider_claude go || launch_rc=$?
+      # zsh lists no traps inside $(...); read them through a file.
+      trap > "$STUB_OUT.traps"
+      [[ "$(<"$STUB_OUT.traps")" == *caller-usr1* ]] || { print -u2 "zsh caller trap lost"; exit 9; }
+      exit "$launch_rc"' || rc=$?
+  [[ "$rc" -ne 0 && "$rc" -ne 9 ]] || fail "zsh $signal: unexpected status $rc"
+  assert_no_file "$(cat "$TMP_DIR/zsh-$signal.path")"
+  assert_eq "$before" "$(launch_listing)" "zsh $signal: launch files removed"
+done
+# Claude takes Ctrl-C for itself (it cancels a reply or clears the prompt), so
+# the launching shell sees the INT too while the session goes on. The launch
+# still returns the provider's own status, not an interruption.
+for exit_code in 0 7; do
+  rc=0
+  STUB_SIGNAL=INT STUB_SIGNAL_EXIT="$exit_code" launch "bash-absorbed-$exit_code" "go" || rc=$?
+  assert_eq "$exit_code" "$rc" "bash: a Ctrl-C Claude absorbed keeps exit $exit_code"
+  rc=0
+  PATH="$TMP_DIR/bin:$PATH" STUB_OUT="$TMP_DIR/zsh-absorbed-$exit_code" STUB_SIGNAL=INT \
+    STUB_SIGNAL_EXIT="$exit_code" \
+    DX_PROVIDER_APPLIED=1 DX_PROVIDER_ENGINE=claude DX_PROVIDER_PROFILE_RESOLVED=claude \
+    zsh -fc 'source "$DEX_DIR/lib/common.sh"; dx_provider_claude go' || rc=$?
+  assert_eq "$exit_code" "$rc" "zsh: a Ctrl-C Claude absorbed keeps exit $exit_code"
+  assert_no_file "$(cat "$TMP_DIR/zsh-absorbed-$exit_code.path")"
+done
+
 # The directory a launch creates is private.
 assert_eq 0o700 "$(python3 -c 'import os, sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$DX_LOOP_DIR/launch-settings")" 'launch-settings mode'
 

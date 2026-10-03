@@ -239,7 +239,7 @@ new_sandbox() {
   git -C "$SB_REPO" push -q -u origin main
 
   python3 "$HELPER" snapshot "$SB_HOME" "$SB_STUB/last.json" \
-    --exclude "$SB_DEX_HOME" --exclude "$SB_REPO"
+    --exclude "$SB_DEX_HOME" --exclude "$SB_REPO" --transcripts "$SB_STUB/transcripts.txt"
   dex_dir_status > "$SB_STUB/dex-dir.before"
 }
 
@@ -262,7 +262,7 @@ finish_sandbox() {
 # check the Dex checkout and the hooks in the user's settings.
 record() {
   python3 "$HELPER" snapshot "$SB_HOME" "$SB_STUB/after.json" \
-    --exclude "$SB_DEX_HOME" --exclude "$SB_REPO"
+    --exclude "$SB_DEX_HOME" --exclude "$SB_REPO" --transcripts "$SB_STUB/transcripts.txt"
   python3 "$HELPER" diff "$SB_STUB/last.json" "$SB_STUB/after.json" "$1" >> "$SB_OBSERVED"
   mv "$SB_STUB/after.json" "$SB_STUB/last.json"
   dex_dir_status > "$SB_STUB/dex-dir.after"

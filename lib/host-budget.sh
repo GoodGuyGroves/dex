@@ -165,7 +165,9 @@ dx_host_load1() {
   local raw="" load1="" load_rest=""
   if [[ -n "${DX_HOST_LOAD1_OVERRIDE:-}" ]]; then
     [[ "${DX_HOST_LOAD1_OVERRIDE}" =~ ^[0-9]{1,5}(\.[0-9]{1,2})?$ ]] || return 1
-    LC_ALL=C printf '%.2f\n' "$DX_HOST_LOAD1_OVERRIDE"
+    # Exported in a subshell: bash 3.2 ignores a temporary LC_ALL= on a builtin,
+    # and a decimal-comma locale would then reject "1.75".
+    (export LC_ALL=C; printf '%.2f\n' "$DX_HOST_LOAD1_OVERRIDE")
     return 0
   fi
   if [[ -r /proc/loadavg ]]; then
@@ -175,12 +177,14 @@ dx_host_load1() {
     # shellcheck disable=SC2034  # the remainder of the line is deliberately discarded
     read -r raw load_rest < /proc/loadavg 2>/dev/null || raw=""
   elif command -v sysctl >/dev/null 2>&1; then
-    raw=$(sysctl -n vm.loadavg 2>/dev/null \
+    # sysctl prints the locale's decimal separator ("{ 1,90 ... }" under a
+    # decimal-comma locale), so ask it for C's.
+    raw=$(LC_ALL=C sysctl -n vm.loadavg 2>/dev/null \
       | awk '{ for (field = 1; field <= NF; field++) {
           if ($field ~ /^[0-9]+\.[0-9]+$/) { print $field; exit } } }') || raw=""
   fi
   [[ "$raw" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
-  load1=$(LC_ALL=C printf '%.2f' "$raw" 2>/dev/null) || return 1
+  load1=$(export LC_ALL=C; printf '%.2f' "$raw" 2>/dev/null) || return 1
   printf '%s\n' "$load1"
 }
 

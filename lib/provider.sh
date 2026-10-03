@@ -585,16 +585,21 @@ dx_provider_apply() {
   effort_override="${DX_EFFORT_OVERRIDE:-${DX_EFFORT:-}}"
   dx_provider_validate_effort_field "DX_EFFORT override" "$effort_override" || return 1
 
+  # Which configured default an agent override kept, so a launch can explain a
+  # profile the user did not name (see __dx_provider_agent_default_ready).
+  DX_PROVIDER_AGENT_DEFAULT_SOURCE=""
   if [[ -n "$agent_override" ]]; then
     default_profile=$(dx_provider_repo_default_profile 2>/dev/null || true)
     if [[ -n "$default_profile" ]] && dx_provider_profile_matches_agent "$default_profile" "repo" "$agent_override"; then
       DX_PROVIDER_PROFILE_RESOLVED="$default_profile"
       preferred_source="repo"
+      DX_PROVIDER_AGENT_DEFAULT_SOURCE="repo"
     else
       default_profile=$(__dx_provider_json_default "$DX_PROVIDER_GLOBAL_CONFIG" 2>/dev/null || true)
       if [[ -n "$default_profile" ]] && dx_provider_profile_matches_agent "$default_profile" "global" "$agent_override"; then
         DX_PROVIDER_PROFILE_RESOLVED="$default_profile"
         preferred_source="global"
+        DX_PROVIDER_AGENT_DEFAULT_SOURCE="global"
       else
         DX_PROVIDER_PROFILE_RESOLVED=$(dx_agent_default_profile "$agent_override") || return 1
         preferred_source="builtin"
@@ -913,15 +918,16 @@ dx_provider_claude() {
   # termination. Still overridable from the environment.
   env_args+=(CLAUDE_CODE_STOP_HOOK_BLOCK_CAP="${CLAUDE_CODE_STOP_HOOK_BLOCK_CAP:-1000}")
 
-  # One host budget for every launch path, the router included. Exported for
-  # this function's lifetime only, so the launched process inherits it while
-  # the caller's shell does not. A name the operator or a parent Dex process
-  # already exported keeps its value (see lib/host-budget.sh).
+  # One host budget for every launch path, the router included. `local -x`
+  # exports it for this call only, so the launched process inherits it while
+  # the caller's shell does not; zsh would make a `declare -x` global. A name
+  # the operator or a parent Dex process already exported keeps its value
+  # (see lib/host-budget.sh).
   local _budget_line
   while IFS= read -r _budget_line; do
     [[ -n "$_budget_line" ]] || continue
     # shellcheck disable=SC2163  # NAME=VALUE lines from dx_host_budget_env
-    declare -x "$_budget_line"
+    local -x "$_budget_line"
   done < <(dx_host_budget_env 2>/dev/null || true)
 
   # Prompt cache lifetime. Through the router Claude Code believes it is on an
@@ -936,10 +942,10 @@ dx_provider_claude() {
   # explicit CLAUDE_CODE_PROMPT_CACHE_TTL from the user wins for lifecycles.
   if [[ "$DX_PROVIDER_ENGINE" != "codex-plugin" ]]; then
     if [[ "${DEX_REVIEW_PASS_ACTIVE:-0}" == 1 || "${DEX_REVIEW_ASSESSMENT_ACTIVE:-0}" == 1 ]]; then
-      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL=5m DEX_PROMPT_CACHE_TTL=5m
+      local -x CLAUDE_CODE_PROMPT_CACHE_TTL=5m DEX_PROMPT_CACHE_TTL=5m
     elif [[ "${DEX_LOOP_ACTIVE:-0}" == 1 ]]; then
-      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL="${CLAUDE_CODE_PROMPT_CACHE_TTL:-1h}"
-      declare -x DEX_PROMPT_CACHE_TTL="$CLAUDE_CODE_PROMPT_CACHE_TTL"
+      local -x CLAUDE_CODE_PROMPT_CACHE_TTL="${CLAUDE_CODE_PROMPT_CACHE_TTL:-1h}"
+      local -x DEX_PROMPT_CACHE_TTL="$CLAUDE_CODE_PROMPT_CACHE_TTL"
     fi
   fi
 
@@ -953,7 +959,7 @@ dx_provider_claude() {
   while IFS= read -r _snapshot_line; do
     [[ -n "$_snapshot_line" ]] || continue
     # shellcheck disable=SC2163  # NAME=VALUE lines from dx_host_snapshot
-    declare -x "$_snapshot_line"
+    local -x "$_snapshot_line"
   done < <(dx_host_snapshot 2>/dev/null || true)
 
   # A phase that never opens a browser launches with no MCP servers at all —
@@ -999,8 +1005,7 @@ dx_provider_claude() {
   # Dex's hooks, status line and settings reach Claude only through this one
   # --settings file, never through ~/.claude/settings.json. DEX_LAUNCHED keeps
   # an opt-in global install (dx install --global-hooks) from running the
-  # same hooks a second time. No trap removes the file: dx.sh is sourced into
-  # the user's shell, so the next launch's sweep collects what a kill leaves.
+  # same hooks a second time.
   local _dx_launch_file="" _dx_launch_mcp_file="" _dx_launch_args=() _dx_launch_rc=0
   if ! __dx_provider_launch_settings "$@"; then
     rm -f ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
@@ -1012,9 +1017,20 @@ dx_provider_claude() {
   if [[ "$DX_PROVIDER_ENGINE" == ccr && -n "$_dx_launch_mcp_file" ]]; then
     local -x DEX_MCP_LAUNCH_CONFIG="$_dx_launch_mcp_file"
   fi
-  __dx_provider_claude_exec "${_dx_launch_args[@]}" || _dx_launch_rc=$?
-  rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} \
-    ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}
+  # The launch runs in a subshell whose EXIT trap removes the launch files, so
+  # an interrupted launch cleans up at once. The subshell keeps the trap away
+  # from a caller that sourced dx.sh. Both signal traps run only after the
+  # foreground provider has exited. The INT handler only keeps the subshell
+  # alive, so the launch returns the provider's own status: Claude takes Ctrl-C
+  # for itself, and a session that absorbed one and later exits 0 still
+  # returns 0. A TERM is meant for Dex, so it ends the launch as 143. The sweep
+  # collects what a SIGKILL leaves.
+  (
+    trap 'rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}' EXIT
+    trap ':' INT
+    trap 'exit 143' TERM
+    __dx_provider_claude_exec "${_dx_launch_args[@]}"
+  ) || _dx_launch_rc=$?
   return "$_dx_launch_rc"
 }
 
@@ -1334,6 +1350,97 @@ while True:
 ' "$@"
 }
 
+# dx_provider_claude_transcript_exists <launch-dir> <conversation-id> [session-name]
+# Whether Claude Code has a transcript for a conversation: 0 found, 1 missing,
+# 2 unknown. Claude keeps one at <config>/projects/<encoded dir>/<id>.jsonl,
+# where the launch directory is encoded by turning every character that is not
+# a letter or digit into '-' (the rule scripts/attribution.py follows). Both the logical and the physical launch
+# directory are tried. With no ID, a transcript whose custom-title record
+# carries the session name (`claude -n`) counts. Only files are read; nothing
+# asks Claude, whose messages change between releases.
+dx_provider_claude_transcript_exists() {
+  local launch_dir="${1:-}" conversation="${2:-}" session_name="${3:-}" physical_dir=""
+  [[ -n "$launch_dir" ]] || return 2
+  physical_dir=$(cd "$launch_dir" 2>/dev/null && pwd -P) || physical_dir=""
+  python3 - "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "$conversation" "$session_name" \
+    "$launch_dir" "$physical_dir" <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+FOUND, MISSING, UNKNOWN = 0, 1, 2
+root, conversation, name = sys.argv[1:4]
+launch_dirs = [d for d in dict.fromkeys(sys.argv[4:]) if d]
+if not os.path.isdir(root):
+    sys.exit(UNKNOWN)
+if conversation and not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$", conversation):
+    sys.exit(UNKNOWN)
+if not conversation and not name:
+    sys.exit(UNKNOWN)
+projects = os.path.join(root, "projects")
+if not os.path.isdir(projects):
+    sys.exit(MISSING)
+project_dirs = [os.path.join(projects, re.sub(r"[^A-Za-z0-9]", "-", d)) for d in launch_dirs]
+present = [d for d in project_dirs if os.path.isdir(d)]
+
+if conversation:
+    if any(os.path.isfile(os.path.join(d, conversation + ".jsonl")) for d in present):
+        sys.exit(FOUND)
+    # Claude shortens a project name longer than 200 characters and appends a
+    # hash, so match those by their first 200 characters.
+    for d in project_dirs:
+        name_part = os.path.basename(d)
+        if len(name_part) > 200 and glob.glob(os.path.join(
+                glob.escape(projects), glob.escape(name_part[:200]) + "*",
+                glob.escape(conversation) + ".jsonl")):
+            sys.exit(FOUND)
+    sys.exit(MISSING)
+
+unreadable = False
+for directory in present:
+    try:
+        entries = sorted(os.listdir(directory))
+    except OSError:
+        unreadable = True
+        continue
+    for entry in entries:
+        if not entry.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(directory, entry), "rb") as stream:
+                for line in stream:
+                    if b'"custom-title"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(record, dict) and record.get("type") == "custom-title" \
+                            and record.get("customTitle") == name:
+                        sys.exit(FOUND)
+        except OSError:
+            unreadable = True
+sys.exit(UNKNOWN if unreadable else MISSING)
+PY
+}
+
+# dx_provider_claude_not_started_error — what a Claude launch that left no
+# transcript most often means: the folder-trust dialog was declined. Claude
+# keeps that trust per git repository, and a worktree shares its repository's,
+# so the hint names the main checkout.
+dx_provider_claude_not_started_error() {
+  local repo_root="" common_dir=""
+  if common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    && [[ "$common_dir" == */.git ]]; then
+    repo_root="${common_dir%/.git}"
+  else
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || repo_root="$PWD"
+  fi
+  dx_error "Claude exited before the session started (folder-trust dialog declined?). Run \`claude\` once in ${repo_root} to trust it."
+}
+
 # dx_provider_run_session <name> <resuming:0|1> <saved-handle> <provider-args...>
 # A failed lookup has not started a conversation, so a fresh launch can use
 # the same prepared phase context and completion authorization.
@@ -1363,6 +1470,22 @@ dx_provider_run_session() (
     # Older Claude lifecycles have only Dex's stable session name.
     resume_target="$session_name"
     resume_args=(--resume "$session_name")
+  fi
+
+  # A conversation Claude never wrote cannot be resumed, and newer Claude
+  # versions answer that --resume with an interactive picker rather than the
+  # message matched below. A launch that failed before its session started
+  # leaves exactly this, so look for the transcript first. An unknown answer
+  # keeps the resume and its fallback.
+  if [[ "${DX_PROVIDER_ENGINE:-}" != "codex-plugin" ]]; then
+    local transcript_result=0
+    dx_provider_claude_transcript_exists "$PWD" "$saved_handle" "$session_name" \
+      || transcript_result=$?
+    if [[ "$transcript_result" -eq 1 ]]; then
+      dx_warn "The saved Claude conversation could not be found; starting a new conversation at the current Dex phase."
+      __dx_claude -n "$session_name" "$@"
+      return $?
+    fi
   fi
 
   local missing_file launch_result=0
@@ -2116,6 +2239,14 @@ dx_provider_session() (
     dx_agent_session_handle_write "$session_id" claude "$claude_handle" || return 1
     dx_provider_claude "${DX_CLAUDE_FLAGS[@]}" --session-id "$claude_handle" \
       -- "$prompt" || exit_code=$?
+    # The conversation ID is Dex's own, so a missing transcript means the
+    # session never started; a declined trust dialog still exits 0.
+    local transcript_result=0
+    dx_provider_claude_transcript_exists "$PWD" "$claude_handle" || transcript_result=$?
+    if [[ "$transcript_result" -eq 1 ]]; then
+      dx_provider_claude_not_started_error
+      [[ "$exit_code" -ne 0 ]] || exit_code=1
+    fi
   fi
   return "$exit_code"
 )
@@ -2489,8 +2620,52 @@ dx_provider_command() {
 # Model and effort come from the user's Claude session defaults. Dex only
 # passes --model/--effort when an explicit override is set (dx --model,
 # DX_CLAUDE_MODEL/DX_CLAUDE_EFFORT, or a provider profile that pins them).
+# dx_provider_ccr_has_enabled_account — 0 when CCR's account registry lists an
+# enabled account, 1 when it lists none (or does not exist yet), 2 when it
+# cannot be read; the router itself has the final word then.
+dx_provider_ccr_has_enabled_account() {
+  [[ -n "${DEX_ROUTER_HOME:-}" ]] || return 2
+  python3 - "$DEX_ROUTER_HOME/accounts.json" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        data = json.load(stream)
+except FileNotFoundError:
+    sys.exit(1)
+except (OSError, ValueError):
+    sys.exit(2)
+accounts = data.get("accounts") if isinstance(data, dict) else None
+if not isinstance(accounts, list):
+    sys.exit(2)
+sys.exit(0 if any(isinstance(item, dict) and item.get("enabled") is True for item in accounts) else 1)
+PY
+}
+
+# __dx_provider_agent_default_ready — an agent override keeps a matching
+# configured default, ccr-subscription included. With no enabled CCR account
+# that profile cannot launch, so say which default was kept and how to choose
+# another before any workspace is set up. An explicit profile is the user's
+# own choice and is left to the router.
+__dx_provider_agent_default_ready() {
+  [[ -n "${DX_PROVIDER_AGENT_DEFAULT_SOURCE:-}" && "${DX_PROVIDER_ENGINE:-}" == ccr ]] || return 0
+  local account_result=0 default_label
+  dx_provider_ccr_has_enabled_account || account_result=$?
+  [[ "$account_result" -eq 1 ]] || return 0
+  if [[ "$DX_PROVIDER_AGENT_DEFAULT_SOURCE" == repo ]]; then
+    default_label="this repository's default in .dex/providers.json"
+  else
+    default_label="your default in ${DX_PROVIDER_GLOBAL_CONFIG}"
+  fi
+  dx_error "The ${DX_PROVIDER_AGENT:-claude} agent resolved to ${DX_PROVIDER_PROFILE_RESOLVED}, ${default_label}, but CCR has no enabled account, so it cannot launch."
+  dx_info "Add an account with 'dx account add', or use direct Claude Code: 'dx provider use claude-subscription' (add --repo for this repository only), or run without --agent (or DX_AGENT) and with DX_PROVIDER_PROFILE=claude-subscription."
+  return 1
+}
+
 __dx_refresh_provider() {
   dx_provider_apply || return 1
+  __dx_provider_agent_default_ready || return 1
   DX_CLAUDE_FLAGS=(--chrome --dangerously-skip-permissions --permission-mode bypassPermissions)
   if [[ -n "$DX_CLAUDE_MODEL" ]]; then
     DX_CLAUDE_FLAGS+=(--model "$DX_CLAUDE_MODEL")

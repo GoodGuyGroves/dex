@@ -3476,6 +3476,23 @@ __dx_run_phases_inline() {
     esac
   fi
 
+  # A Claude session that never started (a declined folder-trust dialog, most
+  # often) leaves no transcript: none for the conversation SessionStart
+  # captured, or, with nothing captured, none under this session's name.
+  local session_never_started=0
+  if [[ "$agent_kind" == claude && -z "$watchdog_reason" ]]; then
+    local started_handle="" transcript_result=0
+    started_handle=$(dx_agent_session_handle_read "$session_id" claude 2>/dev/null) \
+      || started_handle=""
+    dx_provider_claude_transcript_exists "$wt_dir" "$started_handle" \
+      "$claude_session_name" || transcript_result=$?
+    if [[ "$transcript_result" -eq 1 ]]; then
+      session_never_started=1
+      dx_run_log_append_for_session "$session_id" "warn" "dx" \
+        "Claude exited before the session started (no transcript); folder trust may have been declined"
+    fi
+  fi
+
   local final_step="$step"
   if [[ -e "$state_file" || -L "$state_file" ]]; then
     final_step=$(dx_lifecycle_phase_state "$session_id" 2>/dev/null) || {
@@ -3536,6 +3553,7 @@ __dx_run_phases_inline() {
 
     __dx_show_header "$wt_name" "$final_step" "$wt_dir" "$default_branch" "$session_id" "$workspace_mode"
     echo ""
+    [[ "$session_never_started" -eq 0 ]] || (cd "$wt_dir" && dx_provider_claude_not_started_error)
     echo "Paused at Phase ${final_step}: $(__dx_phase_name "$final_step") (${pause_reason})"
     echo "Resume with: ${resume_hint}"
     __dx_runtime_set_terminal blocked
@@ -3580,6 +3598,7 @@ __dx_run_phases_inline() {
       "$(dx_loop_config_file "$session_id")" "$(dx_handoff_mode_file "$session_id")" 2>/dev/null
     __dx_show_header "$wt_name" "$final_step" "$wt_dir" "$default_branch" "$session_id" "$workspace_mode"
     echo ""
+    [[ "$session_never_started" -eq 0 ]] || (cd "$wt_dir" && dx_provider_claude_not_started_error)
     echo "Paused at Phase ${final_step}: $(__dx_phase_name "$final_step") (exit ${exit_code})"
     echo "Resume with: ${resume_hint}"
     if [[ $exit_code -eq 130 || $exit_code -eq 143 ]]; then
@@ -3641,6 +3660,7 @@ __dx_run_phases_inline() {
   dx_provider_cleanup_session_state "$session_id"
   __dx_show_header "$wt_name" "$final_step" "$wt_dir" "$default_branch" "$session_id" "$workspace_mode"
   echo ""
+  [[ "$session_never_started" -eq 0 ]] || (cd "$wt_dir" && dx_provider_claude_not_started_error)
   echo "Agent session exited at Phase ${final_step}: $(__dx_phase_name "$final_step")."
   echo "Resume with: ${resume_hint}"
   __dx_runtime_set_terminal blocked

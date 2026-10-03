@@ -26,6 +26,8 @@ unset DEX_MAX_CONCURRENT_SUBAGENTS DEX_MAX_SUBAGENT_SPAWN_DEPTH
 unset DX_TEST_JOBS VITEST_MAX_THREADS VITEST_MAX_FORKS PYTEST_XDIST_AUTO_NUM_WORKERS
 unset CARGO_BUILD_JOBS RUST_TEST_THREADS GOFLAGS MAKEFLAGS
 unset CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH
+unset CLAUDE_CODE_PROMPT_CACHE_TTL DEX_PROMPT_CACHE_TTL
+unset DX_HOST_CPUS DX_HOST_MEM_GB DX_HOST_LOAD1 DX_HOST_ACTIVE_SESSIONS DX_HOST_ACTIVE_HEAVY DX_HOST_FALLBACKS
 
 # --- test-job budget -------------------------------------------------------
 assert_eq "4" "$(dx_host_test_jobs 8 1)" "one session keeps half the cores"
@@ -148,13 +150,13 @@ launch_output="$TMP_DIR/launch.out"
   export DEX_TEST_JOBS=3 GOFLAGS=-mod=vendor
   unset DEX_SESSION_ID
   dx_provider_claude -p test
-) > "$launch_output"
+  # The launching shell itself keeps none of it (zsh: tests/dx-without-rc-test.sh).
+  [[ -z "${DX_TEST_JOBS:-}" && -z "${VITEST_MAX_THREADS:-}" ]] || exit 3
+) > "$launch_output" || assert_at $LINENO
 assert_contains "DX_TEST_JOBS=3" "$launch_output"
 assert_contains "VITEST_MAX_THREADS=3" "$launch_output"
 assert_contains "GOFLAGS=-mod=vendor" "$launch_output"
 assert_contains "SUBAGENTS=4" "$launch_output"
-[[ -z "${DX_TEST_JOBS:-}" ]] || assert_at $LINENO
-[[ -z "${VITEST_MAX_THREADS:-}" ]] || assert_at $LINENO
 assert_contains "CACHE_TTL=unset" "$launch_output"
 
 # Prompt cache lifetime: an hour for a lifecycle session, which waits on
@@ -188,7 +190,9 @@ launch_host="$TMP_DIR/launch-host.out"
   export DX_PROVIDER_APPLIED=1 DX_PROVIDER_ENGINE=claude DX_PROVIDER_PROFILE_RESOLVED=claude
   unset DEX_SESSION_ID
   dx_provider_claude -p test
-) > "$launch_host"
+  # And it leaves the launching shell exactly as it found it.
+  [[ -z "${DX_HOST_ACTIVE_HEAVY:-}" && -z "${DX_HOST_LOAD1:-}" ]] || exit 3
+) > "$launch_host" || assert_at $LINENO
 launch_cpus="$(sed -n 's/^DX_HOST_CPUS=//p' "$launch_host")"
 launch_mem="$(sed -n 's/^DX_HOST_MEM_GB=//p' "$launch_host")"
 launch_load="$(sed -n 's/^DX_HOST_LOAD1=//p' "$launch_host")"
@@ -197,9 +201,6 @@ launch_load="$(sed -n 's/^DX_HOST_LOAD1=//p' "$launch_host")"
 [[ "$launch_load" =~ ^[0-9]+\.[0-9]{2}$ ]] || assert_at $LINENO
 assert_contains "DX_HOST_ACTIVE_SESSIONS=0" "$launch_host"
 assert_contains "DX_HOST_ACTIVE_HEAVY=0" "$launch_host"
-# And it leaves the launching shell exactly as it found it.
-[[ -z "${DX_HOST_ACTIVE_HEAVY:-}" ]] || assert_at $LINENO
-[[ -z "${DX_HOST_LOAD1:-}" ]] || assert_at $LINENO
 
 # --- measured host facts, and the fallback when a host cannot answer ---------
 # Every fact has an override so a container, and every test, states its own
@@ -212,6 +213,22 @@ assert_eq "1.75" "$(DX_HOST_LOAD1_OVERRIDE=1.75 dx_host_load1)" \
   "DX_HOST_LOAD1_OVERRIDE replaces the probe"
 assert_eq "3.00" "$(DX_HOST_LOAD1_OVERRIDE=3 dx_host_load1)" \
   "a whole-number load average is normalised to two decimals"
+# A decimal-comma locale must not leak into the number (bash 3.2 ignores a
+# temporary LC_ALL= on a builtin, so printf parsed "1.75" as invalid).
+comma_locale=$(locale -a 2>/dev/null | grep -E '^(de_DE|en_ZA|fr_FR|nl_NL)\.(UTF-8|utf8)$' | head -1 || true)
+if [[ -n "$comma_locale" ]]; then
+  for test_shell in bash zsh; do
+    comma_load=$(env -u LC_ALL LANG="$comma_locale" LC_NUMERIC="$comma_locale" \
+      DX_HOST_LOAD1_OVERRIDE=1.75 "$test_shell" -c \
+      'source "$DEX_DIR/lib/common.sh"; dx_host_load1' 2>&1) || true
+    assert_eq "1.75" "$comma_load" "load override under $comma_locale ($test_shell)"
+    comma_load=$(env -u LC_ALL -u DX_HOST_LOAD1_OVERRIDE LANG="$comma_locale" \
+      LC_NUMERIC="$comma_locale" "$test_shell" -c \
+      'source "$DEX_DIR/lib/common.sh"; dx_host_load1' 2>&1) || true
+    [[ "$comma_load" =~ ^[0-9]+\.[0-9]{2}$ ]] \
+      || fail "probed load under $comma_locale ($test_shell): $comma_load"
+  done
+fi
 if DX_HOST_MEM_GB_OVERRIDE=plenty dx_host_memory_total_gb >/dev/null 2>&1; then
   fail "a malformed memory override was accepted"
 fi

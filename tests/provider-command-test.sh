@@ -315,4 +315,59 @@ unset DEX_ROUTER_HOME
 export DX_PROVIDER_PROFILE="codex-subscription"
 dx_provider_apply
 
+# --agent claude keeps a matching ccr-subscription default. With no enabled CCR
+# account behind it that profile cannot launch, so the launch path refuses up
+# front, naming the profile, where it came from and the ways out. An enabled
+# account, an explicit profile, and the plain no-override path are unchanged.
+(
+  cd "$TMP_DIR/repo"
+  export DEX_ROUTER_HOME="$TMP_DIR/router-accounts"
+  mkdir -p "$DEX_ROUTER_HOME"
+  chmod 700 "$DEX_ROUTER_HOME"
+  unset DX_PROVIDER_PROFILE
+  refresh_as_claude() { DX_AGENT_OVERRIDE=claude __dx_refresh_provider; }
+  write_accounts() {
+    printf '{"version":1,"accounts":[{"id":"one","name":"main","provider":"anthropic","enabled":%s}]}\n' \
+      "$1" > "$DEX_ROUTER_HOME/accounts.json"
+    chmod 600 "$DEX_ROUTER_HOME/accounts.json"
+  }
+
+  printf '%s\n' '{"default":"ccr-subscription"}' > .dex/providers.json
+  assert_fails_with "resolved to ccr-subscription, this repository's default in .dex/providers.json" refresh_as_claude
+  assert_fails_with "but CCR has no enabled account" refresh_as_claude
+  assert_fails_with "dx provider use claude-subscription" refresh_as_claude
+  assert_fails_with "dx account add" refresh_as_claude
+  assert_fails_with "DX_PROVIDER_PROFILE=claude-subscription" refresh_as_claude
+  write_accounts false
+  assert_fails_with "but CCR has no enabled account" refresh_as_claude
+  write_accounts true
+  refresh_as_claude || assert_at $LINENO
+  [[ "$DX_PROVIDER_PROFILE_RESOLVED" == ccr-subscription ]] || assert_at $LINENO
+  rm -f "$DEX_ROUTER_HOME/accounts.json"
+  # A registry Dex cannot read is the router's to judge.
+  printf '{broken\n' > "$DEX_ROUTER_HOME/accounts.json"
+  refresh_as_claude || assert_at $LINENO
+  rm -f "$DEX_ROUTER_HOME/accounts.json"
+
+  # Not an agent override: the user chose the profile, so the router decides.
+  DX_PROVIDER_PROFILE=ccr-subscription __dx_refresh_provider || assert_at $LINENO
+  __dx_refresh_provider || assert_at $LINENO
+  [[ "$DX_PROVIDER_PROFILE_RESOLVED" == ccr-subscription ]] || assert_at $LINENO
+  # Listing profiles never launches, so it never refuses.
+  DX_AGENT_OVERRIDE=claude dx_provider_command list > "$TMP_DIR/agent-list.out" 2>&1 \
+    || { cat "$TMP_DIR/agent-list.out" >&2; assert_at $LINENO; }
+
+  # The same from the user's default.
+  rm -f .dex/providers.json
+  dx_provider_command use ccr-subscription >/dev/null
+  assert_fails_with "your default in $DX_PROVIDER_GLOBAL_CONFIG" refresh_as_claude
+  # A repo default for another agent is skipped, as before.
+  printf '%s\n' '{"default":"codex-subscription"}' > .dex/providers.json
+  assert_fails_with "your default in $DX_PROVIDER_GLOBAL_CONFIG" refresh_as_claude
+  rm -f .dex/providers.json "$DX_PROVIDER_GLOBAL_CONFIG"
+  # No configured default: --agent claude is the built-in direct profile.
+  refresh_as_claude || assert_at $LINENO
+  [[ "$DX_PROVIDER_PROFILE_RESOLVED" == claude-subscription ]] || assert_at $LINENO
+)
+
 printf 'provider command tests passed\n'

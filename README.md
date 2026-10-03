@@ -607,6 +607,10 @@ dx 1234 --agent codex
 Run-level flags may appear before or after the ticket or task and leave saved
 defaults unchanged. `--agent claude` keeps a configured CCR profile when it is
 the matching default; select `claude-subscription` to use the direct profile.
+If that CCR default has no enabled account, `dx` stops before launching and
+names the profile and where it was set. Add an account with `dx account add`,
+or switch with `dx provider use claude-subscription`. `--agent` takes
+precedence over `DX_PROVIDER_PROFILE`.
 Direct profiles use their CLI's session model and effort defaults unless
 overridden. `dx provider doctor` checks authentication and local tooling.
 

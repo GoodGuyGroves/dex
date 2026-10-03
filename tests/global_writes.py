@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Snapshot, diff and parity helpers for tests/no-global-writes-test.sh.
 
-  snapshot <root> <out.json> [--exclude <path>]...
+  snapshot <root> <out.json> [--exclude <path>]... [--transcripts <manifest>]
       Record every entry under <root>: type, mode, sha256 and symlink target.
       Directories are included and mtimes ignored, so the result is the same on
       macOS and Linux. A JSON file also gets an entry per key, two levels deep,
@@ -89,9 +89,32 @@ def _structured_entries(rel, data):
     return entries
 
 
-def snapshot(root, excludes):
+def _transcripts(manifest):
+    """The transcripts the stub `claude` wrote, one absolute path per line in
+    <manifest> (outside the snapshot). They are Claude Code's own session
+    files, the CLI's state and not Dex's, so the snapshot leaves out exactly
+    these and nothing else under ~/.claude/projects."""
+    try:
+        with open(manifest, encoding="utf-8") as handle:
+            return {os.path.realpath(line.strip()) for line in handle if line.strip()}
+    except FileNotFoundError:
+        return set()
+
+
+def _only_transcripts(directory, transcripts):
+    """A directory holding nothing but stub transcripts was made for them."""
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return False
+    return bool(names) and all(os.path.realpath(os.path.join(directory, name)) in transcripts
+                               for name in names)
+
+
+def snapshot(root, excludes, transcripts=frozenset()):
     root = os.path.abspath(root)
     excludes = [os.path.abspath(path) for path in excludes]
+    projects = os.path.realpath(os.path.join(root, ".claude", "projects"))
     entries = {}
 
     def unreadable(error):
@@ -105,6 +128,10 @@ def snapshot(root, excludes):
             if full in excludes:
                 continue
             rel = os.path.relpath(full, root)
+            real = os.path.realpath(full)
+            if real in transcripts or (os.path.dirname(real) == projects
+                                       and _only_transcripts(full, transcripts)):
+                continue
             try:
                 info = os.lstat(full)
                 mode = format(stat.S_IMODE(info.st_mode), "o")
@@ -617,6 +644,28 @@ def selftest(dex_dir):
                       (".claude/projects/-repo/memory", False),
                       (".claude/projects/-repo/memory.md", False)):
         assert any(pattern.match(path) for _, pattern in FORBIDDEN) == hit, path
+    # Only the transcripts the stub wrote are left out, with a directory made
+    # just for them; any other .jsonl under ~/.claude/projects stays visible.
+    import tempfile
+    with tempfile.TemporaryDirectory() as box:
+        home = os.path.join(box, "home")
+        projects = os.path.join(home, ".claude", "projects")
+        for rel in ("-a/stub.jsonl", "-a/dex.jsonl", "-b/stub.jsonl", "-c/dex.jsonl",
+                    "-d/stub.jsonl", "-d/memory/MEMORY.md"):
+            os.makedirs(os.path.dirname(os.path.join(projects, rel)), exist_ok=True)
+            with open(os.path.join(projects, rel), "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+        manifest = os.path.join(box, "transcripts.txt")
+        with open(manifest, "w", encoding="utf-8") as handle:
+            for rel in ("-a/stub.jsonl", "-b/stub.jsonl", "-d/stub.jsonl"):
+                handle.write(os.path.join(projects, rel) + "\n")
+        seen = {path for path in snapshot(home, [], _transcripts(manifest)) if "#" not in path}
+        expected = {".claude", ".claude/projects", ".claude/projects/-a",
+                    ".claude/projects/-a/dex.jsonl", ".claude/projects/-c",
+                    ".claude/projects/-c/dex.jsonl", ".claude/projects/-d",
+                    ".claude/projects/-d/memory", ".claude/projects/-d/memory/MEMORY.md"}
+        assert seen == expected, sorted(seen ^ expected)
+        assert _transcripts(os.path.join(box, "missing")) == set()
     return 0
 
 
@@ -626,8 +675,12 @@ def main(argv):
     command, args = argv[1], argv[2:]
     if command == "snapshot" and len(args) >= 2:
         excludes = [args[i + 1] for i in range(2, len(args) - 1, 2) if args[i] == "--exclude"]
+        transcripts = set()
+        for i in range(2, len(args) - 1, 2):
+            if args[i] == "--transcripts":
+                transcripts |= _transcripts(args[i + 1])
         with open(args[1], "w", encoding="utf-8") as handle:
-            json.dump(snapshot(args[0], excludes), handle, indent=0, sort_keys=True)
+            json.dump(snapshot(args[0], excludes, transcripts), handle, indent=0, sort_keys=True)
         return 0
     if command == "diff" and len(args) == 3:
         rows = diff(_load_json(args[0]), _load_json(args[1]), args[2])

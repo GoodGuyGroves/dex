@@ -325,6 +325,26 @@ def write_memory(settings):
     log("memory.jsonl", {"step": os.environ.get("GW_STEP", ""), "dir": directory})
 
 
+def write_transcript():
+    """The conversation transcript a started session writes: Dex reads it to
+    tell a session that started from one that never did. It is the CLI's own
+    session file, so its path goes in $GW_STUB_DIR/transcripts.txt first and
+    the snapshot leaves out exactly the paths listed there."""
+    def value(flag):
+        return ARGS[ARGS.index(flag) + 1] if flag in ARGS[:-1] else ""
+    conversation = value("--session-id") or value("--resume") or "gw-stub-%d" % os.getpid()
+    directory = os.path.join(claude_dir(), "projects", re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()))
+    lines = ['{"type":"user","sessionId":%s}' % json.dumps(conversation)]
+    name = value("-n") or value("--name")
+    if name:
+        lines.append(json.dumps({"type": "custom-title", "customTitle": name, "sessionId": conversation}))
+    path = os.path.join(directory, conversation + ".jsonl")
+    if STUB_DIR:
+        with open(os.path.join(STUB_DIR, "transcripts.txt"), "a", encoding="utf-8") as handle:
+            handle.write(path + "\n")
+    touch(path, "\n".join(lines) + "\n")
+
+
 def claude_main():
     if ARGS[:1] in (["--help"], ["-h"]):
         print(CLAUDE_HELP)
@@ -352,6 +372,8 @@ def claude_main():
         write_memory(settings)
         if "-p" not in ARGS and "--print" not in ARGS:
             write_plan(settings)
+    if "-p" not in ARGS and "--print" not in ARGS:
+        write_transcript()
     if "-p" in ARGS or "--print" in ARGS:
         # One-shot analysis (dx init, dx sync): write what init's check needs.
         dex_md = os.path.join(global_writes._git_root(os.getcwd()), ".dex", "dex.md")
