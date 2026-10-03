@@ -118,12 +118,16 @@ assert_eq 2 "$rc" "a symlink out of the repository is rejected"
   printf 'other-branch-only\t%s\tdex#9\n' "$OTHER_SHA"
   printf 'unknown-base\tno-such-ref\tdex#9\n'
   printf 'too-few-fields\tmain\n'
+  # An empty field is malformed, not a reason to shift the others left.
+  printf 'empty-base\t\tmain\tdex#2\n'
+  printf 'crlf-line\tmain\tdex#3\r\n'
 } > "$REPO/.dex/known-failures.tsv"
 write_contract $'lanes:\n  - bash tests/check.sh\nknown_failures: .dex/known-failures.tsv'
 failures=$(dx_verification_known_failures "$REPO" 2> "$TMP_DIR/failures.err")
-assert_eq "$(printf 'review-loop\t%s\tdex#1\nccr-routing\tmain\tdex#1' "$BASE_SHA")" \
+assert_eq "$(printf 'review-loop\t%s\tdex#1\nccr-routing\tmain\tdex#1\ncrlf-line\tmain\tdex#3' "$BASE_SHA")" \
   "$failures" "entries whose base HEAD contains"
 block_has "$(cat "$TMP_DIR/failures.err")" "skipping malformed known_failures line for too-few-fields"
+block_has "$(cat "$TMP_DIR/failures.err")" "skipping malformed known_failures line for empty-base"
 block=$(dx_verification_phase_block "$REPO")
 block_has "$block" "Report each one you hit as baseline (<issue-ref>) and do not fix it in this unit:"
 block_has "$block" "    review-loop (base $BASE_SHA, dex#1)"

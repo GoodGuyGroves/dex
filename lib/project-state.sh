@@ -225,7 +225,7 @@ dx_project_verification_value() {
 # resolve, is reported on stderr and skipped.
 dx_verification_known_failures() {
   [[ $# -eq 1 && -n "$1" ]] || return 2
-  local failures_repo="$1" declared="" read_rc=0 failures_file test_id base_ref issue_ref extra
+  local failures_repo="$1" declared="" read_rc=0 failures_file line tab=$'\t' test_id base_ref issue_ref
   declared=$(dx_project_verification_value "$failures_repo" known_failures) || read_rc=$?
   [[ "$read_rc" -eq 0 ]] || return "$read_rc"
   failures_file=$(python3 - "$failures_repo" "$declared" <<'PY'
@@ -247,13 +247,20 @@ if not os.path.isfile(path):
 print(path)
 PY
 ) || return 2
-  while IFS=$'\t' read -r test_id base_ref issue_ref extra || [[ -n "$test_id" ]]; do
-    case "$test_id" in
+  # Split on each tab by hand: `read` with IFS=tab merges a run of tabs, so a
+  # line with an empty field would shift its fields left instead of failing.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    case "$line" in
       "" | \#*) continue ;;
     esac
-    if [[ -z "$base_ref" || -z "$issue_ref" || -n "$extra" ]]; then
+    test_id="${line%%"$tab"*}"
+    base_ref="${line#*"$tab"}"
+    issue_ref="${base_ref#*"$tab"}"
+    base_ref="${base_ref%%"$tab"*}"
+    if [[ "${line//[!$tab]/}" != "$tab$tab" || -z "$test_id" || -z "$base_ref" || -z "$issue_ref" ]]; then
       printf 'dex: skipping malformed known_failures line for %s: want test-id<TAB>base-ref<TAB>issue-ref\n' \
-        "$test_id" >&2
+        "${test_id:-(empty test-id)}" >&2
       continue
     fi
     # A ref that does not resolve is most likely a typo, so say so; one that
