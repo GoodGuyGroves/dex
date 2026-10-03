@@ -99,10 +99,11 @@ while [[ $# -gt 0 ]]; do
 done
 printf '%s\n' "$count" > "$STUB_OUT.count"
 # An interrupted launch: signal the shell that launched us, then exit as a
-# provider does on Ctrl-C.
+# provider does on Ctrl-C (or, with STUB_SIGNAL_EXIT, as Claude does when it
+# took the Ctrl-C itself and the session went on).
 if [[ -n "${STUB_SIGNAL:-}" ]]; then
   kill -"$STUB_SIGNAL" "$PPID"
-  exit 130
+  exit "${STUB_SIGNAL_EXIT:-130}"
 fi
 exit "${STUB_EXIT:-0}"
 STUB
@@ -209,6 +210,21 @@ for signal in INT TERM; do
   [[ "$rc" -ne 0 && "$rc" -ne 9 ]] || fail "zsh $signal: unexpected status $rc"
   assert_no_file "$(cat "$TMP_DIR/zsh-$signal.path")"
   assert_eq "$before" "$(launch_listing)" "zsh $signal: launch files removed"
+done
+# Claude takes Ctrl-C for itself (it cancels a reply or clears the prompt), so
+# the launching shell sees the INT too while the session goes on. The launch
+# still returns the provider's own status, not an interruption.
+for exit_code in 0 7; do
+  rc=0
+  STUB_SIGNAL=INT STUB_SIGNAL_EXIT="$exit_code" launch "bash-absorbed-$exit_code" "go" || rc=$?
+  assert_eq "$exit_code" "$rc" "bash: a Ctrl-C Claude absorbed keeps exit $exit_code"
+  rc=0
+  PATH="$TMP_DIR/bin:$PATH" STUB_OUT="$TMP_DIR/zsh-absorbed-$exit_code" STUB_SIGNAL=INT \
+    STUB_SIGNAL_EXIT="$exit_code" \
+    DX_PROVIDER_APPLIED=1 DX_PROVIDER_ENGINE=claude DX_PROVIDER_PROFILE_RESOLVED=claude \
+    zsh -fc 'source "$DEX_DIR/lib/common.sh"; dx_provider_claude go' || rc=$?
+  assert_eq "$exit_code" "$rc" "zsh: a Ctrl-C Claude absorbed keeps exit $exit_code"
+  assert_no_file "$(cat "$TMP_DIR/zsh-absorbed-$exit_code.path")"
 done
 
 # The directory a launch creates is private.

@@ -1019,12 +1019,15 @@ dx_provider_claude() {
   fi
   # The launch runs in a subshell whose EXIT trap removes the launch files, so
   # an interrupted launch cleans up at once. The subshell keeps the trap away
-  # from a caller that sourced dx.sh; INT and TERM traps run only after the
-  # foreground provider has exited. The sweep collects what a SIGKILL leaves.
+  # from a caller that sourced dx.sh. The INT and TERM handlers only keep the
+  # subshell alive until the foreground provider exits, and the subshell then
+  # returns the provider's own status: Claude takes Ctrl-C for itself, so a
+  # session that absorbed one and later exits 0 still returns 0. The sweep
+  # collects what a SIGKILL leaves.
   (
     trap 'rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}' EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
+    trap ':' INT
+    trap ':' TERM
     __dx_provider_claude_exec "${_dx_launch_args[@]}"
   ) || _dx_launch_rc=$?
   return "$_dx_launch_rc"
