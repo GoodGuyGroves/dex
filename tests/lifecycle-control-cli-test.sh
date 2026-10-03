@@ -112,6 +112,20 @@ assert_eq "30" \
   "$(dx_override_effective "$DEX_SESSION_ID" loop.max-iterations 30 2)" \
   "cleared CLI override"
 
+# pr.reviewers is session-scoped: the default scope becomes session, so it
+# still holds in Phase 6, and an explicit phase scope is refused.
+bash "$CONTROL" override pr.reviewers none --source agent \
+  --reason "Fork PR: do not ping upstream reviewers" > "$TMP_DIR/reviewers-override.out"
+assert_eq "none" "$(dx_override_effective "$DEX_SESSION_ID" pr.reviewers config 6)" \
+  "pr.reviewers defaults to a session override"
+assert_rejected "$LINENO" bash "$CONTROL" override pr.reviewers none --scope phase \
+  --source agent --reason "Phase-scoped reviewer mode" > "$TMP_DIR/reviewers-phase.out" 2>&1
+assert_contains "session-scoped" "$TMP_DIR/reviewers-phase.out"
+bash "$CONTROL" clear-override pr.reviewers --source agent \
+  --reason "Back to the reviewer table" > "$TMP_DIR/reviewers-clear.out"
+assert_eq "config" "$(dx_override_effective "$DEX_SESSION_ID" pr.reviewers config 6)" \
+  "cleared pr.reviewers session override"
+
 WAIVER_SESSION="$(dx_session_repo_key)-agent-waiver"
 printf '%s\n' 2 > "$(dx_state_file "$WAIVER_SESSION")"
 printf '%s\n' inline > "$(dx_handoff_mode_file "$WAIVER_SESSION")"
@@ -886,6 +900,29 @@ dx_cleanup_session "$WC_SESSION"
 FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-required.out" --reason "Only the dex#1 baseline fails"
 assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with a posted comment records the waiver"
 assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required posts one comment"
+dx_cleanup_session "$WC_SESSION"
+
+# required, under pr.reviewers none: the waiver comment asks no reviewer for
+# anything, so it still posts rather than claiming a comment that never went up.
+dx_override_set "$WC_SESSION" pr.reviewers none session - agent "Fork PR" 0
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-reviewers-none.out" \
+  --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required under pr.reviewers none records the waiver"
+assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required under pr.reviewers none still posts"
+dx_cleanup_session "$WC_SESSION"
+
+# required, for a gate that cannot be waived: refused before any comment, so
+# the PR never claims a waiver that was not recorded.
+setup_attribution_lifecycle "$WC_SESSION"
+: > "$FAKE_GH_LOG"
+: > "$FAKE_GH_COMMENTS"
+if FAKE_GH_PR=42 env PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$WC_SESSION" \
+  bash "$CONTROL" waive pr.reviewers --reason "Skip the reviewers entirely" \
+  > "$TMP_DIR/wc-required-reviewers.out" 2>&1; then
+  assert_at $LINENO
+fi
+assert_eq "" "$(cat "$FAKE_GH_COMMENTS")" "a refused pr.reviewers waiver posts nothing"
+assert_eq "0" "$(waiver_row_count "$WC_SESSION")" "a refused pr.reviewers waiver records nothing"
 dx_cleanup_session "$WC_SESSION"
 
 # required, with no open PR: nothing to post, so the waiver records.

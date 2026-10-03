@@ -49,9 +49,15 @@ dx_clear_watch_pause "$SESSION_ID"
 
 ### 1. Read Reviewer Config
 
-Read the `## Reviewers` rows with `dx_reviewers_rows "$(git rev-parse --show-toplevel)"`.
+Read the `## Reviewers` rows with
+`dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --show-toplevel)"`.
 It prints `handle<TAB>type<TAB>wait<TAB>adapter` per row, drops the `_none_`
-placeholder, and makes every Copilot row a `request` row. Sort them into:
+placeholder, and makes every Copilot row a `request` row. It prints nothing
+when the session has the `pr.reviewers none` override (`dx_reviewers_mode`
+prints `none`): then nobody is requested, mentioned, triggered, re-requested or
+waited for, and the summary carries the line `dx_reviewers_summary_line`
+prints, which names who set the override (`set by agent` or `set by human`).
+Sort the rows into:
 - `REQUEST_REVIEWERS` — generic rows where Type is `request`
 - `MENTION_REVIEWERS` — generic rows where Type is `mention`
 - `ADAPTER_REVIEWERS` — rows whose adapter is `greptile` or `copilot`; read
@@ -103,7 +109,7 @@ When setup runs:
 3. **Trigger adapter reviewers** (Copilot by reviewer request, Greptile by comment):
    ```bash
    REPO_DIR=$(git rev-parse --show-toplevel)
-   dx_reviewers_rows "$REPO_DIR" | while IFS=$'\t' read -r handle _ _ adapter; do
+   dx_reviewers_rows_effective "$SESSION_ID" "$REPO_DIR" | while IFS=$'\t' read -r handle _ _ adapter; do
      [[ "$adapter" == "generic" ]] && continue
      dx_reviewer_trigger "$SESSION_ID" "$REPO_DIR" "$PR_NUM" "$handle" "$adapter"
    done
@@ -281,6 +287,8 @@ Tests: M new test cases
 Reviews:
   - <reviewer>: <status> (N comments addressed)
   ...
+  (or the line `dx_reviewers_summary_line` prints, e.g.
+  "Reviewers: none (pr.reviewers override set by agent)")
 Merge review state: <none|approved|review-required|changes-requested|unknown> (informational)
 Disagreements left open for the maintainer:
   - <thread url> (<reviewer>)     (or "none")

@@ -225,7 +225,9 @@ For ticket tracking: use the enabled tracker for all status updates, context gat
 ## Reviewers
 
 Request-type reviewers are attached before Phase 5 marks the PR ready. Phase 6
-verifies readiness, re-requests them, and posts mention comments. Two types:
+verifies readiness, re-requests them, and posts mention comments. A session
+with the `pr.reviewers none` override (`dx control override pr.reviewers none`)
+requests, mentions and waits for no one. Two types:
 - `request` — native GitHub review request via Dex's `dx_maintenance_request_reviewer` helper
 - `mention` — `@<handle>` posted as a PR comment (for AI agents that watch mentions)
 

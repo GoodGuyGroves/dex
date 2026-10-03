@@ -82,8 +82,8 @@ Each phase has its own audit prompt in `prompts/phase-audits/`:
 | 2. Implement | `2-implement.md` | Task completion, TDD verification, coherent checkpoint history pushed as work develops, UI proof decision, evidence table, Phase 3 risk selection |
 | 3. Review | `3-review-loop.md` | Independent `/dxreviewloop` waves, accepted-fix checkpoints pushed, selected tier's global clean gate reached |
 | 4. Verify | `4-verify.md` | Final PR checks passing, verification repair checkpoints pushed, branch current on origin |
-| 5. PR | `5-pr.md` | Description quality, scope match, current visual media attached or handed off with a warning, PR ready with `request` reviewers attached |
-| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment, monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, settle the ticket per `ticket_close`, clean up local worktree/branch |
+| 5. PR | `5-pr.md` | Description quality, scope match, current visual media attached or handed off with a warning, PR ready with `request` reviewers attached (none under `pr.reviewers none`) |
+| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment (neither under `pr.reviewers none`), monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, settle the ticket per `ticket_close`, clean up local worktree/branch |
 
 During Phase 0, `dx_ticket_branch_prepare` resolves the branch name supplied by
 the tracker. If that branch exists on `origin`, Dex fetches its current tip and
@@ -337,7 +337,9 @@ wrapper-clocked transition marks rather than reviewer estimates.
 Phase 2 treats UI proof as an explicit agent judgment. `/dxuicapture` can produce a short before/after or after-only walkthrough when it improves the review, record a reasoned `SKIPPED` decision for a visible but disproportionate case, or record `N/A` when nothing changes in the browser. A human can request the full diff-aware capture at any time with `/dxproof` or its `/dxcapture` alias. Generated videos, screenshots, traces, captions, browser logs, and the handoff manifest stay under `~/.claude/.dex-artifacts/`; the lifecycle surfaces their status without turning capture into a hard product-correctness gate. For `READY` proof, Phase 5 attaches the current image/video bundle to the PR when GitHub CLI supports `--attach`. Older clients and incomplete uploads keep a visible local handoff. See [ui-capture.md](ui-capture.md).
 
 Phase 6 (Complete) is autonomous and bounded: it reads `## Reviewers` from
-`.dex/dex.md` to know who to notify. The autonomous loop re-reads
+`.dex/dex.md` to know who to notify, through `dx_reviewers_rows_effective`, so
+a session with the `pr.reviewers none` override notifies, re-requests and
+waits for no one. The autonomous loop re-reads
 `dx_complete_wait_minutes` (default 5) and `dx_complete_max_cycles` (default 3)
 each cycle, addresses failures through `/dxwatchpr` and `/dxprreview`, and
 re-requests reviewers after each push. It settles the ticket per
@@ -354,7 +356,7 @@ AI reviewers can opt into a wait. A `## Reviewers` row may add `Wait` and
 | @greptileai | mention | yes | greptile | Greptile AI review |
 | Copilot | request | yes | copilot | GitHub Copilot review |
 
-With `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
+Unless the session sets `pr.reviewers none`, with `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
 the PR's current head commit, or until `DEX_REVIEWER_WAIT_MINUTES` (default 20)
 runs out for that head. A timeout is reported as "not reviewed", never as a
 clean review. The adapter says how to ask and how to tell the review is done:
@@ -502,6 +504,7 @@ The built-in operational gates are:
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
 | `pr.rebase-attempts` | Times the base may move between Phase 4 and the PR being marked ready before Dex escalates instead of rebasing again; default 2 (see `prompts/base-sync.md`) |
+| `pr.reviewers` | `none` or `config` (default). `none` makes Phase 5 and 6 request, mention, trigger and wait for no reviewer, for example on a fork PR whose tracked `## Reviewers` table names upstream maintainers, without editing `.dex/dex.md`. Session-scoped override only: `dx control override` records it for the session (an explicit `--scope phase` is refused, since Phase 5 and 6 both read it), and `dx control waive pr.reviewers` is refused, because a waiver would end all of Phase 5. Read by `dx_reviewers_mode` and `dx_reviewers_rows_effective`. An agent may set it, so the Phase 5 and 6 summaries carry the line `dx_reviewers_summary_line` prints, which names the recorded source (`set by agent` or `set by human`) |
 | `complete.reviewer-wait-minutes`, `complete.pending-minutes` | Phase 6 per-reviewer wait and pending-CI cap |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |
@@ -530,8 +533,10 @@ putting it on the PR with `waiver_comment` in the `## Pull Requests` block of
 
 With no open PR, nothing is posted and the waiver records in every mode. Only
 `--source agent` waivers post; a human's waiver is their own decision. The
-comment goes through `dx_reviewer_comment`, and every `@` is removed from its
-text, so it never mentions a person, a team or the Copilot coding agent.
+comment gets `dx_reviewer_comment`'s Copilot check, and every `@` is removed
+from its text, so it never mentions a person, a team or the Copilot coding
+agent. It asks no reviewer for anything, so it still posts under the
+`pr.reviewers none` override.
 
 Provider deadlines for review, `dx sync`, and maintenance are live. Their
 supervisors re-read policy once per second, so increasing, shortening,

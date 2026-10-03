@@ -74,9 +74,16 @@ fi
 Read the `## Reviewers` rows through the shared parser:
 
 ```bash
-REVIEWER_ROWS=$(dx_reviewers_rows "$(git rev-parse --show-toplevel)") || REVIEWER_ROWS=""
+REVIEWER_ROWS=$(dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --show-toplevel)") || REVIEWER_ROWS=""
 # One line per reviewer: handle<TAB>type<TAB>wait<TAB>adapter
 ```
+
+`dx_reviewers_rows_effective` prints nothing when the session has the
+`pr.reviewers none` override (`dx_reviewers_mode` prints `none`). Then no
+reviewer is requested, mentioned, triggered, re-requested or waited for in
+this phase, and the summary carries the exact line `dx_reviewers_summary_line`
+prints, which names who set the override (`set by agent` or `set by human`). A
+summary that drops the source does not meet this criterion.
 
 Rows whose adapter is `generic` are today's `request` and `mention` rows. Rows
 with adapter `greptile` or `copilot` are adapter rows: read
@@ -348,7 +355,9 @@ or `/dxcomplete` to resume completion.
 
 - The PR is no longer a draft (`gh pr view --json isDraft -q .isDraft` returns `false`)
 - Each configured `request` reviewer was attempted at least once; a
-  non-requestable reviewer has a recorded warning instead
+  non-requestable reviewer has a recorded warning instead. Under the
+  `pr.reviewers none` override there are no configured reviewers: none was
+  requested, mentioned or triggered, and the summary says so
 - One mention comment has been posted for generic `mention` reviewers (if any),
   and each adapter row was triggered with `dx_reviewer_trigger`
 - No PR or issue comment from this phase mentions `@copilot`

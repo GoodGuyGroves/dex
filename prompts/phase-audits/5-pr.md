@@ -94,7 +94,21 @@ a false upload claim does.
 
 ## Step 5: Reviewer attachment
 
-Read the `## Reviewers` section of `.dex/dex.md`. For every row whose Type is `request`, confirm the reviewer is attached to the PR:
+First check the session's reviewer mode:
+
+```bash
+source "${DEX_DIR:-$HOME/work/dex}/lib/common.sh" || exit 1
+dx_reviewers_mode
+```
+
+If it prints `none`, the session has the `pr.reviewers none` override (for
+example a fork PR whose tracked reviewer table names upstream maintainers).
+Request, mention and trigger nobody, skip the rest of this step, and copy the
+line `dx_reviewers_summary_line` prints into the summary. It names who set the
+override (`set by agent` or `set by human`). That meets the reviewer criterion
+below.
+
+Otherwise read the `## Reviewers` section of `.dex/dex.md`. For every row whose Type is `request`, confirm the reviewer is attached to the PR:
 
 ```bash
 PR_NUM=$(gh pr view --json number -q .number)
@@ -179,7 +193,9 @@ All of these must be true before you stop:
 - UI proof is attached for READY, has a warned local handoff when automatic attachment is unavailable/incomplete, or records SKIPPED/N/A with a reason
 - All `request`-type reviewers from `dex.md § Reviewers` are attached to the PR,
   or GitHub rejected them as non-requestable and Dex recorded the warning (or
-  the section is empty/`_none_`)
+  the section is empty/`_none_`, or `dx_reviewers_mode` printed `none` and the
+  summary carries the line `dx_reviewers_summary_line` prints, naming who set
+  the override, with no reviewer requested or mentioned)
 - Issue and PR reconciliation followed `$DEX_DIR/prompts/issue-hygiene.md`, and the
   summary contains `Issue/PR work:`
 - No session-owned background process in flight, per `dx ps`

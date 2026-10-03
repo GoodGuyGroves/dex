@@ -629,4 +629,88 @@ rc=0
 dx_complete_record_cycle "$SESSION" bored >/dev/null || rc=$?
 assert_eq 2 "$rc" "unknown outcome rejected"
 
+# --- pr.reviewers override: no reviewer is requested, mentioned or waited for -----
+# A fork PR must not ping the reviewers a tracked dex.md was written for. The
+# session override `pr.reviewers none` turns every reviewer path into a no-op
+# without editing .dex/dex.md; no override, or `config`, keeps the table.
+write_reviewers <<'EOF'
+| Handle | Type | Wait | Adapter |
+|---|---|---|---|
+| @octocat | request | no | generic |
+| Copilot | request | yes | copilot |
+| greptileai | mention | yes | greptile |
+EOF
+NONE_SESSION="repo-reviewers-none-test"
+assert_eq config "$(dx_reviewers_mode "$NONE_SESSION")" "no override reads the table"
+assert_eq 3 "$(dx_reviewers_rows_effective "$NONE_SESSION" "$repo" | wc -l | tr -d ' ')" \
+  "config mode keeps every row"
+dx_override_set "$NONE_SESSION" pr.reviewers config session - agent \
+  "Use the tracked reviewer table" 0
+assert_eq config "$(dx_reviewers_mode "$NONE_SESSION")" "explicit config"
+dx_override_set "$NONE_SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+assert_eq none "$(dx_reviewers_mode "$NONE_SESSION")" "override none"
+assert_eq none "$(DEX_LOOP_PHASE=6 dx_reviewers_mode "$NONE_SESSION")" \
+  "override none holds in Phase 6"
+assert_eq "" "$(dx_reviewers_rows_effective "$NONE_SESSION" "$repo")" "none hides every row"
+assert_eq 3 "$(dx_reviewers_rows "$repo" | wc -l | tr -d ' ')" "raw rows are unchanged"
+reset_gh
+out=$(dx_reviewer_gate "$NONE_SESSION" "$repo" 7)
+assert_eq "" "$out" "gate waits for nobody under none"
+dx_reviewer_trigger "$NONE_SESSION" "$repo" 7 Copilot copilot 2>/dev/null \
+  || fail "trigger under none did not return 0"
+dx_reviewer_trigger "$NONE_SESSION" "$repo" 7 greptileai greptile 2>/dev/null \
+  || fail "greptile trigger under none did not return 0"
+dx_reviewer_comment "$NONE_SESSION" 7 "@greptileai review" 2>/dev/null \
+  || fail "comment under none did not return 0"
+DEX_SESSION_ID="$NONE_SESSION" dx_maintenance_request_reviewer 7 octocat 2>/dev/null \
+  || fail "request under none did not return 0"
+[[ ! -s "$GH_FAKE_CALLS" ]] || fail "gh ran under pr.reviewers none: $(cat "$GH_FAKE_CALLS")"
+[[ ! -e "$GH_FAKE_DIR/comments-posted" ]] || assert_at $LINENO
+# Without the override the same request still reaches gh.
+reset_gh
+dx_maintenance_request_reviewer 7 octocat >/dev/null 2>&1 || true
+text_has "$(cat "$GH_FAKE_CALLS")" "pr edit 7 --add-reviewer octocat"
+# With DEX_SESSION_ID unset, `dx control override` records the override under
+# dx_session_id; the bare readers must find it there.
+DERIVED_SESSION=$(unset DEX_SESSION_ID; dx_session_id)
+dx_session_id_valid "$DERIVED_SESSION" || assert_at $LINENO
+dx_override_set "$DERIVED_SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+assert_eq none "$(unset DEX_SESSION_ID; dx_reviewers_mode)" \
+  "bare mode reads the derived session"
+reset_gh
+(unset DEX_SESSION_ID; dx_maintenance_request_reviewer 7 octocat 2>/dev/null) \
+  || fail "request under a derived-session none did not return 0"
+[[ ! -s "$GH_FAKE_CALLS" ]] || fail "gh ran under a derived-session none: $(cat "$GH_FAKE_CALLS")"
+
+# --- pr.reviewers attribution: the summary line names who set the override -----
+# An agent can set pr.reviewers none itself, so the Phase 5 and 6 summaries
+# print the recorded source; the free-text reason stays out of PR text.
+LINE_SESSION="repo-reviewers-line-test"
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "no override: no summary line"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - agent \
+  "Fork PR: skip @someone upstream" 0
+assert_eq "Reviewers: none (pr.reviewers override set by agent)" \
+  "$(dx_reviewers_summary_line "$LINE_SESSION")" "agent-set none names the agent"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - human \
+  "The human said no reviewers on this fork" 0
+assert_eq "Reviewers: none (pr.reviewers override set by human)" \
+  "$(dx_reviewers_summary_line "$LINE_SESSION")" "a later human row replaces the agent row"
+dx_override_set "$LINE_SESSION" pr.reviewers config session - agent \
+  "Use the tracked reviewer table" 0
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "config: no summary line"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - agent "Fork PR" 0
+dx_override_clear "$LINE_SESSION" pr.reviewers session - agent "Back to the table"
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "cleared: no summary line"
+assert_eq "Reviewers: none (pr.reviewers override set by agent)" \
+  "$(unset DEX_SESSION_ID; dx_reviewers_summary_line)" "bare form reads the derived session"
+BROKEN_SESSION="repo-reviewers-line-broken"
+printf 'not an override journal\n' > "$(dx_override_file "$BROKEN_SESSION")"
+rc=0; out=$(dx_reviewers_summary_line "$BROKEN_SESSION" 2>/dev/null) || rc=$?
+assert_eq "1:" "$rc:$out" "unreadable journal falls back to config"
+
 printf 'reviewers tests passed\n'

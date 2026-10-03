@@ -51,6 +51,55 @@ dx_reviewer_default_adapter() {
   printf '%s\n' generic
 }
 
+# dx_reviewers_mode [session_id] — `none` when the session's pr.reviewers
+# override says so, else `config` (the `## Reviewers` table applies). The
+# override is how a fork PR avoids pinging the reviewers a tracked dex.md was
+# written for, without editing that file. With no argument the session is
+# resolved the way `dx control override` records it.
+dx_reviewers_mode() {
+  local mode_session="${1:-${DEX_SESSION_ID:-}}" mode="config"
+  [[ -n "$mode_session" ]] || mode_session=$(dx_session_id 2>/dev/null) || mode_session=""
+  if dx_session_id_valid "$mode_session" 2>/dev/null; then
+    # Session-scoped only (dx_override_set refuses a phase scope), so the
+    # caller's phase does not matter.
+    mode=$(dx_override_effective "$mode_session" pr.reviewers config - \
+      2>/dev/null) || mode="config"
+  fi
+  [[ "$mode" == "none" ]] || mode="config"
+  printf '%s\n' "$mode"
+}
+
+# dx_reviewers_summary_line [session_id] — under pr.reviewers none, print the
+# line the Phase 5 and 6 summaries carry, naming the recorded source (agent or
+# human) so a human can see who turned reviewers off; rc 1 and no output
+# otherwise. The override's free-text reason is left out because it can hold a
+# handle that would ping someone from PR or ticket text.
+dx_reviewers_summary_line() {
+  local line_session="${1:-${DEX_SESSION_ID:-}}" line_source=""
+  [[ -n "$line_session" ]] || line_session=$(dx_session_id 2>/dev/null) || line_session=""
+  [[ "$(dx_reviewers_mode "$line_session")" == "none" ]] || return 1
+  # dx_override_list prints gate, value, scope, phase, source, expiry, reason.
+  line_source=$(dx_override_list "$line_session" - 2>/dev/null | awk -F '\t' \
+    '$1 == "pr.reviewers" && $2 == "none" { print $5; exit }') || return 1
+  [[ "$line_source" == "agent" || "$line_source" == "human" ]] || return 1
+  printf 'Reviewers: none (pr.reviewers override set by %s)\n' "$line_source"
+}
+
+# __dx_reviewers_skip_notice <session_id> <what> — returns 0, after saying so
+# on stderr, when pr.reviewers is `none` and <what> must not happen.
+__dx_reviewers_skip_notice() {
+  [[ "$(dx_reviewers_mode "$1")" == "none" ]] || return 1
+  printf 'dex: pr.reviewers is none for this session; not %s\n' "$2" >&2
+}
+
+# dx_reviewers_rows_effective <session_id> <repo_dir> — dx_reviewers_rows,
+# or nothing when the session's pr.reviewers override is `none`.
+dx_reviewers_rows_effective() {
+  [[ $# -eq 2 ]] || return 2
+  [[ "$(dx_reviewers_mode "$1")" == "none" ]] && return 0
+  dx_reviewers_rows "$2"
+}
+
 # dx_reviewers_rows <repo_dir>
 # Print one TSV line per usable `## Reviewers` row:
 #   handle<TAB>type<TAB>wait<TAB>adapter
@@ -236,11 +285,20 @@ __dx_reviewers_mentions_copilot() {
 # The one way Dex posts a reviewer-directed PR comment. A body that mentions
 # @copilot or @github-copilot is refused with rc 4 before gh runs: that mention
 # summons the Copilot coding agent, which can push commits. Copilot reviews are
-# requested with `gh pr edit --add-reviewer @copilot` instead.
+# requested with `gh pr edit --add-reviewer @copilot` instead. Under
+# pr.reviewers none it posts nothing and returns 0.
 dx_reviewer_comment() {
   [[ $# -eq 3 ]] || return 2
+  [[ "$2" =~ ^[0-9]+$ && -n "$3" ]] || return 2
+  __dx_reviewers_skip_notice "$1" "posting a reviewer comment" && return 0
+  __dx_reviewers_post_comment "$1" "$2" "$3"
+}
+
+# __dx_reviewers_post_comment <session_id> <pr> <body> — dx_reviewer_comment
+# without the pr.reviewers check, for a comment that asks no reviewer for
+# anything (a waiver notice), which must still post under pr.reviewers none.
+__dx_reviewers_post_comment() {
   local comment_session="$1" comment_pr="$2" comment_body="$3" body_file rc=0
-  [[ "$comment_pr" =~ ^[0-9]+$ && -n "$comment_body" ]] || return 2
   if __dx_reviewers_mentions_copilot "$comment_body"; then
     printf '%s\n' "dex: refusing to post a PR comment that mentions @copilot; request Copilot with gh pr edit --add-reviewer @copilot" >&2
     return 4
@@ -323,7 +381,9 @@ dx_waiver_comment_post() {
     return 0
   fi
   waiver_body=$(__dx_waiver_comment_body "$3" "$4" "$5" "$6")
-  if ! (builtin cd "$waiver_repo" && dx_reviewer_comment "$waiver_session" "$waiver_pr" "$waiver_body"); then
+  # It names no reviewer, so pr.reviewers none does not stop it: under
+  # waiver_comment: required, skipping it would record an unannounced waiver.
+  if ! (builtin cd "$waiver_repo" && __dx_reviewers_post_comment "$waiver_session" "$waiver_pr" "$waiver_body"); then
     printf '%s\n' "dex: could not post the waiver comment on PR #${waiver_pr}" >&2
     return 3
   fi
@@ -373,6 +433,7 @@ dx_reviewer_trigger() {
   local persisted_rc=0 previous_state=""
   [[ "$trig_pr" =~ ^[0-9]+$ ]] || return 2
   dx_session_id_valid "$trig_session" || return 2
+  __dx_reviewers_skip_notice "$trig_session" "asking ${trig_handle} for a review" && return 0
   case "$trig_adapter" in
     copilot|greptile) ;;
     generic) return 3 ;;
@@ -574,7 +635,7 @@ dx_reviewer_gate() {
   local started triggered state result detail elapsed waiting=0
   [[ "$gate_pr" =~ ^[0-9]+$ ]] || return 2
   dx_session_id_valid "$gate_session" || return 2
-  rows=$(dx_reviewers_rows "$gate_repo" 2>/dev/null \
+  rows=$(dx_reviewers_rows_effective "$gate_session" "$gate_repo" 2>/dev/null \
     | awk -F'\t' '$3 == "yes" && $4 != "generic"') || rows=""
   [[ -n "$rows" ]] || return 0
   if [[ -z "$gate_head" ]]; then
@@ -648,7 +709,9 @@ EOF
 # repositories without required status checks, where a half-registered check
 # list can otherwise look green. Without it, CI is green when every check
 # passed or was skipped. Greptile's check runs are left out when a Greptile
-# reviewer row exists, because dx_reviewer_gate owns them.
+# reviewer row exists, because dx_reviewer_gate owns them; under pr.reviewers
+# none the gate waits for no one, and leaving them out keeps CI from waiting
+# on a reviewer that was never asked.
 # CI that stays pending on one head longer than dx_complete_pending_minutes is
 # `stalled`, which Phase 6 treats as an idle cycle instead of a waiting one.
 # rc: 0 green, 1 pending, 3 failed, 4 stalled, 2 error.

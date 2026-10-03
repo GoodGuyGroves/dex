@@ -1355,11 +1355,11 @@ __dx_build_system_context() {
 - When all required checks pass, confirm the working tree is clean and local HEAD is already on origin
 - A new local branch with no branch-specific commits must return to Phase 2's user-direction path instead of entering the PR flow
 - PR creation and broader implementation fixes remain available when useful" ;;
-    5) scope_lines="- DO create or update the PR, write the description, attach 'request' reviewers from dex.md § Reviewers, and mark the PR ready for review
+    5) scope_lines="- DO create or update the PR, write the description, attach 'request' reviewers from dex.md § Reviewers (none when dx_reviewers_mode prints none), and mark the PR ready for review
 - Do not complete Phase 5 while the PR is still a draft
 - @mention comments, implementation changes, commits, and pushes remain available; Phase 6 still performs the normal completion workflow" ;;
     6) scope_lines="- Do NOT modify implementation code unless fixing CI/review failures
-- DO verify the PR is ready and repair any remaining draft state, request reviewers (request type), post @mention comment (mention type),
+- DO verify the PR is ready and repair any remaining draft state, request reviewers (request type), post @mention comment (mention type) (neither when dx_reviewers_mode prints none),
 - DO launch /loop 5m /dxwatchpr, address CI/review failures, settle the ticket per ticket_close only when checks and approvals are green" ;;
   esac
 
@@ -5205,7 +5205,7 @@ __dxcomplete_run() {
   fi
 
   local completion_prompt
-  completion_prompt="Invoke the Skill tool with skill: \"$(dx_skill_ref dxcomplete)\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments, monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and settle the ticket per ticket_close when all checks pass and all successfully requested reviewers have approved.
+  completion_prompt="Invoke the Skill tool with skill: \"$(dx_skill_ref dxcomplete)\". Run the full completion workflow: verify the PR is ready for review, request configured reviewers, post @mention comments (neither when dx_reviewers_mode prints none), monitor CI and reviews via /loop 5m /dxwatchpr, address CI failures and review comments, and settle the ticket per ticket_close when all checks pass and all successfully requested reviewers have approved.
 When the Stop hook prints the exact command after the audit threshold, run this literal command only if every completion criterion is met, then stop again: bash \"\$DEX_DIR/bin/complete-receipt.sh\" \"${session_id}\" \"${completion_generation}\"
 $(__dx_provider_prompt)"
 

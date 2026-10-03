@@ -267,6 +267,19 @@ thread_fixture 105 0 1 0
 respond 105 disagree
 [[ "$(cat "$GH_FAKE_DIR/reply-105.txt")" == "@greptileai Keeping"* ]] || assert_at $LINENO
 
+# pr.reviewers none: the session mentions no reviewer, so no Greptile handle.
+reset_gh
+write_dex "" "| @greptile-team | mention | yes | greptile |"
+dx_override_set "$SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+comment_fixture 108 'greptile-apps[bot]' Bot
+thread_fixture 108 0 1 0
+respond 108 disagree
+reply=$(cat "$GH_FAKE_DIR/reply-108.txt")
+[[ "$reply" == "Keeping current approach:"* ]] || assert_at $LINENO
+dx_override_clear "$SESSION" pr.reviewers session - agent "Back to the table"
+write_dex ""
+
 # disagree on Greptile when Dex already replied in the thread: no prefix.
 reset_gh
 comment_fixture 106 'greptile-apps[bot]' Bot
