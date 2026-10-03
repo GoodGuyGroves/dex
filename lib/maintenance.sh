@@ -584,8 +584,8 @@ dx_maintenance_request_reviewer() {
     _none_|Handle|-|--|"") return 0 ;;
   esac
   # A lifecycle session whose pr.reviewers override is `none` requests nobody.
-  if [[ -n "${DEX_SESSION_ID:-}" ]] && declare -F dx_reviewers_mode > /dev/null \
-    && [[ "$(dx_reviewers_mode "$DEX_SESSION_ID")" == "none" ]]; then
+  if declare -F dx_reviewers_mode > /dev/null \
+    && [[ "$(dx_reviewers_mode)" == "none" ]]; then
     dx_info "pr.reviewers is none for this session; not requesting ${handle}" >&2
     return 0
   fi
