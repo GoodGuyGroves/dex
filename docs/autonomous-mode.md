@@ -958,6 +958,9 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.review-criteria-approval` — versioned approval seal containing the canonical
   criteria hash; replacements require explicit reapproval and invalidate prior
   review authorization
+- `.review-criteria-deferrals` — the `deferred_criteria` held by the seal, as
+  canonical JSON; a reapproval may only narrow it, and the narrowed set
+  replaces it
 - `.review-selection` — risk tier, selection source, bounded reason codes,
   scope fingerprint, criteria binding, and trusted policy binding recorded
   before the first wave and rebound after review fixes
