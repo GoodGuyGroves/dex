@@ -156,6 +156,11 @@ tmp = sys.argv[1]
 load = lambda label: json.load(open("%s/%s.settings" % (tmp, label)))
 phase, loop, one_shot = load("phase"), load("loop"), load("print")
 assert "status-line.sh" in phase["statusLine"]["command"], phase
+# The hold in a Phase 3 Stop hook produces no events, so only the timer keeps
+# the review-wave clock in the status line moving (#38 item 3).
+assert phase["statusLine"]["refreshInterval"] == 5, phase
+stop_hooks = [h for g in phase["hooks"]["Stop"] for h in g["hooks"] if "phase-loop.sh" in h["command"]]
+assert stop_hooks and all("status line" in h.get("statusMessage", "") for h in stop_hooks), stop_hooks
 assert any("phase-loop.sh" in h["command"] for g in phase["hooks"]["Stop"] for h in g["hooks"]), phase
 assert loop["model"] == "caller" and "statusLine" not in loop, loop
 assert one_shot["effortLevel"] == "high" and "statusLine" not in one_shot, one_shot

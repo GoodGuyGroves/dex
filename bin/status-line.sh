@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Dex status line — displayed persistently in Claude Code TUI via statusLine setting.
 # Reads phase state, audit loop iteration, and elapsed time from Dex state files.
-# Must be fast (<50ms) since it runs on every TUI render cycle.
+# Claude Code runs it on conversation events and, for Dex launches, every
+# refreshInterval seconds (scripts/settings-json.py), so it must stay fast (<50ms).
 set -euo pipefail
 
 # Only session and lifecycle-control helpers are used below, and none of them

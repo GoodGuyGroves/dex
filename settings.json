@@ -70,7 +70,8 @@
           {
             "type": "command",
             "command": "export DEX_DIR=\"${DEX_DIR:-$HOME/work/dex}\"; bash \"$DEX_DIR/hooks/phase-loop.sh\"",
-            "timeout": 1800
+            "timeout": 1800,
+            "statusMessage": "Dex phase gate (live progress in the status line)"
           }
         ]
       },

@@ -96,7 +96,7 @@ python3 - "$launch_settings" "$TMP_DIR/it's here/status-line.sh" <<'PY'
 import json, shlex, sys
 settings = json.loads(sys.argv[1])
 assert settings["crossSessionInbound"] == "accept", settings
-assert settings["statusLine"] == {"type": "command", "command": "bash " + shlex.quote(sys.argv[2])}, settings
+assert settings["statusLine"] == {"type": "command", "command": "bash " + shlex.quote(sys.argv[2]), "refreshInterval": 5}, settings
 PY
 launch_settings=$(python3 "$HELPER" launch-settings "$ROOT/settings.json" "$ROOT" '' '' 0)
 python3 - "$launch_settings" <<'PY'
