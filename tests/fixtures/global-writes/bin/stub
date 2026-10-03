@@ -328,7 +328,8 @@ def write_memory(settings):
 def write_transcript():
     """The conversation transcript a started session writes: Dex reads it to
     tell a session that started from one that never did. It is the CLI's own
-    session file, which the snapshot leaves out (global_writes.CLI_SESSION_FILE)."""
+    session file, so its path goes in $GW_STUB_DIR/transcripts.txt first and
+    the snapshot leaves out exactly the paths listed there."""
     def value(flag):
         return ARGS[ARGS.index(flag) + 1] if flag in ARGS[:-1] else ""
     conversation = value("--session-id") or value("--resume") or "gw-stub-%d" % os.getpid()
@@ -337,7 +338,11 @@ def write_transcript():
     name = value("-n") or value("--name")
     if name:
         lines.append(json.dumps({"type": "custom-title", "customTitle": name, "sessionId": conversation}))
-    touch(os.path.join(directory, conversation + ".jsonl"), "\n".join(lines) + "\n")
+    path = os.path.join(directory, conversation + ".jsonl")
+    if STUB_DIR:
+        with open(os.path.join(STUB_DIR, "transcripts.txt"), "a", encoding="utf-8") as handle:
+            handle.write(path + "\n")
+    touch(path, "\n".join(lines) + "\n")
 
 
 def claude_main():
