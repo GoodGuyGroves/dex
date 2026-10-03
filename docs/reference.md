@@ -448,6 +448,12 @@ What it turns off:
   download, the plugin marketplace clone and fetch, and registering the remote
   OpenAI docs MCP. Each reports `[skip] … (DEX_OFFLINE=1)`, and the bootstrap
   still succeeds. Work that is already done is reported as it always is.
+  The checks (`dx sync`, `dx tools doctor`) treat those gaps the same way: a
+  missing RTK, missing UI-capture tooling, the unregistered remote docs MCP,
+  and plugins with no marketplace clone yet read `[skip] … offline
+  (DEX_OFFLINE=1)` instead of a warning. Gaps offline mode doesn't explain
+  still warn, such as a missing skill link, a browser MCP server, or a plugin
+  that an existing marketplace clone can't resolve.
 - Remote MCP servers in Dex's own registry (a `url`, or type `http` or `sse`)
   are left out of every launch, including one an earlier online bootstrap
   registered. Servers you configured yourself are not touched.

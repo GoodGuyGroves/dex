@@ -119,6 +119,18 @@ DEX_OFFLINE=1 dx_install_rtk_binary > "$OUT" 2>&1 || assert_at $LINENO
 assert_contains "RTK download skipped (DEX_OFFLINE=1)" "$OUT"
 assert_eq 0 "$(net_calls)" "network calls from offline RTK install"
 [[ ! -e "$DX_RTK_INSTALL_DIR/rtk" ]] || assert_at $LINENO
+# The check reports the skipped download as offline, not as a fault (#65).
+# Online, a missing RTK still warns. A host RTK on PATH makes both moot.
+if ! dx_rtk_resolved_binary >/dev/null 2>&1; then
+  rc=0; DEX_OFFLINE=1 dx_check_rtk_binary > "$OUT" 2>&1 || rc=$?
+  [[ "$rc" -eq 0 ]] || { cat "$OUT" >&2; assert_at $LINENO; }
+  assert_contains "[skip]" "$OUT"
+  assert_contains "RTK not installed: offline (DEX_OFFLINE=1)" "$OUT"
+  assert_not_contains "[warn]" "$OUT"
+  rc=0; dx_check_rtk_binary > "$OUT" 2>&1 || rc=$?
+  [[ "$rc" -ne 0 ]] || assert_at $LINENO
+  assert_contains "RTK is not installed" "$OUT"
+fi
 # An installed RTK keeps working: still enabled, still found, nothing fetched.
 mkdir -p "$DX_RTK_INSTALL_DIR"
 cat > "$DX_RTK_INSTALL_DIR/rtk" <<'RTK'
@@ -172,6 +184,37 @@ assert_contains "OpenAI docs MCP (remote) not registered (DEX_OFFLINE=1)" "$OUT"
 [[ ! -d "$(dx_dex_plugins_dir)/marketplaces" ]] || assert_at $LINENO
 rc=0; dx_mcp_registry_has openaiDeveloperDocs || rc=$?
 [[ "$rc" -ne 0 ]] || assert_at $LINENO
+# The checks after that bootstrap report what offline mode skipped as [skip],
+# not [warn], and return 0 (#65). Online, the same gaps still warn.
+if ! dx_ui_capture_tooling_ready; then
+  rc=0; DEX_OFFLINE=1 dx_check_ui_capture_tooling > "$OUT" 2>&1 || rc=$?
+  [[ "$rc" -eq 0 ]] || { cat "$OUT" >&2; assert_at $LINENO; }
+  assert_contains "UI capture tooling not installed: offline (DEX_OFFLINE=1)" "$OUT"
+  assert_not_contains "[warn]" "$OUT"
+  rc=0; dx_check_ui_capture_tooling > "$OUT" 2>&1 || rc=$?
+  [[ "$rc" -ne 0 ]] || assert_at $LINENO
+  assert_contains "tooling is incomplete" "$OUT"
+fi
+rc=0; DEX_OFFLINE=1 dx_check_openai_docs_mcp_servers > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -eq 0 ]] || { cat "$OUT" >&2; assert_at $LINENO; }
+assert_contains "(remote) not registered: offline (DEX_OFFLINE=1)" "$OUT"
+assert_not_contains "[warn]" "$OUT"
+rc=0; dx_check_openai_docs_mcp_servers > "$OUT" 2>&1 || rc=$?
+assert_not_contains "offline" "$OUT"
+rc=0; DEX_OFFLINE=1 dx_check_safe_official_claude_plugins "$repo" > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -eq 0 ]] || { cat "$OUT" >&2; assert_at $LINENO; }
+assert_contains "Claude plugin 'codex@openai-codex' not prepared: offline (DEX_OFFLINE=1)" "$OUT"
+assert_not_contains "[warn]" "$OUT"
+rc=0; dx_check_safe_official_claude_plugins "$repo" > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -ne 0 ]] || assert_at $LINENO
+assert_contains "Claude plugin 'codex@openai-codex' is not prepared" "$OUT"
+# With a marketplace clone, resolution is local, so a missing plugin warns
+# even offline.
+mkdir -p "$(dx_dex_plugins_dir)/marketplaces"
+rc=0; DEX_OFFLINE=1 dx_check_safe_official_claude_plugins "$repo" > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -ne 0 ]] || assert_at $LINENO
+assert_contains "is not prepared" "$OUT"
+rmdir "$(dx_dex_plugins_dir)/marketplaces"
 # Positive control: online, the same bootstrap does reach for the marketplace,
 # so the zero above is the gate and not a blind wrapper.
 : > "$NET_LOG"

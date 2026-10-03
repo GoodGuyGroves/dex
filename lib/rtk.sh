@@ -602,6 +602,11 @@ dx_check_rtk_binary() {
     return 0
   fi
 
+  # Offline, the install skipped the download on purpose: report that, not a fault.
+  if dx_offline; then
+    dx_skip "RTK not installed: offline (DEX_OFFLINE=1)"
+    return 0
+  fi
   dx_warn "RTK is not installed or 'rtk rewrite' did not verify Rust Token Killer"
   return 1
 }
