@@ -533,8 +533,10 @@ putting it on the PR with `waiver_comment` in the `## Pull Requests` block of
 
 With no open PR, nothing is posted and the waiver records in every mode. Only
 `--source agent` waivers post; a human's waiver is their own decision. The
-comment goes through `dx_reviewer_comment`, and every `@` is removed from its
-text, so it never mentions a person, a team or the Copilot coding agent.
+comment gets `dx_reviewer_comment`'s Copilot check, and every `@` is removed
+from its text, so it never mentions a person, a team or the Copilot coding
+agent. It asks no reviewer for anything, so it still posts under the
+`pr.reviewers none` override.
 
 Provider deadlines for review, `dx sync`, and maintenance are live. Their
 supervisors re-read policy once per second, so increasing, shortening,

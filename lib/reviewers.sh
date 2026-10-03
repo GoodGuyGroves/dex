@@ -285,12 +285,20 @@ __dx_reviewers_mentions_copilot() {
 # The one way Dex posts a reviewer-directed PR comment. A body that mentions
 # @copilot or @github-copilot is refused with rc 4 before gh runs: that mention
 # summons the Copilot coding agent, which can push commits. Copilot reviews are
-# requested with `gh pr edit --add-reviewer @copilot` instead.
+# requested with `gh pr edit --add-reviewer @copilot` instead. Under
+# pr.reviewers none it posts nothing and returns 0.
 dx_reviewer_comment() {
   [[ $# -eq 3 ]] || return 2
+  [[ "$2" =~ ^[0-9]+$ && -n "$3" ]] || return 2
+  __dx_reviewers_skip_notice "$1" "posting a reviewer comment" && return 0
+  __dx_reviewers_post_comment "$1" "$2" "$3"
+}
+
+# __dx_reviewers_post_comment <session_id> <pr> <body> — dx_reviewer_comment
+# without the pr.reviewers check, for a comment that asks no reviewer for
+# anything (a waiver notice), which must still post under pr.reviewers none.
+__dx_reviewers_post_comment() {
   local comment_session="$1" comment_pr="$2" comment_body="$3" body_file rc=0
-  [[ "$comment_pr" =~ ^[0-9]+$ && -n "$comment_body" ]] || return 2
-  __dx_reviewers_skip_notice "$comment_session" "posting a reviewer comment" && return 0
   if __dx_reviewers_mentions_copilot "$comment_body"; then
     printf '%s\n' "dex: refusing to post a PR comment that mentions @copilot; request Copilot with gh pr edit --add-reviewer @copilot" >&2
     return 4
@@ -373,7 +381,9 @@ dx_waiver_comment_post() {
     return 0
   fi
   waiver_body=$(__dx_waiver_comment_body "$3" "$4" "$5" "$6")
-  if ! (builtin cd "$waiver_repo" && dx_reviewer_comment "$waiver_session" "$waiver_pr" "$waiver_body"); then
+  # It names no reviewer, so pr.reviewers none does not stop it: under
+  # waiver_comment: required, skipping it would record an unannounced waiver.
+  if ! (builtin cd "$waiver_repo" && __dx_reviewers_post_comment "$waiver_session" "$waiver_pr" "$waiver_body"); then
     printf '%s\n' "dex: could not post the waiver comment on PR #${waiver_pr}" >&2
     return 3
   fi
