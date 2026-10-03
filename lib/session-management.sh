@@ -45,6 +45,7 @@ loop_suffixes = {
     ".cleanup-journal",
     ".review-receipt.revoked",
     ".review-criteria-approval",
+    ".review-criteria-deferrals",
     ".review-selection.revoked",
     ".completion-expectation",
     ".review-criteria.json",

@@ -19,6 +19,12 @@ the contract's exact `Issue/PR work:` line.
 1. COMPLETENESS — Does the plan cover every acceptance criterion from the ticket?
    - Re-read the ticket requirements. For each one, confirm there is a task that addresses it.
    - If any criterion is missing or only partially covered, add a task now.
+   - For each verification requirement that names a command, script, or test
+     file, confirm the target exists on this branch (`git ls-files`, `test -e`)
+     or a task creates it. If it exists only elsewhere (another branch,
+     post-merge integration, CI only), reword the criterion with the user or
+     record it in `deferred_criteria` with the reason and owner the user
+     approved. This is the last chance: deferrals are fixed at the seal.
 
 2. EDGE CASES — Have you considered failure modes?
    - What happens when inputs are invalid, empty, or at boundary values?
@@ -115,6 +121,8 @@ If you find gaps in any of the above, fix them and re-present the plan.
 - The user has explicitly approved the plan, or a headless run spec with `workflow.requires_plan_approval: false` authorizes it
 - The approved objectives, acceptance criteria, and verification requirements
   are preserved in a valid `dx_review_criteria_file` artifact for Phase 3
+- Every verification target exists on this branch, or its criterion is in
+  `deferred_criteria` with a user-approved reason and owner
 - Freeform tracker intake is complete, explicitly skipped, or not applicable
 - Any material planning discovery has been reconciled under
   `$DEX_DIR/prompts/issue-hygiene.md`, and the summary contains `Issue/PR work:`

@@ -55,7 +55,8 @@ All of these must be true:
   noise, or scope grew; `dx review stats` shows passes, minutes and time to first clean.
 - Every counted wave supplied valid evidence version 3. For every approved
   objective, acceptance criterion, and verification requirement, the manifest
-  recorded the exact ordered item hash, a `met` outcome, and substantive
+  recorded the exact ordered item hash, a `met` outcome (or `deferred` for an
+  item the criteria file lists under `deferred_criteria`), and substantive
   references to that pass's context pack. Its policy and pass bindings matched
   the wrapper's immutable inputs.
 - Before granting clean credit, the wrapper attested the evidence manifest,

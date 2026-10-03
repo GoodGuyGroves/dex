@@ -25,7 +25,9 @@ dx_review_approve_criteria "$SESSION_ID" reapproved "$PREVIOUS_CRITERIA_HASH" "$
 ```
 
 Rotation clears earlier risk selection, clean credit, and receipts. Re-run the
-Phase 3 risk selection against the final scope afterward.
+Phase 3 risk selection against the final scope afterward. A rotation may drop a
+`deferred_criteria` entry but never add one or change one: deferrals are fixed
+at the Phase 1 seal, and the approval is refused with a message saying so.
 
 Read `$DEX_DIR/prompts/issue-hygiene.md`. Apply it whenever implementation produces
 material evidence beyond the current issue or PR description. Keep accepted,
@@ -184,13 +186,17 @@ Before declaring PASS, produce an acceptance criteria evidence table:
 |---|-----------|------------------------------|--------------------|---------|
 
 Every criterion must have status MET with specific file:line evidence. Any NOT FOUND blocks completion.
+An item the sealed criteria file (`dx_review_criteria_file`) lists under
+`deferred_criteria` is the one exception: mark it `DEFERRED (sealed)` and cite
+its owner and reason.
 
 Use a plain GitHub Markdown table or short bullets. Do not use Unicode box-drawing tables; they wrap poorly in Claude Code transcripts.
 
 Completion defaults to requiring every acceptance criterion and verification
 gate to be exactly `MET`. Treat `NOT MET`, `NOT FOUND`, `DEFERRED`, `SKIPPED`,
 `BLOCKED`, `N/A`, "CI will cover it", "port busy", "tool unavailable", or an
-equivalent result as unresolved. Resolve it, ask the user for a plan change, or
+equivalent result as unresolved, apart from a `DEFERRED (sealed)` item the
+sealed `deferred_criteria` list names. Resolve it, ask the user for a plan change, or
 apply a reasoned phase waiver under the shared guardrails. Never relabel a
 waived or unverified result as `MET`. Reuse the port your session owns; if a
 port you did not start is busy, report it, do not fight it.
@@ -312,10 +318,12 @@ The selection is not a review pass. Rewrite it if a later edit changes the scope
 When running inside a terminal `dx` lifecycle (`DEX_SESSION_ID` is present), write the Phase 2 ready marker only after all of these are true:
 
 - Every planned task is complete.
-- Every acceptance criterion and verification gate is exactly `MET`, or the
+- Every acceptance criterion and verification gate is exactly `MET`, or
+  `DEFERRED (sealed)` when the sealed `deferred_criteria` list names it, or the
   phase has a named, reasoned waiver that will be recorded as a waiver.
 - No evidence entry is deferred, skipped, blocked, missing, or delegated to
-  future CI without a user-approved plan change or recorded agent waiver.
+  future CI without a user-approved plan change or recorded agent waiver,
+  apart from the items the sealed `deferred_criteria` list names.
 - Final deterministic checks passed locally, and the review lenses ran over
   this diff with the findings ledger seeded for Phase 3.
 - The change was exercised end-to-end locally and passed the manual smoke test, or manual verification is explicitly N/A with a reason that clears the blocker rule.

@@ -133,6 +133,8 @@ All of these must be true before you stop:
 - The evidence version 3 manifest records the exact ordered hash and outcome for
   every supplied criterion, cites substantive references in this pass's context
   pack, and copies the wrapper-supplied policy and pass bindings exactly.
+  `deferred` appears only for items the criteria file lists under
+  `deferred_criteria`, and none of them caused `BLOCKED` or a finding.
 - Deterministic checks were run or explicitly marked unavailable.
 - Candidate issues were harvested for the current profile, with non-applicable
   domains marked `N/A`.

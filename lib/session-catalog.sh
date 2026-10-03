@@ -139,6 +139,7 @@ EXACT_SUFFIXES = [
     (".codex-session", "codex-session"),
     (".review-receipt.revoked", "review-receipt-revoked"),
     (".review-criteria-approval", "review-criteria-approval"),
+    (".review-criteria-deferrals", "review-criteria-deferrals"),
     (".review-selection.revoked", "review-selection-revoked"),
     (".completion-expectation", "completion-expectation"),
     (".review-criteria.json", "review-criteria"),
@@ -986,6 +987,7 @@ def standalone_review_complete_valid(session_id, families):
         "review-proofs",
         "review-criteria",
         "review-criteria-approval",
+        "review-criteria-deferrals",
     }
     if not families.intersection(review_families):
         return None

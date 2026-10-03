@@ -257,6 +257,16 @@ Missing, changed, stale, or partially covered criteria pause review without
 clean credit. Standalone review has no criteria artifact and uses a
 `standalone` binding with empty criteria-evidence arrays.
 
+A criterion the lifecycle branch cannot satisfy, such as a check that exists
+only on the integration branch, goes in the artifact's optional
+`deferred_criteria` list: `{criterion, until: "post-merge", owner: "human" |
+"lead", reason}`, where `criterion` is the exact acceptance-criterion or
+verification-requirement string. A wave reports a listed item as `deferred`
+with evidence and can still be `CLEAN`; the evidence gate rejects `deferred`
+for any item the list does not name. The Phase 1 seal snapshots the list. A
+reapproved replacement may drop a deferral but is refused if it adds one or
+changes any field of one, so deferrals are fixed at plan approval.
+
 Only a wave with zero verified findings and zero fixes writes `CLEAN`. A wave
 that fixes anything writes `FINDINGS_FIXED:N`, resets the counter, and forces a
 fresh review of the updated scope. A valid upward escalation also resets the
@@ -998,7 +1008,8 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.phase-0.ready` — Phase 0 marker written after ticket setup; the Stop hook blocks the Phase 0 stop without it
 - `.phase-1.started` / `.phase-1.ready` — Phase 1 markers written by `dxplan`; the Stop hook does not count plan audit iterations until the approval marker exists
 - `.phase-2.ready` — Phase 2 marker written by `dximplement` only after every
-  acceptance criterion and verification gate is complete and a valid
+  acceptance criterion and verification gate is complete (or sealed-deferred
+  under `deferred_criteria`) and a valid
   current-scope, policy-bound review-risk selection exists; the Stop hook
   ignores `PHASE_2_COMPLETE` without it
 - `.phase-3.busy` — Phase 3 marker written by `dxreviewloop` while a review wave is running; the Stop hook does not count audit iterations while waiting, detects a dead recorded owner, and directs the agent to attributed recovery rather than manual deletion
@@ -1009,6 +1020,9 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.review-criteria-approval` — versioned approval seal containing the canonical
   criteria hash; replacements require explicit reapproval and invalidate prior
   review authorization
+- `.review-criteria-deferrals` — the `deferred_criteria` held by the seal, as
+  canonical JSON; a reapproval may only narrow it, and the narrowed set
+  replaces it
 - `.review-selection` — risk tier, selection source, bounded reason codes,
   scope fingerprint, criteria binding, and trusted policy binding recorded
   before the first wave and rebound after review fixes
