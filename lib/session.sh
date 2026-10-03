@@ -2622,6 +2622,10 @@ dx_review_criteria_file() { dx_session_id_valid "${1:-}" || return 2; echo "${DX
 # dx_review_criteria_approval_file <session_id> — sealed Phase 1 criteria hash and revision
 dx_review_criteria_approval_file() { dx_session_id_valid "${1:-}" || return 2; echo "${DX_LOOP_DIR}/${1}.review-criteria-approval"; }
 
+# dx_review_criteria_deferrals_file <session_id> — the deferred_criteria held
+# by the Phase 1 seal; a later rotation may only narrow them
+dx_review_criteria_deferrals_file() { dx_session_id_valid "${1:-}" || return 2; echo "${DX_LOOP_DIR}/${1}.review-criteria-deferrals"; }
+
 # A review context pack must expose the four auditable sections used by the
 # evidence gate. This rejects placeholder sentinels while keeping the body
 # human-readable for later diagnostics.
