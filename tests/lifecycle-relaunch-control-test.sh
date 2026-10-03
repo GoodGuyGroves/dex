@@ -21,6 +21,11 @@ export DX_LOOP_DIR="$TMP_DIR/loops"
 export DX_RUN_ROOT="$TMP_DIR/runs"
 export DX_ARTIFACT_DIR="$TMP_DIR/artifacts"
 export DX_TOOL_DIR="$TMP_DIR/tools"
+# No Claude store Dex can read: these cases drive the relaunch through the
+# provider's own missing-conversation diagnostic. The transcript precheck that
+# runs first when the store is readable is covered by
+# provider-session-recovery-test.sh.
+export CLAUDE_CONFIG_DIR="$TMP_DIR/no-claude-store"
 export TMP_DIR
 mkdir -p "$HOME" "$DX_STATE_DIR" "$DX_LOOP_DIR" "$DX_RUN_ROOT" \
   "$DX_ARTIFACT_DIR" "$DX_TOOL_DIR" "$TMP_DIR/bin"

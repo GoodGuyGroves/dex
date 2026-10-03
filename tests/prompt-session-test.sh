@@ -22,11 +22,15 @@ root = Path(sys.argv[1])
 with tempfile.TemporaryDirectory(prefix='dex-prompt-session-') as temporary:
     base = Path(temporary)
     repo, binaries = base / 'repo', base / 'bin'
-    for directory in (repo / 'subdir', binaries, base / 'home', base / 'state', base / 'loops'):
+    for directory in (repo / 'subdir', binaries, base / 'home', base / 'state', base / 'loops',
+                      base / 'claude-config/projects'):
         directory.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, HOME=str(base / 'home'), CODEX_HOME=str(base / 'home/.codex'),
                DEX_DIR=str(root), DX_STATE_DIR=str(base / 'state'), DX_LOOP_DIR=str(base / 'loops'),
                DX_RUN_ROOT=str(base / 'runs'), DX_RTK_ENABLED='0', TEST_LOG=str(base / 'launch.json'),
+               # Claude's store: the stub writes a transcript as a session that
+               # started does; the cases below that leave none say so.
+               CLAUDE_CONFIG_DIR=str(base / 'claude-config'), TEST_WRITE_TRANSCRIPT='1',
                PATH=str(binaries) + os.pathsep + os.environ['PATH'])
     for name in ('DX_AGENT', 'DX_AGENT_OVERRIDE', 'DX_MODEL', 'DX_MODEL_OVERRIDE',
                  'DX_EFFORT', 'DX_EFFORT_OVERRIDE', 'DX_PROVIDER_PROFILE', 'DEX_TRIAGE_ACTIVE'):
@@ -139,20 +143,22 @@ __dx_setup_in_place() { print -r -- "IN_PLACE:$1"; return 71; }
     # Claude left no transcript (a declined folder-trust dialog exits 0): say
     # so and fail. A session that started is reported as before.
     store = base / 'claude-config'
-    (store / 'projects').mkdir(parents=True, exist_ok=True)
     hint = 'Claude exited before the session started'
     unstarted = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
-                                                       'CLAUDE_CONFIG_DIR': str(store)})
+                                                       'CLAUDE_CONFIG_DIR': str(store),
+                                                       'TEST_WRITE_TRANSCRIPT': '0'})
     assert unstarted.returncode == 1, (unstarted.stdout, unstarted.stderr)
     assert hint in unstarted.stderr and str(repo.resolve()) in unstarted.stderr, unstarted.stderr
     failed = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
-                                                    'CLAUDE_CONFIG_DIR': str(store), 'TEST_EXIT_CODE': '23'})
+                                                    'CLAUDE_CONFIG_DIR': str(store), 'TEST_EXIT_CODE': '23',
+                                                    'TEST_WRITE_TRANSCRIPT': '0'})
     assert failed.returncode == 23 and hint in failed.stderr, (failed.returncode, failed.stderr)
     started = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
                                                      'CLAUDE_CONFIG_DIR': str(store), 'TEST_WRITE_TRANSCRIPT': '1'})
     assert started.returncode == 0 and hint not in started.stderr, (started.returncode, started.stderr)
     codex = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'codex-subscription',
-                                                   'CLAUDE_CONFIG_DIR': str(store)})
+                                                   'CLAUDE_CONFIG_DIR': str(store),
+                                                   'TEST_WRITE_TRANSCRIPT': '0'})
     assert codex.returncode == 0 and hint not in codex.stderr, (codex.returncode, codex.stderr)
     assert snapshot() == before
     # --agent claude keeps the repository's ccr-subscription default; with no
