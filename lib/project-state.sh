@@ -269,31 +269,43 @@ PY
 # declared neither, so the default Phase 4 text is unchanged.
 dx_verification_phase_block() {
   [[ $# -eq 1 ]] || return 2
-  local block_repo="$1" lanes="" lanes_rc=0 failures="" failures_rc=0 lane test_id base_ref issue_ref
+  local block_repo="$1" lanes="" lanes_rc=0 failures="" failures_rc=0 failures_err="" body=""
+  local lane test_id base_ref issue_ref err_file note
   [[ -n "$block_repo" ]] || return 0
   lanes=$(dx_project_verification_value "$block_repo" lanes 2>/dev/null) || lanes_rc=$?
-  failures=$(dx_verification_known_failures "$block_repo" 2>/dev/null) || failures_rc=$?
-  if [[ "$lanes_rc" -eq 1 && "$failures_rc" -eq 1 ]]; then
-    return 0
+  err_file=$(mktemp "${TMPDIR:-/tmp}/dex-verification.XXXXXX") || err_file=""
+  failures=$(dx_verification_known_failures "$block_repo" 2>"${err_file:-/dev/null}") || failures_rc=$?
+  if [[ -n "$err_file" ]]; then
+    failures_err=$(head -c 2000 "$err_file" 2>/dev/null) || failures_err=""
+    command rm -f "$err_file"
   fi
-  printf '%s\n' "Phase 4 verification policy (.dex/dex.md § Verification):"
   if [[ "$lanes_rc" -eq 0 && -n "$lanes" ]]; then
-    printf '%s\n' "- Run these lanes, in order, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"
+    body+="- Run these lanes, in order, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"$'\n'
     while IFS= read -r lane; do
-      [[ -z "$lane" ]] || printf '    %s\n' "$lane"
+      [[ -z "$lane" ]] || body+="    ${lane}"$'\n'
     done <<< "$lanes"
   elif [[ "$lanes_rc" -eq 2 ]]; then
-    printf '%s\n' "- The lanes setting could not be read; use the default Phase 4 gate."
+    body+="- The lanes setting could not be read; use the default Phase 4 gate."$'\n'
   fi
   if [[ "$failures_rc" -eq 0 && -n "$failures" ]]; then
-    printf '%s\n' "- Known baseline failures on this branch's base. Report each one you hit as baseline (<issue-ref>) and do not fix it in this unit:"
+    body+="- Known baseline failures on this branch's base. Report each one you hit as baseline (<issue-ref>) and do not fix it in this unit:"$'\n'
     while IFS=$'\t' read -r test_id base_ref issue_ref; do
-      printf '    %s (base %s, %s)\n' "$test_id" "$base_ref" "$issue_ref"
+      body+="    ${test_id} (base ${base_ref}, ${issue_ref})"$'\n'
     done <<< "$failures"
   elif [[ "$failures_rc" -eq 2 ]]; then
-    printf '%s\n' "- The known_failures setting could not be read; treat every failure as this unit's to fix or report."
+    body+="- The known_failures setting could not be read; treat every failure as this unit's to fix or report."$'\n'
   fi
-  return 0
+  # Say why a path was refused or a line skipped, so a typo is visible.
+  if [[ -n "$failures_err" ]]; then
+    body+="- known_failures problems (fix them in .dex/dex.md or the file):"$'\n'
+    while IFS= read -r note; do
+      [[ -z "$note" ]] || body+="    ${note}"$'\n'
+    done <<< "$failures_err"
+  fi
+  # Nothing applies (no section, or every entry filtered out): the default
+  # Phase 4 text stands unchanged.
+  [[ -n "$body" ]] || return 0
+  printf '%s\n%s' "Phase 4 verification policy (.dex/dex.md § Verification):" "$body"
 }
 
 dx_project_state_file() {
