@@ -285,6 +285,108 @@ rotate "${SESSION_ID}-same" "[$ONE]" || fail 'an unchanged rotation was rejected
 OBJECTIVE="$OBJECTIVE, reworded" rotate "${SESSION_ID}-same" "[$ONE]" \
   || fail 'a rotation that kept a sealed deferral unchanged was rejected'
 
+# ── the seal holds against hand edits ────────────────────────────────────
+# Every reader of the seal checks the deferrals, not only a reapproval, so a
+# hand edit to the snapshot or the approval cannot widen one.
+approval_of() { cat "$(dx_review_criteria_approval_file "$1")"; }
+snapshot_of() { cat "$(dx_review_criteria_deferrals_file "$1")"; }
+sealed_hash_of() { cut -f3 "$(dx_review_criteria_approval_file "$1")"; }
+# write_criteria <session> <deferred-json> — replace the criteria file only.
+write_criteria() { printf '%s\n' "$(criteria_json "$2")" > "$(dx_review_criteria_file "$1")"; }
+# write_approval <session> <fields...> — hand-write the approval line.
+write_approval() {
+  local session="$1"
+  shift
+  (IFS=$'\t'; printf '%s\n' "$*") > "$(dx_review_criteria_approval_file "$session")"
+}
+seal_reads() { dx_review_read_criteria_approval "$1" > /dev/null 2>&1; }
+TWO="[$ONE,$VERIFY_DEFERRAL]"
+
+# A session with no deferral keeps the version 1 approval line and an empty
+# snapshot, and reads and rotates as before.
+seal_session "${SESSION_ID}-plain" ""
+plain_hash="$(sealed_hash_of "${SESSION_ID}-plain")"
+assert_eq "$(printf '1\t1\t%s' "$plain_hash")" "$(approval_of "${SESSION_ID}-plain")" 'no-deferral approval line'
+assert_eq '[]' "$(snapshot_of "${SESSION_ID}-plain")" 'no-deferral snapshot'
+assert_eq "$plain_hash" "$(dx_review_read_criteria_approval "${SESSION_ID}-plain")" 'no-deferral seal reads'
+OBJECTIVE="$OBJECTIVE, reworded" rotate "${SESSION_ID}-plain" "" || fail 'a no-deferral rotation was rejected'
+[[ "$(approval_of "${SESSION_ID}-plain")" == "$(printf '1\t2\t')"* ]] || assert_at $LINENO
+
+# A seal with deferrals binds the snapshot's digest in a version 2 line.
+seal_session "${SESSION_ID}-bound" "[$ONE]"
+bound_digest="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.read().rstrip("\n").encode()).hexdigest())' \
+  < "$(dx_review_criteria_deferrals_file "${SESSION_ID}-bound")")"
+assert_eq "$(printf '2\t1\t%s\t%s' "$(sealed_hash_of "${SESSION_ID}-bound")" "$bound_digest")" \
+  "$(approval_of "${SESSION_ID}-bound")" 'deferral approval line'
+seal_reads "${SESSION_ID}-bound" || fail 'a sealed deferral did not read back'
+
+# A hand-edited state file: the snapshot gains a deferral. The seal no longer
+# reads, and a reapproval that adds the same deferral is refused.
+seal_session "${SESSION_ID}-state" "[$ONE]"
+state_previous="$(sealed_hash_of "${SESSION_ID}-state")"
+printf '%s\n' "$TWO" | python3 -c 'import json,sys; print(json.dumps(sorted(json.load(sys.stdin), key=lambda e: e["criterion"]), sort_keys=True, separators=(",",":")))' \
+  > "$(dx_review_criteria_deferrals_file "${SESSION_ID}-state")"
+if seal_reads "${SESSION_ID}-state"; then
+  fail 'a seal with a hand-edited deferral snapshot still read'
+fi
+write_criteria "${SESSION_ID}-state" "$TWO"
+if dx_review_approve_criteria "${SESSION_ID}-state" reapproved "$state_previous" \
+  "$(dx_review_criteria_hash "$(dx_review_criteria_file "${SESSION_ID}-state")")" > /dev/null 2>&1; then
+  fail 'a reapproval widened a deferral through a hand-edited state file'
+fi
+
+# A hand-edited state file on a seal that had no deferral: the empty snapshot
+# gains one, and a reapproval that adds it is refused.
+seal_session "${SESSION_ID}-state-plain" ""
+state_plain_previous="$(sealed_hash_of "${SESSION_ID}-state-plain")"
+printf '%s\n' "[$ONE]" > "$(dx_review_criteria_deferrals_file "${SESSION_ID}-state-plain")"
+if seal_reads "${SESSION_ID}-state-plain"; then
+  fail 'a no-deferral seal with a hand-edited snapshot still read'
+fi
+write_criteria "${SESSION_ID}-state-plain" "[$ONE]"
+if dx_review_approve_criteria "${SESSION_ID}-state-plain" reapproved "$state_plain_previous" \
+  "$(dx_review_criteria_hash "$(dx_review_criteria_file "${SESSION_ID}-state-plain")")" > /dev/null 2>&1; then
+  fail 'a reapproval added a deferral through a hand-edited state file'
+fi
+
+# A hand-edited approval: the criteria gain a deferral and the approval is
+# rewritten to their hash, keeping its version, revision and digest.
+seal_session "${SESSION_ID}-approval" "[$ONE]"
+approval_digest="$(cut -f4 "$(dx_review_criteria_approval_file "${SESSION_ID}-approval")")"
+write_criteria "${SESSION_ID}-approval" "$TWO"
+widened_hash="$(dx_review_criteria_hash "$(dx_review_criteria_file "${SESSION_ID}-approval")")"
+write_approval "${SESSION_ID}-approval" 2 1 "$widened_hash" "$approval_digest"
+if seal_reads "${SESSION_ID}-approval"; then
+  fail 'a hand-edited approval widened a sealed deferral'
+fi
+# The same edit, downgraded to a version 1 line that carries no digest.
+write_approval "${SESSION_ID}-approval" 1 1 "$widened_hash"
+if seal_reads "${SESSION_ID}-approval"; then
+  fail 'a hand-edited version 1 approval kept a sealed deferral snapshot'
+fi
+
+# A hand-edited approval on a seal that had no deferral: the criteria gain one
+# and the version 1 line is rewritten to their hash.
+seal_session "${SESSION_ID}-approval-plain" ""
+write_criteria "${SESSION_ID}-approval-plain" "[$ONE]"
+write_approval "${SESSION_ID}-approval-plain" 1 1 \
+  "$(dx_review_criteria_hash "$(dx_review_criteria_file "${SESSION_ID}-approval-plain")")"
+if seal_reads "${SESSION_ID}-approval-plain"; then
+  fail 'a hand-edited approval added a deferral to a seal that had none'
+fi
+
+# Deleting the approval in Phase 1 lets the controller seal again as initial.
+# That seal cannot widen the snapshot the first seal left, but an identical
+# retry after an interrupted seal still succeeds.
+seal_session "${SESSION_ID}-reseal" "[$ONE]"
+command rm -f "$(dx_review_criteria_approval_file "${SESSION_ID}-reseal")"
+if seal_session "${SESSION_ID}-reseal" "$TWO" 2> /dev/null; then
+  fail 'an initial re-seal widened the sealed deferrals'
+fi
+command rm -f "$(dx_review_criteria_approval_file "${SESSION_ID}-reseal")"
+seal_session "${SESSION_ID}-reseal" "[$ONE]" || fail 'an identical initial re-seal was refused'
+seal_reads "${SESSION_ID}-reseal" || fail 'an identical initial re-seal did not read back'
+
 # Session cleanup removes the seal's deferral snapshot with the seal itself.
 deferrals_file="$(dx_review_criteria_deferrals_file "${SESSION_ID}-same")"
 [[ -f "$deferrals_file" ]] || assert_at $LINENO
