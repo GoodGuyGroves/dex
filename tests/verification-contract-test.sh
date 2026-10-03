@@ -156,4 +156,20 @@ block_lacks "$block" "receipt name full-gate"
 [[ "$(grep -c 'dx_verification_phase_block' "$ROOT/hooks/phase-loop.sh")" -ge 3 ]] \
   || fail 'phase-loop.sh does not add the verification block to both handoffs and the audit'
 
+# ── the Phase 4 and Phase 2 gate text name the policy ───────────────────
+# "Rerun until green" alone would send an agent after a listed baseline
+# failure, so both Phase 4 handoffs say such a failure still meets the gate.
+BASELINE_GATE='A failure on the .dex/dex.md § Verification known_failures list still meets the gate when reported as baseline (<issue-ref>); do not fix it in this unit.'
+# The hook runs when sourced, so take just its phase-message functions.
+eval "$(sed -n '/^dx_inline_phase_message() {$/,/^dx_compact_repeat_audit_prompt() {$/p' \
+  "$ROOT/hooks/phase-loop.sh" | sed '$d')"
+block_has "$(DX_PROVIDER_ENGINE=claude dx_inline_phase_message 4)" "$BASELINE_GATE"
+block_has "$(grep -F 'skill: \"dxverify\"' "$ROOT/dx.sh")" "$BASELINE_GATE"
+# Phase 2 may run the complete gate early; with declared lanes that gate is
+# the lanes, under the same receipt name, or Phase 4 cannot reuse it.
+implement_gate=$(sed -n '/^## Step 2.6/,/^## Step 3/p' "$ROOT/prompts/phase-audits/2-implement.md")
+block_has "$implement_gate" '## Verification'
+block_has "$implement_gate" 'every declared lane in the one-call form'
+block_has "$implement_gate" '$DEX_DIR/prompts/phase-audits/4-verify.md'
+
 printf 'verification-contract-test: ok\n'

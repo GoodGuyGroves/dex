@@ -76,8 +76,11 @@ The ladder: the tests covering the changed files while you work, the project's
 fast gates on the changed set at each commit, and the complete gate once on the
 final tree — in Phase 4, or here when the change's reach warrants it. When you
 run the complete gate in Phase 2, run it as
-`dx run-gate --name full-gate <the project's aggregate gate command>`: its
-receipt is keyed by the checkout and working-tree fingerprints, so Phase 4
+`dx run-gate --name full-gate <the project's aggregate gate command>`. When
+`.dex/dex.md` declares `## Verification` lanes, those lanes are the complete
+gate: run every declared lane in the one-call form
+`$DEX_DIR/prompts/phase-audits/4-verify.md` gives, under the same receipt name.
+Its receipt is keyed by the checkout and working-tree fingerprints, so Phase 4
 reuses it instead of running the same gate on the same tree twice, and a receipt
 from an earlier tree is not evidence about this one. Review waves never run the
 aggregate gate. Optionally publish the passing project-wide commands for Phase 3
