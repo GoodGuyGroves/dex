@@ -2348,3 +2348,117 @@ __dx_session_discard_state() {
   fi
   dx_cleanup_session "$session_id"
 }
+
+# A session whose teardown deleted .meta but kept .runtime (before #86) has no
+# metadata for the cleanup journal, so the exact cleanup refuses it (#88). This
+# removes it only when nothing but a dead runtime with a finished status, its
+# lock and its run ID is left. The runtime is claimed and purged through the
+# same lock-bound recovery as the exact cleanup; .runtime-lock stays.
+__dx_session_management_orphan_shape() { # <sid> <records-file> <meta-file>
+  python3 - "$1" "$2" "$3" <<'PY'
+import json
+import os
+import sys
+
+selected_session, records_file, meta_file = sys.argv[1:]
+finished_states = {"completed", "failed", "stopped", "abandoned"}
+allowed_artifacts = {"runtime", "runtime-lock", "run-id", "control-lock"}
+try:
+    with open(records_file, encoding="utf-8") as source:
+        records = [json.loads(line) for line in source if line.strip()]
+except (OSError, ValueError):
+    raise SystemExit(3)
+if os.path.lexists(meta_file):
+    raise SystemExit(1)
+matches = [record for record in records if record.get("session_id") == selected_session]
+if len(matches) != 1:
+    raise SystemExit(1)
+record = matches[0]
+artifacts = record.get("artifacts")
+child_prefixes = tuple(
+    f"{selected_session[:120]}-{child_kind}-"
+    for child_kind in ("assessment", "pass", "review")
+)
+if (
+    not isinstance(artifacts, list)
+    or any(not isinstance(artifact, str) for artifact in artifacts)
+    or "runtime" not in artifacts
+    or not set(artifacts).issubset(allowed_artifacts)
+    or record.get("is_child") is not False
+    or record.get("metadata_health") != "missing"
+    or record.get("unsafe_artifacts") != []
+    or record.get("consistency_issues") != []
+    or record.get("runtime_health") != "dead"
+    or record.get("runtime_status") not in finished_states
+    or not isinstance(record.get("workspace"), str)
+    or not os.path.isabs(record["workspace"])
+    or not isinstance(record.get("runtime_snapshot"), str)
+    or any(
+        candidate.get("parent_session_id") == selected_session
+        or (
+            isinstance(candidate.get("session_id"), str)
+            and candidate["session_id"].startswith(child_prefixes)
+        )
+        for candidate in records
+    )
+):
+    raise SystemExit(1)
+print(record["runtime_snapshot"])
+PY
+}
+
+__dx_session_management_cleanup_orphan_runtime() { # <repo-dir> <sid>
+  [[ $# -eq 2 ]] || return 3
+  local requested_repo="$1" session_id="$2" repo_dir records_file
+  local runtime_file meta_file runtime_snapshot owner_handle
+  local control_held=0 cleanup_result=0
+  dx_session_id_valid "$session_id" || return 3
+  repo_dir=$(cd "$requested_repo" 2>/dev/null && dx_session_repo_root) || return 3
+  runtime_file=$(dx_session_runtime_file "$session_id") || return 3
+  meta_file=$(dx_meta_file "$session_id")
+  dx_session_claim_acquire "$session_id" cleanup || return 3
+  records_file=$(mktemp "${TMPDIR:-/tmp}/dex-session-orphan.XXXXXX") \
+    || cleanup_result=3
+  if [[ "$cleanup_result" -eq 0 ]]; then
+    if dx_lifecycle_control_lock_acquire "$session_id"; then
+      control_held=1
+    else
+      cleanup_result=1
+    fi
+  fi
+  if [[ "$cleanup_result" -eq 0 ]]; then
+    if ! dx_session_catalog_records --repo "$repo_dir" --include-children \
+        > "$records_file" \
+      || ! runtime_snapshot=$(__dx_session_management_orphan_shape \
+        "$session_id" "$records_file" "$meta_file") \
+      || ! __dx_session_management_artifacts validate "$session_id"; then
+      cleanup_result=1
+    fi
+  fi
+  if [[ "$cleanup_result" -eq 0 ]]; then
+    if __dx_session_management_claim_runtime "$session_id" "$runtime_snapshot"; then
+      owner_handle="$DX_SESSION_MANAGEMENT_OWNER_HANDLE"
+      unset DX_SESSION_MANAGEMENT_OWNER_HANDLE
+      __dx_session_runtime_owner_purge "$owner_handle" || cleanup_result=1
+      if [[ -e "$runtime_file" || -L "$runtime_file" ]]; then
+        cleanup_result=1
+      fi
+    else
+      cleanup_result=1
+    fi
+  fi
+  if [[ "$cleanup_result" -eq 0 ]]; then
+    __dx_session_management_artifacts remove-payload "$session_id" \
+      || cleanup_result=1
+  fi
+  [[ -z "$records_file" ]] || rm -f "$records_file"
+  if [[ "$control_held" -eq 1 ]] \
+    && ! dx_lifecycle_control_lock_release_checked "$session_id" >/dev/null 2>&1; then
+    cleanup_result=1
+  fi
+  if ! dx_session_claim_release_checked "$session_id"; then
+    dx_error "Dex could not release the session cleanup claim safely."
+    cleanup_result=1
+  fi
+  return "$cleanup_result"
+}

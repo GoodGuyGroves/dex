@@ -1035,7 +1035,21 @@ print(session_id)
     return 3
   fi
 
-  if __dx_session_management_cleanup_exact "$repo_root" "$session_id"; then
+  # A session with no .meta cannot go through the cleanup journal; the orphan
+  # path takes only a finished, dead .runtime and its run ID (#88).
+  if printf '%s\n' "$selected_record" | python3 -c '
+import json
+import sys
+
+raise SystemExit(0 if json.load(sys.stdin).get("metadata_health") == "missing" else 1)
+'; then
+    if __dx_session_management_cleanup_orphan_runtime "$repo_root" "$session_id"; then
+      dx_done "Session ${session_id} was forgotten."
+      return 0
+    else
+      cleanup_result=$?
+    fi
+  elif __dx_session_management_cleanup_exact "$repo_root" "$session_id"; then
     dx_done "Session ${session_id} was forgotten."
     return 0
   else
