@@ -671,5 +671,17 @@ DEX_SESSION_ID="$NONE_SESSION" dx_maintenance_request_reviewer 7 octocat 2>/dev/
 reset_gh
 dx_maintenance_request_reviewer 7 octocat >/dev/null 2>&1 || true
 text_has "$(cat "$GH_FAKE_CALLS")" "pr edit 7 --add-reviewer octocat"
+# With DEX_SESSION_ID unset, `dx control override` records the override under
+# dx_session_id; the bare readers must find it there.
+DERIVED_SESSION=$(unset DEX_SESSION_ID; dx_session_id)
+dx_session_id_valid "$DERIVED_SESSION" || assert_at $LINENO
+dx_override_set "$DERIVED_SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+assert_eq none "$(unset DEX_SESSION_ID; dx_reviewers_mode)" \
+  "bare mode reads the derived session"
+reset_gh
+(unset DEX_SESSION_ID; dx_maintenance_request_reviewer 7 octocat 2>/dev/null) \
+  || fail "request under a derived-session none did not return 0"
+[[ ! -s "$GH_FAKE_CALLS" ]] || fail "gh ran under a derived-session none: $(cat "$GH_FAKE_CALLS")"
 
 printf 'reviewers tests passed\n'
