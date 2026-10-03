@@ -3486,7 +3486,11 @@ __dx_run_phases_inline() {
       || started_handle=""
     dx_provider_claude_transcript_exists "$wt_dir" "$started_handle" \
       "$claude_session_name" || transcript_result=$?
-    [[ "$transcript_result" -ne 1 ]] || session_never_started=1
+    if [[ "$transcript_result" -eq 1 ]]; then
+      session_never_started=1
+      dx_run_log_append_for_session "$session_id" "warn" "dx" \
+        "Claude exited before the session started (no transcript); folder trust may have been declined"
+    fi
   fi
 
   local final_step="$step"

@@ -84,6 +84,9 @@ run_lifecycle unstarted-zero "$TMP_DIR/zero" 0 none
 [[ "$(cat "$TMP_DIR/zero.rc")" -ne 0 ]] || { cat "$TMP_DIR/zero.out" >&2; fail "unstarted session reported success"; }
 assert_contains "$HINT" "$TMP_DIR/zero.out"
 assert_contains "once in $TEST_REPO to trust it" "$TMP_DIR/zero.out"
+# The run log says so too, for whoever reads the run rather than the terminal.
+grep -rqs "Claude exited before the session started" "$DX_RUN_ROOT" \
+  || fail "the run log does not record the session that never started"
 
 # A non-zero exit before the session started keeps its code and gets the hint.
 run_lifecycle unstarted-failed "$TMP_DIR/failed" 3 none
