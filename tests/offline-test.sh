@@ -273,4 +273,10 @@ unset DEX_OFFLINE
 rc=0; dx_offline_refuse "dx login" > "$OUT" 2>&1 || rc=$?
 [[ "$rc" -eq 0 ]] || assert_at $LINENO
 
+# ── 7. dx status ────────────────────────────────────────────────────────────
+(cd "$repo" && DEX_OFFLINE=1 bash "$ROOT/bin/status.sh") > "$OUT" 2>&1 || true
+grep -Eq '^  Network:[[:space:]]+offline \(DEX_OFFLINE=1\)' "$OUT" || { cat "$OUT" >&2; assert_at $LINENO; }
+(cd "$repo" && bash "$ROOT/bin/status.sh") > "$OUT" 2>&1 || true
+grep -Eq '^  Network:[[:space:]]+online$' "$OUT" || { cat "$OUT" >&2; assert_at $LINENO; }
+
 echo "offline-test: ok"

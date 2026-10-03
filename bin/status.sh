@@ -95,6 +95,12 @@ else
   echo "  RTK:        not installed or wrong binary — run 'dx install'"
 fi
 
+if dx_offline; then
+  echo "  Network:    offline (DEX_OFFLINE=1): optional downloads and sync off"
+else
+  echo "  Network:    online"
+fi
+
 # Dex's MCP registry reaches Claude and Codex launches alike; otherwise the
 # user's own registration with each CLI counts.
 browser_mcp_ready() { # <cli>
