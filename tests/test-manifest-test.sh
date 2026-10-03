@@ -189,6 +189,14 @@ if DX_TEST_SUITE_DIR="$drift_repo/tests" DX_TEST_BASE_REF=base \
 fi
 assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/new-drift.out"
 assert_not_contains "tests missing from manifest: unlisted-on-base-test.sh" "$TMP_DIR/new-drift.out"
+# With no base named and no default branch to find, the resolver's fallback is
+# the current branch, which is no base: the branch's drift stays fatal.
+if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DX_TEST_SUITE_DIR="$drift_repo/tests" \
+  DX_TEST_LOG_DIR="$TMP_DIR/self-base-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/self-base.out" 2>&1; then
+  fail "the current branch was taken as its own base"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/self-base.out"
 
 printf '%s\n' \
   $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
