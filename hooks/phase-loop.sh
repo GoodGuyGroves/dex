@@ -629,9 +629,11 @@ mkdir -p "$DX_LOOP_DIR"
 # checkout resolve the same SESSION_ID. Parsed only after the activation check
 # above so stops in non-Dex sessions never pay the python3 spawn.
 #
-# background_tasks_running is Claude Code's word that a background command or
-# subagent is still executing and will wake the session when it ends. Only an
-# explicit JSON true counts; anything else, including its absence, is false.
+# Background work that will wake the session when it ends: a background
+# command or subagent. Claude Code documents a background_tasks_running
+# boolean; 2.1.280 sends background_tasks instead, a list of entries such as
+# {"type":"subagent","status":"running"}. Either counts, and only an explicit
+# JSON true or a "running" entry does: anything else is no background work.
 HOOK_INPUT=$(cat 2>/dev/null || true)
 HOOK_PROVIDER_SESSION_ID=""
 HOOK_BACKGROUND_TASKS_RUNNING=0
@@ -645,7 +647,12 @@ except Exception:
 if not isinstance(payload, dict):
     payload = {}
 value = payload.get("session_id", "")
-print("1" if payload.get("background_tasks_running") is True else "0")
+tasks = payload.get("background_tasks")
+running = payload.get("background_tasks_running") is True or (
+    isinstance(tasks, list)
+    and any(isinstance(task, dict) and task.get("status") == "running" for task in tasks)
+)
+print("1" if running else "0")
 if isinstance(value, str):
     print(value)
 ' 2>/dev/null || true)

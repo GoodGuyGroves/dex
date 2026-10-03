@@ -789,7 +789,17 @@ assert_out_empty "Phase 1 wait on a background subagent prints nothing"
 if [[ ! -s "$TMP_DIR/phase-1.err" ]]; then report "Phase 1 subagent wait writes no stderr" 0; else report "Phase 1 subagent wait writes no stderr" 1; fi
 if [[ ! -e "$(dx_phase_busy_notice_file "$SID" 1)" ]]; then report "an allowed stop records no notice" 0; else report "an allowed stop records no notice" 1; fi
 
-phase_1_stop '{"session_id":"claude-phase-1-wait"}'
+# Claude Code 2.1.280 sends background_tasks rather than the documented
+# boolean: a running subagent or shell entry is background work too.
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[{"id":"a1","type":"subagent","status":"running","agent_type":"Explore"}]}'
+assert_rc "Phase 1 wait on a running background_tasks entry allows the stop" 0
+assert_out_empty "Phase 1 wait on a running background_tasks entry prints nothing"
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[{"id":"s1","type":"shell","status":"completed"},"running"]}'
+assert_rc "finished or malformed background_tasks entries do not allow the stop" 0
+assert_out_contains "finished background_tasks entries still block" '"decision":"block"'
+rm -f "$(dx_phase_busy_notice_file "$SID" 1)"
+
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[]}'
 assert_rc "Phase 1 in-progress gate is not a hook error" 0
 if [[ ! -s "$TMP_DIR/phase-1.err" ]]; then report "Phase 1 in-progress gate writes no stderr" 0; else report "Phase 1 in-progress gate writes no stderr" 1; fi
 python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block" and p["suppressOutput"] is True and "systemMessage" not in p; assert "No audit iteration was counted" in p["reason"] and "completion notifications" in p["reason"], p' "$OUT" \
