@@ -163,6 +163,49 @@ if DX_TEST_SUITE_DIR="$suite_dir" DX_TEST_MANIFEST="$TMP_DIR/incomplete.tsv" \
 fi
 assert_contains "tests missing from manifest: f-timeout-test.sh" "$TMP_DIR/incomplete.out"
 
+# Drift the base branch already has is not this branch's to fix: it warns and
+# the run goes on. Drift the branch adds still stops the run.
+drift_repo="$TMP_DIR/drift-repo"
+mkdir -p "$drift_repo/tests"
+drift_git() { git -C "$drift_repo" -c user.email=dex@example.test -c user.name="Dex Test" "$@"; }
+drift_git init -q
+for name in ok-test.sh unlisted-on-base-test.sh; do
+  printf '#!/usr/bin/env bash\ntrue\n' > "$drift_repo/tests/$name"
+done
+printf '%s\n' \
+  $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$drift_repo/tests/manifest.tsv"
+drift_git add -A
+drift_git commit -q -m base
+drift_git branch -M base
+drift_git switch -q -c work
+printf '#!/usr/bin/env bash\ntrue\n' > "$drift_repo/tests/new-test.sh"
+drift_git add -A
+drift_git commit -q -m 'add a test without a manifest row'
+if DX_TEST_SUITE_DIR="$drift_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_LOG_DIR="$TMP_DIR/new-drift-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/new-drift.out" 2>&1; then
+  fail "drift added on the branch was accepted"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/new-drift.out"
+assert_not_contains "tests missing from manifest: unlisted-on-base-test.sh" "$TMP_DIR/new-drift.out"
+
+printf '%s\n' \
+  $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
+  $'new-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$drift_repo/tests/manifest.tsv"
+drift_git commit -q -am 'declare the new test'
+DX_TEST_SUITE_DIR="$drift_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_LOG_DIR="$TMP_DIR/base-drift-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/base-drift.out" 2>&1 \
+  || fail "drift the base already had stopped the run: $(cat "$TMP_DIR/base-drift.out")"
+assert_contains "warning: tests missing from manifest, already on base: unlisted-on-base-test.sh" \
+  "$TMP_DIR/base-drift.out"
+assert_contains "warning: manifest entries without test files, already on base: gone-on-base-test.sh" \
+  "$TMP_DIR/base-drift.out"
+assert_contains "PASS new-test.sh" "$TMP_DIR/base-drift.out"
+assert_contains "PASS ok-test.sh" "$TMP_DIR/base-drift.out"
+
 printf '%s\n' \
   "$(cat "$fixture_manifest")" \
   $'a-hermetic-test.sh\tfast\tall\t10\thermetic' > "$TMP_DIR/duplicate.tsv"
