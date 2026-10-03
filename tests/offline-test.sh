@@ -252,6 +252,8 @@ refuses "dx router install" bash "$ROOT/bin/router.sh" router install
 refuses "dx router setup" bash "$ROOT/bin/router.sh" router setup
 refuses "dx router update" bash "$ROOT/bin/router.sh" router update
 refuses "dx router setup" bash "$ROOT/bin/router.sh" router --json setup
+# A value option's argument is not the action: the CLI still runs install.
+refuses "dx router install" bash "$ROOT/bin/router.sh" router --scope x install
 if command -v zsh >/dev/null 2>&1; then
   refuses "dx run --spec-url" zsh -f -c 'source "$DEX_DIR/dx.sh" >/dev/null 2>&1; dx run --spec-url https://dexcode.invalid/spec.json'
 fi
