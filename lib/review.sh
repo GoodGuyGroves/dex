@@ -319,6 +319,65 @@ if any(json.dumps(entry, sort_keys=True) not in sealed_entries for entry in cand
 PY
 }
 
+# __dx_review_deferrals_digest <canonical-json> — the digest a version 2
+# approval line records for its deferral snapshot.
+__dx_review_deferrals_digest() {
+  printf '%s' "$1" | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+}
+
+# __dx_review_sealed_deferrals <session_id> <approval-version> <digest> — print
+# the deferral snapshot the approval seals. A version 1 line seals none, so its
+# snapshot is absent (a seal from before deferrals existed) or `[]`. A version 2
+# line seals a non-empty snapshot whose digest it records. Anything else,
+# including a snapshot edited after the seal, fails.
+__dx_review_sealed_deferrals() {
+  local session_id="$1" version="$2" digest="$3" deferrals_file snapshot
+  deferrals_file=$(dx_review_criteria_deferrals_file "$session_id") || return 1
+  if [[ ! -e "$deferrals_file" && ! -L "$deferrals_file" ]]; then
+    [[ "$version" == "1" ]] || return 1
+    printf '%s\n' '[]'
+    return 0
+  fi
+  [[ -f "$deferrals_file" && ! -L "$deferrals_file" ]] || return 1
+  snapshot=$(cat "$deferrals_file" 2>/dev/null) || return 1
+  python3 - "$snapshot" <<'PY' || return 1
+import json
+import sys
+
+try:
+    entries = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    raise SystemExit(1)
+if not isinstance(entries, list) or not all(isinstance(entry, dict) and isinstance(entry.get("criterion"), str) for entry in entries):
+    raise SystemExit(1)
+canonical = json.dumps(sorted(entries, key=lambda entry: entry["criterion"]), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+if canonical != sys.argv[1]:
+    raise SystemExit(1)
+PY
+  case "$version" in
+    1) [[ "$snapshot" == "[]" ]] || return 1 ;;
+    2)
+      [[ "$snapshot" != "[]" && "$digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+      [[ "$(__dx_review_deferrals_digest "$snapshot")" == "$digest" ]] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$snapshot"
+}
+
+# __dx_review_approval_fields_valid <version> <revision> <hash> <digest> <extra>
+# — an approval line is `1 rev hash` with no deferrals, or `2 rev hash digest`
+# when the seal holds deferrals.
+__dx_review_approval_fields_valid() {
+  case "$1" in
+    1) [[ -z "$4" && -z "$5" ]] || return 1 ;;
+    2) [[ "$4" =~ ^[a-f0-9]{64}$ && -z "$5" ]] || return 1 ;;
+    *) return 1 ;;
+  esac
+  dx_review_is_positive_integer "$2" || return 1
+  [[ "$3" =~ ^[a-f0-9]{64}$ ]]
+}
+
 dx_review_criteria_hash() {
   local criteria_file="$1"
   dx_review_criteria_valid "$criteria_file" || return 1
@@ -352,8 +411,9 @@ __dx_review_invalidate_criteria_authorization() {
 
 dx_review_approve_criteria() {
   local session_id="$1" approval_mode="${2:-}" expected_previous="" expected_hash=""
-  local criteria_file approval_file current_hash raw version revision approved_hash extra next_revision tmp_file
-  local deferrals_file current_deferrals sealed_deferrals
+  local criteria_file approval_file current_hash raw version revision approved_hash digest extra next_revision tmp_file
+  local deferrals_file current_deferrals sealed_deferrals approval_line
+  local refusal="dex: approval refused: deferred_criteria may only shrink after the Phase 1 seal; drop the added or changed deferral, or reword the criterion with the user"
   [[ "$approval_mode" == "initial" || "$approval_mode" == "reapproved" ]] || return 1
   case "$approval_mode" in
     initial)
@@ -375,17 +435,26 @@ dx_review_approve_criteria() {
   deferrals_file=$(dx_review_criteria_deferrals_file "$session_id") || return 1
   current_deferrals=$(__dx_review_criteria_deferrals "$criteria_file") || return 1
 
+  # Deferrals are fixed when Phase 1 seals the criteria. A rotation may drop
+  # one but never add one or change its criterion, owner, until or reason. The
+  # sealed snapshot is trusted only when the approval line's digest binds it.
   next_revision=1
   if [[ -e "$approval_file" ]]; then
     raw=$(cat "$approval_file" 2>/dev/null) || return 1
     [[ "$raw" != *$'\n'* && "$raw" != *$'\r'* ]] || return 1
-    IFS=$'\t' read -r version revision approved_hash extra <<EOF
+    IFS=$'\t' read -r version revision approved_hash digest extra <<EOF
 $raw
 EOF
-    [[ "$version" == "1" && -z "$extra" ]] || return 1
-    dx_review_is_positive_integer "$revision" || return 1
-    [[ "$approved_hash" =~ ^[a-f0-9]{64}$ ]] || return 1
+    __dx_review_approval_fields_valid "$version" "$revision" "$approved_hash" "$digest" "$extra" || return 1
     if [[ "$approval_mode" == "reapproved" && "$approved_hash" != "$expected_previous" ]]; then
+      return 1
+    fi
+    sealed_deferrals=$(__dx_review_sealed_deferrals "$session_id" "$version" "$digest") || {
+      printf '%s\n' "dex: approval refused: the deferral snapshot no longer matches the Phase 1 seal" >&2
+      return 1
+    }
+    if ! __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals"; then
+      printf '%s\n' "$refusal" >&2
       return 1
     fi
     if [[ "$approved_hash" == "$current_hash" ]]; then
@@ -396,28 +465,32 @@ EOF
       return 0
     fi
     [[ "$approval_mode" == "reapproved" ]] || return 1
-    # Deferrals are fixed when Phase 1 seals the criteria. A rotation may drop
-    # one but never add one or change its criterion, owner, until or reason.
-    # A seal from before deferrals existed holds none.
-    sealed_deferrals='[]'
-    if [[ -e "$deferrals_file" ]]; then
-      [[ -f "$deferrals_file" && ! -L "$deferrals_file" ]] || return 1
-      sealed_deferrals=$(cat "$deferrals_file" 2>/dev/null) || return 1
-    fi
-    if ! __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals"; then
-      printf '%s\n' "dex: reapproval refused: deferred_criteria may only shrink after the Phase 1 seal; drop the added or changed deferral, or reword the criterion with the user" >&2
-      return 1
-    fi
     next_revision=$((10#$revision + 1))
     dx_review_is_positive_integer "$next_revision" || return 1
   elif [[ "$approval_mode" != "initial" ]]; then
     return 1
+  elif [[ -e "$deferrals_file" || -L "$deferrals_file" ]]; then
+    # A snapshot without an approval is an interrupted first seal, or an
+    # approval removed to seal again. Either way the new seal may not widen it.
+    [[ -f "$deferrals_file" && ! -L "$deferrals_file" ]] || return 1
+    sealed_deferrals=$(cat "$deferrals_file" 2>/dev/null) || return 1
+    if ! __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals"; then
+      printf '%s\n' "$refusal" >&2
+      return 1
+    fi
+  fi
+  approval_line=$(printf '1\t%s\t%s' "$next_revision" "$current_hash")
+  if [[ "$current_deferrals" != "[]" ]]; then
+    digest=$(__dx_review_deferrals_digest "$current_deferrals") || return 1
+    [[ "$digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+    approval_line=$(printf '2\t%s\t%s\t%s' "$next_revision" "$current_hash" "$digest")
   fi
 
   __dx_review_invalidate_criteria_authorization "$session_id" "$approval_mode" || return 1
   mkdir -p "$(dirname "$approval_file")" || return 1
-  # Record the sealed deferrals before the approval that relies on them; a
-  # narrowed set replaces the old one so a dropped deferral cannot return.
+  # Record the sealed deferrals before the approval that binds them, so a crash
+  # between the two leaves a digest mismatch that fails closed. A narrowed set
+  # replaces the old one, so a dropped deferral cannot return.
   tmp_file="${deferrals_file}.tmp.$$"
   if ! printf '%s\n' "$current_deferrals" > "$tmp_file" ||
      ! command mv -f "$tmp_file" "$deferrals_file"; then
@@ -425,7 +498,7 @@ EOF
     return 1
   fi
   tmp_file="${approval_file}.tmp.$$"
-  if ! printf '1\t%s\t%s\n' "$next_revision" "$current_hash" > "$tmp_file" ||
+  if ! printf '%s\n' "$approval_line" > "$tmp_file" ||
      [[ "$(dx_review_criteria_hash "$criteria_file" 2>/dev/null)" != "$current_hash" ]] ||
      ! command mv -f "$tmp_file" "$approval_file"; then
     command rm -f "$tmp_file" 2>/dev/null || true
@@ -437,21 +510,27 @@ EOF
   printf '%s\n' "$current_hash"
 }
 
+# dx_review_read_criteria_approval <session_id> — print the sealed criteria
+# hash. Every phase receipt and review wave reads the seal here, so the
+# deferrals are checked here too: the snapshot must match the approval's
+# digest, and the criteria may defer nothing the snapshot does not hold.
 dx_review_read_criteria_approval() {
-  local session_id="$1" criteria_file approval_file raw version revision approved_hash extra current_hash
+  local session_id="$1" criteria_file approval_file raw version revision approved_hash digest extra current_hash
+  local sealed_deferrals current_deferrals
   criteria_file=$(dx_review_criteria_file "$session_id") || return 1
   approval_file=$(dx_review_criteria_approval_file "$session_id") || return 1
   [[ -f "$approval_file" ]] || return 1
   raw=$(cat "$approval_file" 2>/dev/null) || return 1
   [[ "$raw" != *$'\n'* && "$raw" != *$'\r'* ]] || return 1
-  IFS=$'\t' read -r version revision approved_hash extra <<EOF
+  IFS=$'\t' read -r version revision approved_hash digest extra <<EOF
 $raw
 EOF
-  [[ "$version" == "1" && -z "$extra" ]] || return 1
-  dx_review_is_positive_integer "$revision" || return 1
-  [[ "$approved_hash" =~ ^[a-f0-9]{64}$ ]] || return 1
+  __dx_review_approval_fields_valid "$version" "$revision" "$approved_hash" "$digest" "$extra" || return 1
   current_hash=$(dx_review_criteria_hash "$criteria_file") || return 1
   [[ "$current_hash" == "$approved_hash" ]] || return 1
+  sealed_deferrals=$(__dx_review_sealed_deferrals "$session_id" "$version" "$digest") || return 1
+  current_deferrals=$(__dx_review_criteria_deferrals "$criteria_file") || return 1
+  __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals" || return 1
   printf '%s\n' "$approved_hash"
 }
 
