@@ -902,6 +902,20 @@ assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with a posted commen
 assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required posts one comment"
 dx_cleanup_session "$WC_SESSION"
 
+# required, for a gate that cannot be waived: refused before any comment, so
+# the PR never claims a waiver that was not recorded.
+setup_attribution_lifecycle "$WC_SESSION"
+: > "$FAKE_GH_LOG"
+: > "$FAKE_GH_COMMENTS"
+if FAKE_GH_PR=42 env PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$WC_SESSION" \
+  bash "$CONTROL" waive pr.reviewers --reason "Skip the reviewers entirely" \
+  > "$TMP_DIR/wc-required-reviewers.out" 2>&1; then
+  assert_at $LINENO
+fi
+assert_eq "" "$(cat "$FAKE_GH_COMMENTS")" "a refused pr.reviewers waiver posts nothing"
+assert_eq "0" "$(waiver_row_count "$WC_SESSION")" "a refused pr.reviewers waiver records nothing"
+dx_cleanup_session "$WC_SESSION"
+
 # required, with no open PR: nothing to post, so the waiver records.
 FAKE_GH_PR='' run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-no-pr.out" --reason "Only the dex#1 baseline fails"
 assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with no PR records the waiver"
