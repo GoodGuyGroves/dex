@@ -128,6 +128,18 @@ and the managed RTK directory on the PATH of every Claude and Codex launch, so
 in-session `dx` commands resolve without an rc. `tests/dx-without-rc-test.sh`
 keeps the shim list in step with `dx.sh`.
 
+## First run in a new repository
+
+Claude Code asks once per git repository whether to trust the folder, and
+every worktree shares its repository's answer. Each nested clone in a
+workspace is a repository of its own. An interactive `dx` run in an untrusted
+repository opens that dialog, and declining it exits before the session
+starts. Dex reports this as "Claude exited before the session started" and
+exits non-zero. Run `claude` once in the repository root to trust it. Dex
+tells a session that never started from one that did by its transcript under
+`${CLAUDE_CONFIG_DIR:-~/.claude}/projects/`, and on resume it starts a new
+conversation when that transcript is missing.
+
 ## Environment variables
 
 The environment values below are launch defaults. Active lifecycle consumers

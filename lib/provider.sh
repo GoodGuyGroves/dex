@@ -1417,6 +1417,21 @@ sys.exit(UNKNOWN if unreadable else MISSING)
 PY
 }
 
+# dx_provider_claude_not_started_error — what a Claude launch that left no
+# transcript most often means: the folder-trust dialog was declined. Claude
+# keeps that trust per git repository, and a worktree shares its repository's,
+# so the hint names the main checkout.
+dx_provider_claude_not_started_error() {
+  local repo_root="" common_dir=""
+  if common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    && [[ "$common_dir" == */.git ]]; then
+    repo_root="${common_dir%/.git}"
+  else
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || repo_root="$PWD"
+  fi
+  dx_error "Claude exited before the session started (folder-trust dialog declined?). Run \`claude\` once in ${repo_root} to trust it."
+}
+
 # dx_provider_run_session <name> <resuming:0|1> <saved-handle> <provider-args...>
 # A failed lookup has not started a conversation, so a fresh launch can use
 # the same prepared phase context and completion authorization.
@@ -2215,6 +2230,14 @@ dx_provider_session() (
     dx_agent_session_handle_write "$session_id" claude "$claude_handle" || return 1
     dx_provider_claude "${DX_CLAUDE_FLAGS[@]}" --session-id "$claude_handle" \
       -- "$prompt" || exit_code=$?
+    # The conversation ID is Dex's own, so a missing transcript means the
+    # session never started; a declined trust dialog still exits 0.
+    local transcript_result=0
+    dx_provider_claude_transcript_exists "$PWD" "$claude_handle" || transcript_result=$?
+    if [[ "$transcript_result" -eq 1 ]]; then
+      dx_provider_claude_not_started_error
+      [[ "$exit_code" -ne 0 ]] || exit_code=1
+    fi
   fi
   return "$exit_code"
 )

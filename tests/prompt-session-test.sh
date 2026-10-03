@@ -69,6 +69,12 @@ if name == 'codex':
                 input='{"hook_event_name":"SessionStart","session_id":"prompt-test-thread"}',
                 env={'PATH': os.environ['PATH'], 'HOME': os.environ['HOME']})
             assert not result.stdout, result.stdout
+if os.environ.get('TEST_WRITE_TRANSCRIPT') == '1' and '--session-id' in args:
+    # What Claude does once a session starts: write its transcript.
+    project = re.sub(r'[^A-Za-z0-9]', '-', os.getcwd())
+    store = Path(os.environ['CLAUDE_CONFIG_DIR'], 'projects', project)
+    store.mkdir(parents=True, exist_ok=True)
+    (store / (args[args.index('--session-id') + 1] + '.jsonl')).write_text('{"type":"user"}\n')
 Path(os.environ['TEST_LOG']).write_text(json.dumps({
     'binary': name, 'args': args, 'cwd': os.getcwd(), 'hooks': hook_outputs,
     'env': {key: os.environ.get(key) for key in ('DEX_SESSION_ID', 'DEX_SESSION_ONLY',
@@ -130,6 +136,24 @@ __dx_setup_in_place() { print -r -- "IN_PLACE:$1"; return 71; }
         assert result.returncode == 0, result.stderr
         assert json.loads((base / 'launch.json').read_text())['args'][-1] == text
     assert invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription', 'TEST_EXIT_CODE': '23'}).returncode == 23
+    # Claude left no transcript (a declined folder-trust dialog exits 0): say
+    # so and fail. A session that started is reported as before.
+    store = base / 'claude-config'
+    (store / 'projects').mkdir(parents=True, exist_ok=True)
+    hint = 'Claude exited before the session started'
+    unstarted = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
+                                                       'CLAUDE_CONFIG_DIR': str(store)})
+    assert unstarted.returncode == 1, (unstarted.stdout, unstarted.stderr)
+    assert hint in unstarted.stderr and str(repo.resolve()) in unstarted.stderr, unstarted.stderr
+    failed = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
+                                                    'CLAUDE_CONFIG_DIR': str(store), 'TEST_EXIT_CODE': '23'})
+    assert failed.returncode == 23 and hint in failed.stderr, (failed.returncode, failed.stderr)
+    started = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription',
+                                                     'CLAUDE_CONFIG_DIR': str(store), 'TEST_WRITE_TRANSCRIPT': '1'})
+    assert started.returncode == 0 and hint not in started.stderr, (started.returncode, started.stderr)
+    codex = invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'codex-subscription',
+                                                   'CLAUDE_CONFIG_DIR': str(store)})
+    assert codex.returncode == 0 and hint not in codex.stderr, (codex.returncode, codex.stderr)
     assert snapshot() == before
     for args in (['plain prompt'], ['--session', '--workflow', 'plain prompt'], ['--session', '--worktree', 'plain prompt']):
         (base / 'launch.json').unlink(missing_ok=True)
