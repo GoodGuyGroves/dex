@@ -50,4 +50,9 @@ for router_arg in "$@"; do
   case "$router_arg" in -h|--help|help) usage; exit 0 ;; esac
 done
 [[ $# -gt 0 ]] || { usage; exit 0; }
+if [[ "$1" == router ]]; then
+  case "${2:-}" in
+    setup|install|update) dx_offline_refuse "dx router $2" || exit 1 ;;
+  esac
+fi
 dx_router_command "$@"

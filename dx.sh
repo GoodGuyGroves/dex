@@ -3864,6 +3864,7 @@ __dx_run_spec_cli() {
     source_label=$(dx_run_spec_redact_source "$spec_url")
     input_spec="$tmp_dir/remote-spec.json"
     local fetch_token
+    dx_offline_refuse "dx run --spec-url" || return 1
     fetch_token=$(dx_run_spec_token "$run_token" 2>/dev/null || true)
     if ! error_text=$(dx_run_spec_fetch "$spec_url" "$input_spec" "$fetch_token" 2>&1); then
       dx_error "$error_text"

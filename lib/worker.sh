@@ -986,8 +986,8 @@ dx_worker_command() {
   shift 2>/dev/null || true
 
   case "$cmd" in
-    register) dx_worker_register "$@" ;;
-    run|daemon) dx_worker_daemon "$@" ;;
+    register) dx_offline_refuse "dx worker register" || return 1; dx_worker_register "$@" ;;
+    run|daemon) dx_offline_refuse "dx worker ${cmd}" || return 1; dx_worker_daemon "$@" ;;
     status) dx_worker_status "$@" ;;
     service) dx_worker_service "$@" ;;
     help|-h|--help)

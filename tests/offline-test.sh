@@ -232,4 +232,45 @@ if command -v node >/dev/null 2>&1; then
   done
 fi
 
+# ── 6. Commands whose whole job is the network refuse ───────────────────────
+refuses() { # <label> <command...> — fails, says why, and calls nothing
+  local label="$1" rc=0
+  shift
+  : > "$NET_LOG"
+  "$@" > "$OUT" 2>&1 < /dev/null || rc=$?
+  [[ "$rc" -ne 0 ]] || { cat "$OUT" >&2; fail "$label did not refuse offline"; }
+  assert_contains "$label needs the network; unset DEX_OFFLINE to allow it" "$OUT"
+  assert_eq 0 "$(net_calls)" "network calls from refused $label"
+}
+export DEX_OFFLINE=1
+refuses "dx login" dx_dexcode_login --no-browser
+refuses "dx dexcode use" dx_dexcode_command use
+refuses "dx worker register" dx_worker_command register
+refuses "dx worker run" dx_worker_command run
+refuses "dx ui-capture install" bash "$ROOT/bin/ui-capture.sh" install
+refuses "dx router install" bash "$ROOT/bin/router.sh" router install
+refuses "dx router setup" bash "$ROOT/bin/router.sh" router setup
+refuses "dx router update" bash "$ROOT/bin/router.sh" router update
+if command -v zsh >/dev/null 2>&1; then
+  refuses "dx run --spec-url" zsh -f -c 'source "$DEX_DIR/dx.sh" >/dev/null 2>&1; dx run --spec-url https://dexcode.invalid/spec.json'
+fi
+# A capture that would have to install its tooling first refuses too.
+storyboard="$TMP_DIR/story.json"
+printf '{}\n' > "$storyboard"
+rc=0; bash "$ROOT/bin/ui-capture.sh" capture --script "$storyboard" --after-url http://127.0.0.1:9/ > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -ne 0 ]] || assert_at $LINENO
+assert_contains "Installing UI capture tooling needs the network" "$OUT"
+assert_contains "Local narration off (DEX_OFFLINE=1)" "$OUT"
+# Local commands still run, and whoami skips its profile refresh.
+: > "$NET_LOG"
+dx_worker_command status > "$OUT" 2>&1 || true
+assert_not_contains "needs the network" "$OUT"
+DEXCODE_TOKEN="dxc_test_token_0123456789abcdef" dx_dexcode_whoami > "$OUT" 2>&1 || true
+assert_not_contains "needs the network" "$OUT"
+assert_eq 0 "$(net_calls)" "network calls from offline local commands"
+unset DEX_OFFLINE
+# Online, nothing is refused.
+rc=0; dx_offline_refuse "dx login" > "$OUT" 2>&1 || rc=$?
+[[ "$rc" -eq 0 ]] || assert_at $LINENO
+
 echo "offline-test: ok"

@@ -916,6 +916,7 @@ USAGE
         ;;
     esac
   done
+  dx_offline_refuse "dx login" || return 1
 
   api_url="${api_url%/}"
   if ! dx_dexcode_api_url_valid "$api_url"; then
@@ -1151,6 +1152,8 @@ USAGE
         ;;
     esac
   done
+  # The profile refresh is a network call; offline shows the saved details.
+  ! dx_offline || offline=1
 
   local connection token api_url sync_url api_label sync_label tmp_dir profile_file account project project_slug session_sync event_sync context_sync
   if ! connection=$(dx_dexcode_active_connection 2>/dev/null); then
@@ -2638,6 +2641,7 @@ USAGE
         dx_error "Unknown dx dexcode use option: $1"
         return 1
       fi
+      dx_offline_refuse "dx dexcode use" || return 1
       dx_dexcode_select_project --force
       ;;
     help|-h|--help)
