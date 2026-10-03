@@ -111,6 +111,13 @@ LINE="$(cat "$TMP_DIR/out")"
   assert_at $LINENO
 }
 
+# --finished-wave holds a between-waves line back until that wave's result is
+# journalled; the review loop clears the busy record first.
+rm -f "$(dx_phase_busy_file "$SID" 3)"
+assert_eq "" "$(dx_review_status "$SID" line 3)" "wave 3 result not journalled yet"
+assert_eq "Wave 2/6 · CLEAN (notes) · 1/3 clean · 14m 2s" "$(dx_review_status "$SID" line 2)" "wave 2 result"
+BUSY_TOKEN="$(dx_phase_busy_begin "$SID" 3 "Wave 3 · verifying · 1/3 clean" 900)"
+
 # A damaged busy record is ignored, never trusted.
 printf 'garbage\n' > "$(dx_phase_busy_file "$SID" 3)"
 status --line

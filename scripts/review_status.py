@@ -9,7 +9,11 @@ Formats:
   text  a few lines for a person at a terminal
   json  the same facts as one JSON object
   line  one line for the Stop hook's systemMessage, or nothing when there is
-        no review pass to describe; the hook then keeps its own fallback text
+        no review pass it can name; the hook then keeps its own fallback text.
+        With --finished-wave N and no wave running, it prints only wave N's
+        result: the review loop clears the busy record before it journals the
+        wave's result, so the hook waits for that wave rather than reporting
+        the one before it.
 """
 
 import argparse
@@ -258,6 +262,7 @@ def main(argv):
     parser.add_argument("--busy-timeout", default="")
     parser.add_argument("--busy-label", default="")
     parser.add_argument("--now", default="")
+    parser.add_argument("--finished-wave", default="")
     args = parser.parse_args(argv)
 
     now = int(args.now) if args.now.isdigit() else int(time.time())
@@ -275,9 +280,15 @@ def main(argv):
         print(json.dumps(summary(loop, current), sort_keys=True))
     elif args.format == "line":
         if current:
-            print(running_line(loop, current))
+            # A line that cannot name its wave tells the reader nothing the
+            # hook's own text does not, so say nothing and let it stand.
+            if current["wave"] is not None:
+                print(running_line(loop, current))
         elif loop and loop["waves"]:
-            print(finished_line(loop, loop["waves"][-1]))
+            last = loop["waves"][-1]
+            wanted = int(args.finished_wave) if args.finished_wave.isdigit() else None
+            if wanted is None or last["wave"] == wanted:
+                print(finished_line(loop, last))
     else:
         print("\n".join(render_text(loop, current)))
     return 0

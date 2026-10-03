@@ -3572,15 +3572,18 @@ print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 PY
 }
 
-# dx_review_status <session_id> <text|json|line>
+# dx_review_status <session_id> <text|json|line> [finished_wave]
 # Summarise the session's current review loop from its run journal and the
 # Phase 3 busy record (`dx review status`, and the Stop hook's progress line
 # while it holds a review wait). The busy record is parsed here by its
 # validating reader, so the python formatter only sees checked values.
 # DEX_RUN_ID names the caller's own run; another session's run comes from that
 # session's mapping, or a status for one session would read another's journal.
+# finished_wave limits a between-waves line to that wave's result (see
+# $DEX_DIR/scripts/review_status.py).
 dx_review_status() {
-  local session_id="$1" format="${2:-text}" run_id="" events_file=""
+  local session_id="$1" format="${2:-text}" finished_wave="${3:-}"
+  local run_id="" events_file=""
   local busy_record="" busy_epoch="" busy_timeout="" busy_label="" busy_rest=""
   dx_session_id_valid "$session_id" || return 1
   case "$format" in text|json|line) ;; *) return 1 ;; esac
@@ -3602,5 +3605,6 @@ dx_review_status() {
   fi
   python3 "$DEX_DIR/scripts/review_status.py" --format "$format" \
     --events "$events_file" --busy-epoch "$busy_epoch" \
-    --busy-timeout "$busy_timeout" --busy-label "$busy_label"
+    --busy-timeout "$busy_timeout" --busy-label "$busy_label" \
+    --finished-wave "$finished_wave"
 }
