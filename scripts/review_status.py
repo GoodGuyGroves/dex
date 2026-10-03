@@ -25,6 +25,7 @@ import time
 TIER_EVENTS = {"review.tier.selected", "review.tier.escalated", "review.tier.deescalated"}
 END_EVENTS = {"review.completed", "review.paused"}
 LABEL_PATTERN = re.compile(r"^Wave (\d+) · (.+?) · (\d+)/(\d+) clean$")
+CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def format_duration(seconds):
@@ -44,9 +45,12 @@ def whole(value):
 
 
 def text_field(value):
+    """Journal text as one printable line. It ends up in the pane through the
+    Stop hook's systemMessage, so control characters (terminal escapes
+    included) become spaces."""
     if not isinstance(value, str):
         return ""
-    return value.replace("\n", " ").replace("\r", " ").strip()[:120]
+    return CONTROL_CHARACTERS.sub(" ", value).strip()[:120]
 
 
 def event_name(event):

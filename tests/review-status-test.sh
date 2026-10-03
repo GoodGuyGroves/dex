@@ -118,6 +118,13 @@ assert_eq "" "$(dx_review_status "$SID" line 3)" "wave 3 result not journalled y
 assert_eq "Wave 2/6 · CLEAN (notes) · 1/3 clean · 14m 2s" "$(dx_review_status "$SID" line 2)" "wave 2 result"
 BUSY_TOKEN="$(dx_phase_busy_begin "$SID" 3 "Wave 3 · verifying · 1/3 clean" 900)"
 
+# Journal text reaches the pane through the hook's systemMessage, so control
+# characters, terminal escapes included, never pass through.
+python3 "$ROOT/scripts/review_status.py" --format line --busy-epoch 1 --now 61 \
+  --busy-label "$(printf 'Wave 4 · \033]0;owned\007red\033[0m · 0/1 clean')" > "$TMP_DIR/out"
+python3 -c 'import sys; t=open(sys.argv[1],"rb").read(); assert t.startswith(b"Wave 4 ") and b"red" in t, t; assert not any(b < 0x20 and b != 0x0a for b in t) and b"\x7f" not in t, t' "$TMP_DIR/out" \
+  || assert_at $LINENO
+
 # A damaged busy record is ignored, never trusted.
 printf 'garbage\n' > "$(dx_phase_busy_file "$SID" 3)"
 status --line
