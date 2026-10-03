@@ -267,12 +267,17 @@ if "deferred_criteria" in payload:
         if not isinstance(criterion, str) or criterion not in deferrable or criterion in seen:
             raise SystemExit(1)
         seen.add(criterion)
-        if entry["until"] != "post-merge" or entry["owner"] not in {"human", "lead"}:
+        if entry["until"] != "post-merge" or not isinstance(entry["owner"], str) \
+                or entry["owner"] not in {"human", "lead"}:
             raise SystemExit(1)
         reason = entry["reason"]
         if not isinstance(reason, str) or not 12 <= len(reason) <= 500:
             raise SystemExit(1)
-        if reason != reason.strip() or any(ord(char) < 32 or ord(char) == 127 for char in reason):
+        # One line: no C0/C1 controls, and nothing splitlines() breaks on
+        # (U+2028, U+2029 and the like).
+        if reason != reason.strip() or len(reason.splitlines()) != 1 or any(
+            ord(char) < 32 or 127 <= ord(char) <= 159 for char in reason
+        ):
             raise SystemExit(1)
         if reason.casefold() in {"n/a", "na", "tbd", "todo", "placeholder"} or re.fullmatch(r"<[^<>]+>", reason):
             raise SystemExit(1)
@@ -399,7 +404,10 @@ EOF
       [[ -f "$deferrals_file" && ! -L "$deferrals_file" ]] || return 1
       sealed_deferrals=$(cat "$deferrals_file" 2>/dev/null) || return 1
     fi
-    __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals" || return 1
+    if ! __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals"; then
+      printf '%s\n' "dex: reapproval refused: deferred_criteria may only shrink after the Phase 1 seal; drop the added or changed deferral, or reword the criterion with the user" >&2
+      return 1
+    fi
     next_revision=$((10#$revision + 1))
     dx_review_is_positive_integer "$next_revision" || return 1
   elif [[ "$approval_mode" != "initial" ]]; then

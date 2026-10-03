@@ -101,6 +101,10 @@ rejects "a placeholder reason" \
   "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead "<reason goes here>")]")"
 rejects "a multi-line reason" \
   "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead $'Runs on integration\nafter the merge.')]")"
+rejects "a reason with a Unicode line separator" \
+  "$(criteria_json "[$(deferral "$INTEGRATION_ONLY" lead $'Runs on integration\xe2\x80\xa8after the merge.')]")"
+rejects "a list-valued owner" \
+  "$(criteria_json '[{"criterion":"'"$INTEGRATION_ONLY"'","until":"post-merge","owner":["lead"],"reason":"'"$REASON"'"}]')"
 rejects "an extra field in a deferral" \
   "$(criteria_json '[{"criterion":"'"$INTEGRATION_ONLY"'","until":"post-merge","owner":"lead","reason":"'"$REASON"'","note":"x"}]')"
 rejects "an unknown top-level key" \
@@ -241,16 +245,20 @@ seal_session() {
 rotate() {
   local file previous
   file="$(dx_review_criteria_file "$1")"
-  previous="$(dx_review_read_criteria_approval "$1")"
+  # A failed earlier rotation leaves the criteria out of step with the seal;
+  # an empty previous hash would be refused before any deferral comparison.
+  previous="$(dx_review_read_criteria_approval "$1")" || fail "no current seal for $1"
   printf '%s\n' "$(criteria_json "$2")" > "$file"
   dx_review_approve_criteria "$1" reapproved "$previous" "$(dx_review_criteria_hash "$file")" > /dev/null
 }
 VERIFY_DEFERRAL="$(deferral "$VERIFY")"
 
 seal_session "${SESSION_ID}-add" ""
-if rotate "${SESSION_ID}-add" "[$ONE]"; then
+if rotate "${SESSION_ID}-add" "[$ONE]" 2> "$TMP_DIR/add.err"; then
   fail 'a rotation added a deferral after the seal'
 fi
+# The refusal says why, so it is not mistaken for a stale hash.
+grep -q 'deferred_criteria may only shrink' "$TMP_DIR/add.err" || assert_at $LINENO
 seal_session "${SESSION_ID}-more" "[$ONE]"
 if rotate "${SESSION_ID}-more" "[$ONE,$VERIFY_DEFERRAL]"; then
   fail 'a rotation added a second deferral after the seal'
@@ -259,7 +267,8 @@ seal_session "${SESSION_ID}-widen" "[$ONE]"
 if rotate "${SESSION_ID}-widen" "[$(deferral "$INTEGRATION_ONLY" human)]"; then
   fail 'a rotation changed the owner of a sealed deferral'
 fi
-if rotate "${SESSION_ID}-widen" "[$(deferral "$INTEGRATION_ONLY" lead "Any failure here can be ignored by everyone.")]"; then
+seal_session "${SESSION_ID}-reason" "[$ONE]"
+if rotate "${SESSION_ID}-reason" "[$(deferral "$INTEGRATION_ONLY" lead "Any failure here can be ignored by everyone.")]"; then
   fail 'a rotation changed the reason of a sealed deferral'
 fi
 # Removing a deferral narrows it, which is allowed; it cannot come back later.
@@ -271,5 +280,11 @@ fi
 # An unchanged rotation keeps its deferrals.
 seal_session "${SESSION_ID}-same" "[$ONE]"
 rotate "${SESSION_ID}-same" "[$ONE]" || fail 'an unchanged rotation was rejected'
+
+# Session cleanup removes the seal's deferral snapshot with the seal itself.
+deferrals_file="$(dx_review_criteria_deferrals_file "${SESSION_ID}-same")"
+[[ -f "$deferrals_file" ]] || assert_at $LINENO
+dx_cleanup_session "${SESSION_ID}-same" > /dev/null 2>&1 || true
+[[ ! -e "$deferrals_file" ]] || assert_at $LINENO
 
 printf 'review-deferred-criteria-test: ok\n'
