@@ -111,6 +111,7 @@ review-policy-config-test.sh	fast	all	600	hermetic
 review-policy-test.sh	slow	all	1200	hermetic
 review-report-test.sh	fast	all	600	hermetic
 review-stats-test.sh	fast	all	300	hermetic
+review-status-test.sh	fast	all	300	hermetic
 review-tier-derivation-test.sh	fast	all	300	hermetic
 review-timeout-test.sh	serial	all	1200	hermetic
 reviewer-adapter-contract-test.sh	fast	all	600	hermetic

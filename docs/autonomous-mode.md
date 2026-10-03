@@ -41,7 +41,10 @@ Stop hook (phase-loop.sh) intercepts:
   - Applies any direct human pause, stop, waiver, or phase-jump request first
   - Validates the exact completion context and generated receipt
   - If the receipt is valid -> consumes it, then advances inline or exits
-  - If Phase 1 plan approval marker is missing -> blocks without counting an audit iteration
+  - If Phase 1 plan approval marker is missing -> blocks without counting an audit iteration;
+    while dxplan is under way the block is structured (not a hook error), and the stop is
+    allowed outright while a background subagent or command runs, so the session idles
+    until Claude Code's task notification wakes it
   - Checks iteration count -> if max reached, pauses for intervention
   - Checks min audit iterations -> if below threshold, blocks WITHOUT completion instructions
   - If at/above threshold: blocks but INCLUDES completion instructions
@@ -793,12 +796,29 @@ reviewer's context.
 
 ## Status Line
 
-During autonomous phases (2-6), a custom status line displays live information in the Claude Code TUI:
-- Current phase number (e.g., `Phase 2/6`)
+During lifecycle phases, a custom status line displays live information in the Claude Code TUI:
+- Current phase number and name (e.g., `Phase 3/6 · Review`)
 - Audit loop iteration count (e.g., `Audit 3/30`)
-- Total elapsed time (e.g., `4m 22s`)
+- In Phase 3, the running review wave's label and its elapsed time against the
+  pass timeout (e.g., `Wave 2 · scouting · 1/3 clean | 4m 30s/1h 0m`)
+- Total elapsed time (e.g., `1h 12m`)
+- The subscription route, when the session is routed
+- `paused` or `blocked` with the reason, instead of the above, when the lifecycle is not running
 
-The status line is driven by `bin/status-line.sh` which reads state files from `~/.claude/.dex-phases/` and `~/.claude/.dex-loops/`. It is injected into lifecycle phase launches through their launch `--settings` file and does not affect the global settings.
+The status line is driven by `bin/status-line.sh`, which reads the phase,
+loop, busy-record and times files under `DX_STATE_DIR` and `DX_LOOP_DIR` (both
+under `DEX_HOME` when it is set). It is injected into lifecycle phase launches
+through their launch `--settings` file and does not affect the global settings.
+Claude Code re-runs a status line on conversation events, and a Stop hook
+holding a review wait produces none, so the launch sets `refreshInterval: 5`
+to keep the wave clock moving. A caller's own `statusLine` replaces Dex's
+whole, timer included.
+
+While the Stop hook holds a Phase 3 wait, the spinner reads `Dex phase gate
+(live progress in the status line)`, and each release of the hold adds one
+progress line to the transcript, such as `Dex · Wave 2/6 · complex · scouting ·
+0/3 clean · 4m 30s/1h 0m`, or the finished wave's verdict. `dx review status`
+prints the same summary on demand, with every finished wave.
 
 ## Run Events
 

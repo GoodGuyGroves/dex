@@ -42,7 +42,9 @@ much as the conversation itself. The lifecycle's Stop hook holds the wait
 inside the cache's lifetime and wakes you when a wave finishes, and Claude
 Code also wakes you when the background job exits. When woken, read the job's
 output for the loop's `Wave N` lines and result, act on it, and end the turn
-again if the loop is still running. If you must check on the job yourself,
+again if the loop is still running. `dx review status` summarises the loop
+from its journal (wave N of the budget, the clean streak, the running stage),
+and the status line shows the running wave's elapsed time. If you must check on the job yourself,
 keep each shell call under 270 seconds.
 
 If your shell cannot run a background job, run the command in the foreground

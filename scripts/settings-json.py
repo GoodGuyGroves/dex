@@ -407,6 +407,10 @@ def settings_layer(value, label):
 # at DEX_HOME. lib/events.sh DX_CLAUDE_PLANS_SUBDIR names the same path.
 PLANS_DIRECTORY = ".dex/plans"
 
+# How often, in seconds, Claude Code re-runs Dex's status line between events.
+# bin/status-line.sh stays well under the 50ms it is budgeted, so this is cheap.
+STATUS_LINE_REFRESH_SECONDS = 5
+
 
 def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
     """One settings document for a Dex launch. Lowest to highest: Dex's
@@ -429,7 +433,11 @@ def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
     # claude does not inherit it, and DEX_EXTRA_SETTINGS can still opt back in.
     result: dict = {"promptSuggestionEnabled": False, "autoMemoryEnabled": False}
     if statusline:
-        result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline)}
+        # Claude Code re-runs a status line on conversation events, and a Stop
+        # hook holding a review wait produces none, so without a timer the
+        # wave's elapsed time freezes at whatever it showed when the hold began.
+        result["statusLine"] = {"type": "command", "command": "bash " + shlex.quote(statusline),
+                                "refreshInterval": STATUS_LINE_REFRESH_SECONDS}
     if inbound:
         result["crossSessionInbound"] = inbound
     hooks, directories = {}, []
@@ -440,6 +448,10 @@ def launch_settings(template, statusline, inbound, rtk, layers, dex_dir, home):
             if isinstance(groups, list):
                 hooks.setdefault(event, []).extend(groups)
         directories = append_unique(directories, worktree_dirs(layer))
+        # A caller's status line is a whole command of its own: Dex's refresh
+        # timer must not leak into it.
+        if "statusLine" in layer:
+            result.pop("statusLine", None)
         result = deep_merge(result, layer)
     if hooks:
         result["hooks"] = hooks

@@ -648,6 +648,92 @@ if [[ ! -e "$(dx_paused_file "$SID")" ]]; then report "disabled timeout leaves l
 dx_completion_cleanup "$SID"
 rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
 
+# --- case 5c: each Phase 3 hold release shows one progress line (#32, #38 item 9) ---
+# The wake count and hold length do not change; the release carries a
+# systemMessage built from the run journal and the busy record.
+SID="repo-test-5c-progress-line"
+printf '%s\n' "3" > "$DX_STATE_DIR/$SID.phase"
+printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+configure_lifecycle_completion "$SID" 3 "$ROOT/prompts/phase-audits/3-review-loop.md"
+touch "$DX_LOOP_DIR/$SID.active"
+dx_run_write_for_session "$SID" run_test_5c
+PROGRESS_EVENTS="$(dx_run_events_file run_test_5c)"
+mkdir -p "$(dirname "$PROGRESS_EVENTS")"
+{
+  printf '%s\n' '{"type":"review.tier.selected","data":{"tier":"complex","profile":"thorough","required_clean":3,"max_waves":6}}'
+  printf '%s\n' '{"type":"review.pass.started","data":{"iteration":1,"max_waves":6,"clean_before":0,"required_clean":3,"tier":"complex"}}'
+  printf '%s\n' '{"type":"review.pass.finished","data":{"iteration":1,"result_kind":"findings_fixed","findings":2,"clean_after":0,"duration_seconds":605}}'
+  printf '%s\n' '{"type":"review.pass.started","data":{"iteration":2,"max_waves":6,"clean_before":0,"required_clean":3,"tier":"complex"}}'
+} > "$PROGRESS_EVENTS"
+dx_phase_busy_begin "$SID" 3 "Wave 2 · scouting · 0/3 clean" 3600 >/dev/null
+set +e
+OUT="$(printf '{"session_id":"claude-progress"}' | env \
+  DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
+  DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=0 \
+  bash "$HOOK" 2>&1)"
+RC=$?
+set -e
+assert_rc "running wave release still blocks quietly" 0
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block" and p["suppressOutput"] is True; m=p["systemMessage"]; assert m.startswith("Dex · Wave 2/6 · complex · scouting · 0/3 clean · ") and m.endswith("/1h 0m"), m; assert "End your turn again now" in p["reason"], p' "$OUT" \
+  || fail "running wave release did not carry the progress line"
+
+# The wave ends during the hold. The loop clears the busy record before it
+# journals the result, so the release waits for wave 2's own result instead of
+# reporting wave 1's.
+# The hook removes the loop state file just before it starts holding, so its
+# absence says the hook is inside the hold; a fixed sleep raced it under load.
+wait_for_hold() { # <sid>
+  local state_file waited=0
+  state_file=$(dx_loop_file "$1")
+  while [[ -e "$state_file" && "$waited" -lt 300 ]]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  [[ ! -e "$state_file" ]] || fail "hook never reached the Phase 3 hold"
+}
+PROGRESS_OUT="$TMP_DIR/progress.out"
+printf '1:0:0\n' > "$(dx_loop_file "$SID")"
+printf '{"session_id":"claude-progress"}' | env \
+  DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
+  DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=60 \
+  bash "$HOOK" > "$PROGRESS_OUT" 2>&1 &
+PROGRESS_PID=$!
+wait_for_hold "$SID"
+rm -f "$(dx_phase_busy_file "$SID" 3)"
+sleep 3
+printf '%s\n' '{"type":"review.pass.finished","data":{"iteration":2,"result_kind":"clean","findings":0,"clean_after":1,"duration_seconds":842}}' \
+  >> "$PROGRESS_EVENTS"
+set +e
+wait "$PROGRESS_PID"
+RC=$?
+set -e
+OUT="$(cat "$PROGRESS_OUT")"
+assert_rc "finished wave release exits cleanly" 0
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block"; assert p["systemMessage"] == "Dex · Wave 2/6 · CLEAN · 1/3 clean · 14m 2s", p' "$OUT" \
+  || fail "finished wave release did not report that wave's result"
+
+# No journal to read: the release keeps the text it had before.
+rm -f "$PROGRESS_EVENTS"
+dx_phase_busy_begin "$SID" 3 "Wave 3 · scouting · 1/3 clean" 3600 >/dev/null
+printf '1:0:0\n' > "$(dx_loop_file "$SID")"
+printf '{"session_id":"claude-progress"}' | env \
+  DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
+  DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=60 \
+  bash "$HOOK" > "$PROGRESS_OUT" 2>&1 &
+PROGRESS_PID=$!
+wait_for_hold "$SID"
+rm -f "$(dx_phase_busy_file "$SID" 3)"
+set +e
+wait "$PROGRESS_PID"
+RC=$?
+set -e
+OUT="$(cat "$PROGRESS_OUT")"
+assert_rc "finished release without a journal exits cleanly" 0
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["systemMessage"] == "Dex · Review wave finished", p' "$OUT" \
+  || fail "finished release without a journal lost its fallback text"
+dx_completion_cleanup "$SID"
+rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+
 # --- case 6: every centralized review result alias is accepted ---
 VALID_REVIEW_RESULTS=(
   "CHURN:repeated-fingerprint"
@@ -687,6 +773,63 @@ set -e
 assert_rc "zero-finding result is rejected" 2
 assert_out_contains "zero-finding result shows validation message" "result signal missing or invalid"
 rm -f "$DX_LOOP_DIR/$SID".*
+
+# --- case 6a: a Phase 1 planning wait is quiet and does not loop (#30) ---
+# Planning that is still under way is not a hook error. While a background
+# subagent runs, the stop is allowed so the session idles until Claude Code
+# wakes it; otherwise the gate blocks with structured output, in full once and
+# then in one line. The phase never advances without the ready marker.
+SID="repo-test-6a-planning-wait"
+touch "$DX_LOOP_DIR/$SID.active"
+printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+printf '%s\n' "1" > "$DX_STATE_DIR/$SID.phase"
+configure_lifecycle_completion "$SID" 1 "$ROOT/prompts/phase-audits/1-plan.md"
+phase_1_stop() { # <stdin-json>
+  set +e
+  OUT="$(printf '%s' "$1" | env DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=1 \
+    DEX_PHASE_HANDOFF=inline bash "$HOOK" 2>"$TMP_DIR/phase-1.err")"
+  RC=$?
+  set -e
+}
+phase_1_stop '{"session_id":"claude-phase-1-wait"}'
+assert_rc "Phase 1 before dxplan starts is still a hard gate" 2
+if grep -Fq "dxplan required" "$TMP_DIR/phase-1.err"; then report "dxplan-required gate still names itself" 0; else report "dxplan-required gate still names itself" 1; fi
+
+touch "$(dx_phase_started_file "$SID" 1)"
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks_running":true}'
+assert_rc "Phase 1 wait on a background subagent allows the stop" 0
+assert_out_empty "Phase 1 wait on a background subagent prints nothing"
+if [[ ! -s "$TMP_DIR/phase-1.err" ]]; then report "Phase 1 subagent wait writes no stderr" 0; else report "Phase 1 subagent wait writes no stderr" 1; fi
+if [[ ! -e "$(dx_phase_busy_notice_file "$SID" 1)" ]]; then report "an allowed stop records no notice" 0; else report "an allowed stop records no notice" 1; fi
+
+# Claude Code 2.1.280 sends background_tasks rather than the documented
+# boolean: a running subagent or shell entry is background work too.
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[{"id":"a1","type":"subagent","status":"running","agent_type":"Explore"}]}'
+assert_rc "Phase 1 wait on a running background_tasks entry allows the stop" 0
+assert_out_empty "Phase 1 wait on a running background_tasks entry prints nothing"
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[{"id":"s1","type":"shell","status":"completed"},"running"]}'
+assert_rc "finished or malformed background_tasks entries do not allow the stop" 0
+assert_out_contains "finished background_tasks entries still block" '"decision":"block"'
+rm -f "$(dx_phase_busy_notice_file "$SID" 1)"
+
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks":[]}'
+assert_rc "Phase 1 in-progress gate is not a hook error" 0
+if [[ ! -s "$TMP_DIR/phase-1.err" ]]; then report "Phase 1 in-progress gate writes no stderr" 0; else report "Phase 1 in-progress gate writes no stderr" 1; fi
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block" and p["suppressOutput"] is True and "systemMessage" not in p; assert "No audit iteration was counted" in p["reason"] and "completion notifications" in p["reason"], p' "$OUT" \
+  || fail "first Phase 1 in-progress block did not carry the full quiet reason"
+if [[ -e "$(dx_phase_busy_notice_file "$SID" 1)" ]]; then report "first block records its notice" 0; else report "first block records its notice" 1; fi
+
+# A string "true" is not Claude Code's boolean: still a block, now the short one.
+phase_1_stop '{"session_id":"claude-phase-1-wait","background_tasks_running":"true"}'
+assert_rc "repeated Phase 1 in-progress gate stays quiet" 0
+python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == "block"; assert "No audit iteration was counted" not in p["reason"] and "still in progress" in p["reason"], p' "$OUT" \
+  || fail "repeated Phase 1 in-progress block did not shorten its reason"
+phase_1_stop 'not json'
+assert_rc "malformed Stop input still gets the quiet Phase 1 block" 0
+assert_out_contains "malformed Stop input is read as no background tasks" '"decision":"block"'
+assert_file_eq "a Phase 1 wait never advances the phase" "$DX_STATE_DIR/$SID.phase" "1"
+dx_completion_cleanup "$SID"
+rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
 
 # --- case 6b: Phase 1 preserves approved criteria before implementation ---
 SID="repo-test-6b-main"
