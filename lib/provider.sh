@@ -1499,10 +1499,18 @@ dx_provider_run_session() (
   trap 'rm -f "$missing_file"' EXIT
   # Only stderr enters the pipe; stdin and stdout still refer to the terminal.
   # Waiting for the whole pipeline also drains the diagnostic before testing it.
+  # The reader is the launch's own plumbing, not something the session
+  # started, so it drops the session process token: the SessionEnd reap would
+  # otherwise stop it while Claude exits, and pipefail would report its 143
+  # as the launch's status. It ends on its own when Claude closes stderr.
   exec 3>&1
   __dx_claude "${resume_args[@]}" "$@" 2>&1 1>&3 3>&- \
-    | __dx_provider_resume_stderr "$missing_file" \
-        "${DX_PROVIDER_ENGINE:-}" "$resume_target" >&2 3>&- \
+    | (
+        unset DX_SESSION_PROCESS_TOKEN
+        exec 8<&-
+        __dx_provider_resume_stderr "$missing_file" \
+          "${DX_PROVIDER_ENGINE:-}" "$resume_target"
+      ) >&2 3>&- \
     || launch_result=$?
   exec 3>&-
   if [[ "$launch_result" -ne 1 || ! -s "$missing_file" ]]; then

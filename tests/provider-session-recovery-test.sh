@@ -226,6 +226,36 @@ for shell in ("bash", "zsh"):
         os.close(slave)
 PY
 
+# The stderr reader of a resumed launch is Dex's own plumbing. It must not
+# carry the session process token, or the SessionEnd reap stops it while Claude
+# exits and the launch reports its 143 (#52). The provider keeps the token.
+cat > "$TMP_DIR/token-scenario.sh" <<'SH'
+set -eu
+source "$DEX_DIR/lib/common.sh"
+probe() { # <label>
+  local fd=closed
+  [[ ! -e /dev/fd/8 ]] || fd=open
+  printf '%s %s %s\n' "$1" "$fd" "${DX_SESSION_PROCESS_TOKEN:-unset}" >> "$TEST_RECORD"
+}
+__dx_claude() { probe provider; printf 'provider diagnostic\n' >&2; return 0; }
+__dx_provider_resume_stderr() { probe reader; cat >/dev/null; }
+export DX_SESSION_PROCESS_TOKEN=probe-token
+exec 8< "$TEST_TOKEN_FILE"
+dx_provider_run_session ticket-3119 1 saved-conversation prompt
+SH
+printf 'probe-token\n' > "$TMP_DIR/token"
+for TEST_SHELL in bash zsh; do
+  rm -f "$TMP_DIR/token-record"
+  token_result=0
+  (cd "$WORK_DIR" && env HOME="$TMP_DIR/home" ZDOTDIR="$TMP_DIR/home" DEX_DIR="$ROOT" \
+    TMPDIR="$TMP_DIR" CLAUDE_CONFIG_DIR="$CLAUDE_STORE" DX_PROVIDER_ENGINE=claude \
+    TEST_RECORD="$TMP_DIR/token-record" TEST_TOKEN_FILE="$TMP_DIR/token" \
+    "$TEST_SHELL" "$TMP_DIR/token-scenario.sh" >/dev/null 2>&1) || token_result=$?
+  assert_eq 0 "$token_result" "token probe launch ($TEST_SHELL)"
+  assert_contains "provider open probe-token" "$TMP_DIR/token-record"
+  assert_contains "reader closed unset" "$TMP_DIR/token-record"
+done
+
 if compgen -G "$TMP_DIR/dx-provider-resume.*" >/dev/null; then
   fail "provider recovery left temporary state behind"
 fi
