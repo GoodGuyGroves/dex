@@ -680,13 +680,25 @@ python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == 
 # The wave ends during the hold. The loop clears the busy record before it
 # journals the result, so the release waits for wave 2's own result instead of
 # reporting wave 1's.
+# The hook removes the loop state file just before it starts holding, so its
+# absence says the hook is inside the hold; a fixed sleep raced it under load.
+wait_for_hold() { # <sid>
+  local state_file waited=0
+  state_file=$(dx_loop_file "$1")
+  while [[ -e "$state_file" && "$waited" -lt 300 ]]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  [[ ! -e "$state_file" ]] || fail "hook never reached the Phase 3 hold"
+}
 PROGRESS_OUT="$TMP_DIR/progress.out"
+printf '1:0:0\n' > "$(dx_loop_file "$SID")"
 printf '{"session_id":"claude-progress"}' | env \
   DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
   DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=60 \
   bash "$HOOK" > "$PROGRESS_OUT" 2>&1 &
 PROGRESS_PID=$!
-sleep 1
+wait_for_hold "$SID"
 rm -f "$(dx_phase_busy_file "$SID" 3)"
 sleep 3
 printf '%s\n' '{"type":"review.pass.finished","data":{"iteration":2,"result_kind":"clean","findings":0,"clean_after":1,"duration_seconds":842}}' \
@@ -703,12 +715,13 @@ python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["decision"] == 
 # No journal to read: the release keeps the text it had before.
 rm -f "$PROGRESS_EVENTS"
 dx_phase_busy_begin "$SID" 3 "Wave 3 · scouting · 1/3 clean" 3600 >/dev/null
+printf '1:0:0\n' > "$(dx_loop_file "$SID")"
 printf '{"session_id":"claude-progress"}' | env \
   DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=3 \
   DEX_PHASE_HANDOFF=inline DEX_REVIEW_PASS_RECHECK_SECONDS=60 \
   bash "$HOOK" > "$PROGRESS_OUT" 2>&1 &
 PROGRESS_PID=$!
-sleep 1
+wait_for_hold "$SID"
 rm -f "$(dx_phase_busy_file "$SID" 3)"
 set +e
 wait "$PROGRESS_PID"
