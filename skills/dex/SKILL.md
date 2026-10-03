@@ -90,7 +90,8 @@ line, including when all fields are unchanged or N/A.
    Dex's fixed global clean-wave policy: 1 for `trivial` and `small`, 2 for
    `normal`, and 3 for `complex`.
 9. Output `PHASE_2_COMPLETE` when all tasks are implemented, the evidence table
-   shows all criteria MET, implementation commits are pushed, and the
+   shows all criteria MET (or `DEFERRED (sealed)` for an item the sealed
+   `deferred_criteria` list names), implementation commits are pushed, and the
    review-risk selection matches the final scope fingerprint and trusted
    policy. If approved work produced no branch-specific commit on a newly
    created local branch, keep it unpushed and pause for user direction instead
