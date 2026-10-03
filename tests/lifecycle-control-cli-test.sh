@@ -144,6 +144,18 @@ setup_attribution_lifecycle() {
   touch "$(dx_active_file "$attribution_sid")"
 }
 
+# assert_done_outcome <sid> <source> <reason> — apply the published done
+# receipt as the lifecycle does and check the outcome ledger's attribution.
+assert_done_outcome() {
+  local outcome_sid="$1" expected_source="$2" expected_reason="$3"
+  dx_record_control_phase_outcomes "$outcome_sid" 2 3 complete \
+    "$(dx_lifecycle_control_read "$outcome_sid" generation)" \
+    "$(dx_lifecycle_control_read "$outcome_sid" source)" || assert_at $LINENO
+  assert_eq "waived $expected_source $expected_reason" \
+    "$(awk -F '\t' '$2 == 2 { print $3, $4, $6 }' "$(dx_phase_outcomes_file "$outcome_sid")")" \
+    "done outcome attribution"
+}
+
 # Inside a Dex launch the agent runs control.sh, so an unattributed control is
 # the agent's, and an agent control needs a reason. A human is credited only
 # with a quote of their words.
@@ -184,6 +196,7 @@ env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" "done" \
 assert_eq "agent" "$(dx_lifecycle_control_read "$LAUNCH_SESSION" source)" \
   "launched done defaults to agent"
 assert_contains "marked done by agent override" "$TMP_DIR/launched-done.out"
+assert_done_outcome "$LAUNCH_SESSION" agent agent-complete
 dx_cleanup_session "$LAUNCH_SESSION"
 
 # A Codex lifecycle has no DEX_LAUNCHED, but its phase loop marks it the same.
@@ -240,6 +253,7 @@ env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" "done" \
 assert_eq "terminal" "$(dx_lifecycle_control_read "$OUTSIDE_SESSION" source)" \
   "terminal done defaults to human"
 assert_contains "marked done by human override" "$TMP_DIR/terminal-done.out"
+assert_done_outcome "$OUTSIDE_SESSION" terminal human-complete
 dx_cleanup_session "$OUTSIDE_SESSION"
 setup_attribution_lifecycle "$OUTSIDE_SESSION"
 env -u DEX_LAUNCHED DEX_SESSION_ID="$OUTSIDE_SESSION" bash "$CONTROL" "done" \

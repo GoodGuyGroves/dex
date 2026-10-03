@@ -2,10 +2,15 @@
 set -euo pipefail
 
 # Keep a Dex lifecycle branch current with its base before final verification
-# and before its PR is marked ready. The base is the open PR's base branch,
-# then session meta base_branch, then the default branch. Phase 4 runs `sync`; the step before any
+# and before its PR is marked ready. Phase 4 runs `sync`; the step before any
 # `gh pr ready` runs `sync --before-ready`, which counts against
 # pr.rebase-attempts. prompts/base-sync.md says what to do with each answer.
+#
+# The base is the open PR's base branch, then session meta base_branch, then
+# the default branch. A branch stacked on another records its parent before
+# its PR exists:
+#
+#   dx_meta_write "$DEX_SESSION_ID" base_branch=<parent-branch>
 #
 # Only a branch this lifecycle created is rebased or force-pushed, and only
 # with a lease on the remote commit it last saw, so nobody else's push is

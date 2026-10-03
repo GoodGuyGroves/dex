@@ -539,7 +539,7 @@ The compact forms are `/dxpause`, `/dxskip`, `/dxjump verify`, `/dxresume`, and
 waived, while jump records crossed phases as skipped. Neither claims that a
 bypassed gate passed.
 
-The same controls are available from a terminal and to direct Codex sessions:
+The same controls are available from a terminal:
 
 ```bash
 dx control status
@@ -548,6 +548,16 @@ dx control stop
 dx control done
 dx control jump verify
 dx control resume
+```
+
+A direct Codex session, like any session Dex launched, records them as
+`--source agent`, so each needs `--reason`:
+
+```bash
+bash "$DEX_DIR/bin/control.sh" pause --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" done --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" jump verify --reason "<why>"
+bash "$DEX_DIR/bin/control.sh" resume --reason "<why>"
 ```
 
 Human control does not disable review-wave session isolation. Built-in guards
