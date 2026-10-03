@@ -197,6 +197,17 @@ if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DX_TEST_SUITE_DIR="$drift_r
   fail "the current branch was taken as its own base"
 fi
 assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/self-base.out"
+# Pushed, the same branch resolves to origin/work: still no base.
+git init -q --bare "$TMP_DIR/drift-origin.git"
+drift_git remote add origin "$TMP_DIR/drift-origin.git"
+drift_git push -q -u origin work
+if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DX_TEST_SUITE_DIR="$drift_repo/tests" \
+  DX_TEST_LOG_DIR="$TMP_DIR/pushed-self-base-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/pushed-self-base.out" 2>&1; then
+  fail "the pushed current branch was taken as its own base"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/pushed-self-base.out"
+drift_git remote remove origin
 
 printf '%s\n' \
   $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
