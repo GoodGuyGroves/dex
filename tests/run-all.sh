@@ -208,16 +208,18 @@ LC_ALL=C comm -13 "$RUN_STATE_DIR/discovered" "$RUN_STATE_DIR/declared-sorted" \
 # base_drift_lists — write the base's own missing and extra lists, measured
 # at the merge-base of HEAD and DX_TEST_BASE_REF (default: the default
 # branch's base ref). Returns 1, leaving every drift fatal, when the suite is
-# not in git or the base cannot be resolved.
+# not in git, the manifest is outside the suite's repository, or the base
+# cannot be resolved.
 base_drift_lists() {
   local manifest_dir manifest_prefix manifest_path suite_top manifest_top base_ref merge_base
   git -C "$SUITE_DIR" rev-parse --git-dir > /dev/null 2>&1 || return 1
   manifest_dir=$(cd "$(dirname "$MANIFEST")" 2>/dev/null && pwd) || return 1
   # The manifest's base copy is read from the suite's history, so it must
   # live in the same repository. Resolve symlinks (macOS /private/tmp).
-  suite_top=$(cd "$(git -C "$SUITE_DIR" rev-parse --show-toplevel 2>/dev/null)" && pwd -P) || return 1
-  manifest_top=$(cd "$(git -C "$manifest_dir" rev-parse --show-toplevel 2>/dev/null)" && pwd -P) \
-    || return 1
+  suite_top=$(git -C "$SUITE_DIR" rev-parse --show-toplevel 2>/dev/null) || return 1
+  manifest_top=$(git -C "$manifest_dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+  suite_top=$(cd "$suite_top" && pwd -P) || return 1
+  manifest_top=$(cd "$manifest_top" && pwd -P) || return 1
   [[ "$manifest_top" == "$suite_top" ]] || return 1
   # Kept apart from the assignment below: an assignment returns the status of
   # its last command substitution, which would hide a failure here.
