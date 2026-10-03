@@ -1844,6 +1844,8 @@ __dx_configure_inline_phase() {
 __dx_cleanup_completed_workspace() {
   local wt_name="$1" wt_dir="$2" default_branch="$3" workspace_mode="${4:-worktree}" session_id="${5:-}"
   local teardown_repo teardown_timing lifecycle_branch
+  # Lets the session discard below finish this run's own runtime lease.
+  local _dx_completed_teardown=1
 
   if [[ -n "$session_id" ]] && ! dx_ui_capture_mark_completed "$session_id"; then
     dx_warn "The lifecycle completed, but Dex could not start the UI proof retention window."
@@ -1928,7 +1930,7 @@ __dx_cleanup_completed_workspace() {
     return 1
   fi
 
-  [[ -n "$session_id" ]] && dx_cleanup_session "$session_id"
+  [[ -n "$session_id" ]] && __dx_dxrm_discard_session "$teardown_repo" "$session_id"
   dx_cleanup_last_session "$wt_name"
   dx_done "Local branch ${current_branch} removed."
 }
@@ -2606,6 +2608,28 @@ __dx_runtime_set_terminal() {
   esac
 }
 
+# __dx_runtime_release_own <session_id> <terminal_state>
+# Finish this run's runtime lease early, so its own teardown can take .runtime
+# with the session. Only the wrapper's owner handle for <session_id> is
+# finished; a lease any other process holds is left alone (returns 1). The
+# handle is cleared either way, so the wrapper's later finish and its traps do
+# nothing, and a failed finish still fails the run as it would at the end.
+{ unalias __dx_runtime_release_own; unfunction __dx_runtime_release_own; } 2>/dev/null || true
+__dx_runtime_release_own() {
+  local session_id="$1" terminal_state="$2" owner_session
+  [[ -n "${_dx_runtime_owner_handle:-}" ]] || return 1
+  owner_session=$(dx_session_runtime_owner_handle_session "$_dx_runtime_owner_handle" \
+    2>/dev/null) || return 1
+  [[ -n "$session_id" && "$owner_session" == "$session_id" ]] || return 1
+  _dx_runtime_terminal_state="$terminal_state"
+  if ! dx_session_runtime_owner_finish "$_dx_runtime_owner_handle" "$terminal_state"; then
+    _dx_runtime_owner_handle=""
+    _dx_runtime_owner_finish_failed=1
+    return 1
+  fi
+  _dx_runtime_owner_handle=""
+}
+
 { unalias __dx_run_with_runtime; unfunction __dx_run_with_runtime; } 2>/dev/null || true
 { unalias __dx_run_with_runtime_owner_handle; unfunction __dx_run_with_runtime_owner_handle; } 2>/dev/null || true
 __dx_run_with_runtime_owner_handle() {
@@ -2615,7 +2639,7 @@ __dx_run_with_runtime_owner_handle() {
   local callback_result=1 owner_finish_result=0
   local runtime_cleanup_command=""
   local _dx_runtime_owner_handle="$owner_handle" _dx_runtime_owner_pid="$owner_pid"
-  local _dx_runtime_signal_code=0
+  local _dx_runtime_signal_code=0 _dx_runtime_owner_finish_failed=0
   local _dx_runtime_terminal_state="failed"
   setopt localoptions localtraps
   if [[ -z "$_dx_runtime_owner_handle" || ! "$_dx_runtime_owner_pid" =~ ^[0-9]+$ ]]; then
@@ -2652,6 +2676,8 @@ __dx_run_with_runtime_owner_handle() {
     _dx_runtime_owner_handle=""
   fi
   trap - EXIT INT TERM HUP
+  # A lease the run's own teardown failed to finish fails the run here too.
+  [[ "$_dx_runtime_owner_finish_failed" -eq 0 ]] || owner_finish_result=1
 
   if [[ "$owner_finish_result" -ne 0 ]]; then
     dx_error "Dex could not close the runtime lease safely. The provider result was not accepted as success."
@@ -5378,9 +5404,13 @@ dxreviewloop() {
 # workspace's session state, runtime lease included, so the next run starts
 # fresh. A runtime that is still live or not terminal keeps its lease; the
 # rest of the state goes as before, and the warning names what was kept.
+# During a completed run's own teardown, that run's lease is finished first.
 { unalias __dx_dxrm_discard_session; unfunction __dx_dxrm_discard_session; } 2>/dev/null || true
 __dx_dxrm_discard_session() {
   local repo_root="$1" session_id="$2"
+  if [[ -n "${_dx_completed_teardown:-}" ]]; then
+    __dx_runtime_release_own "$session_id" completed || true
+  fi
   __dx_session_discard_state "$repo_root" "$session_id" 2>/dev/null && return 0
   dx_cleanup_session "$session_id"
   if [[ -e "$(dx_session_runtime_file "$session_id")" ]]; then

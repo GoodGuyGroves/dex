@@ -1862,6 +1862,15 @@ dx_session_runtime_owner_handle_path() { # <opaque-handle>
   printf '%s\n' "$owner_directory"
 }
 
+dx_session_runtime_owner_handle_session() { # <opaque-handle>
+  [[ $# -eq 1 ]] || return 3
+  local owner_session
+  __dx_session_runtime_owner_descriptor_parse "$1" || return $?
+  owner_session="$__DX_RUNTIME_OWNER_SESSION"
+  __dx_session_runtime_owner_descriptor_clear
+  printf '%s\n' "$owner_session"
+}
+
 __dx_session_runtime_owner_metadata() { # <root> <directory>
   [[ $# -eq 2 ]] || return 3
   __dx_session_runtime_call owner-metadata "$1" "$2"
