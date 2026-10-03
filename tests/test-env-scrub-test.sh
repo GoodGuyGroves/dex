@@ -22,7 +22,7 @@ child_env() {
   local hermetic="$1"
   env -u DX_TEST_HERMETIC \
     DEXCODE_SYNC=0 DEXCODE_CONTEXT_SYNC=0 DEXCODE_SYNC_REQUIRED=1 DEX_FACTORY_SYNC=0 \
-    DX_RTK_ENABLED=0 DX_RTK_BIN=/caller/rtk DEX_OFFLINE=1 \
+    DX_RTK_ENABLED=0 DX_RTK_BIN=/caller/rtk DEX_OFFLINE=1 DEX_TEST_JOBS=3 DEX_TEST_REAL_GIT=/caller/git \
     DEX_SESSION_ID=caller-session DEX_RUN_ID=caller-run DEX_HOME=/caller/dex-home \
     DX_STATE_DIR=/caller/state DEX_ROUTER_HOME=/caller/router \
     DEX_DIR=/checkout/under/test DX_TEST_LANES=fast DEX_TEST_CURRENT_NAME=caller-test \
@@ -34,7 +34,8 @@ child_env() {
 
 child_env 0
 for name in DEXCODE_SYNC DEXCODE_CONTEXT_SYNC DEXCODE_SYNC_REQUIRED DEX_FACTORY_SYNC \
-  DX_RTK_ENABLED DX_RTK_BIN DEX_OFFLINE DEX_SESSION_ID DEX_RUN_ID DX_STATE_DIR DEX_ROUTER_HOME; do
+  DX_RTK_ENABLED DX_RTK_BIN DEX_OFFLINE DEX_SESSION_ID DEX_RUN_ID DX_STATE_DIR DEX_ROUTER_HOME \
+  DEX_TEST_JOBS DEX_TEST_REAL_GIT; do
   if grep -q "^$name=" "$TMP_DIR/env.0"; then
     fail "a direct run kept the caller's $name"
   fi

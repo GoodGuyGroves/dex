@@ -41,7 +41,7 @@ if [[ "${DX_TEST_HERMETIC:-}" != 1 ]]; then
   # that is not set, and unsetting that is a no-op.
   for __dx_test_inherited in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'); do
     case "$__dx_test_inherited" in
-      DX_TEST_* | DEX_TEST_* | DX_HOST_MEMORY_FREE_PERCENT | DEX_DIR) ;;
+      DX_TEST_* | DEX_TEST_CURRENT_NAME | DX_HOST_MEMORY_FREE_PERCENT | DEX_DIR) ;;
       DEX_* | DX_* | DEXCODE_*) unset "$__dx_test_inherited" ;;
     esac
   done
