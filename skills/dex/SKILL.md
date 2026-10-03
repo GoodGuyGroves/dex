@@ -171,11 +171,11 @@ line, including when all fields are unchanged or N/A.
 
 ### Phase 5: PR
 
-1. Run `/dxpr` — generate the PR description, refresh any UI after-capture handoff, create or update the PR, attach `request`-type reviewers from `dex.md § Reviewers` (none when `dx_reviewers_mode` prints `none`; record `Reviewers: none (pr.reviewers override)`), mark the PR ready for review, and update the tracker if available.
+1. Run `/dxpr` — generate the PR description, refresh any UI after-capture handoff, create or update the PR, attach `request`-type reviewers from `dex.md § Reviewers` (none when `dx_reviewers_mode` prints `none`; record the line `dx_reviewers_summary_line` prints, which names who set the override), mark the PR ready for review, and update the tracker if available.
 2. Reconcile the working issue, related issues, and PR under
    `$DEX_DIR/prompts/issue-hygiene.md` before finalizing its copy.
 3. Phase 5 must leave the PR ready for review. Phase 6 verifies readiness and normally owns the `@mention` comments.
-4. Output `PHASE_5_COMPLETE` only when the PR is current, ready for review, and reviewers are attached (or the summary records `Reviewers: none (pr.reviewers override)`).
+4. Output `PHASE_5_COMPLETE` only when the PR is current, ready for review, and reviewers are attached (or the summary carries the line `dx_reviewers_summary_line` prints).
 
 ### Phase 6: Complete (autonomous)
 

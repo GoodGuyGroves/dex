@@ -55,7 +55,8 @@ It prints `handle<TAB>type<TAB>wait<TAB>adapter` per row, drops the `_none_`
 placeholder, and makes every Copilot row a `request` row. It prints nothing
 when the session has the `pr.reviewers none` override (`dx_reviewers_mode`
 prints `none`): then nobody is requested, mentioned, triggered, re-requested or
-waited for, and the summary says `Reviewers: none (pr.reviewers override)`.
+waited for, and the summary carries the line `dx_reviewers_summary_line`
+prints, which names who set the override (`set by agent` or `set by human`).
 Sort the rows into:
 - `REQUEST_REVIEWERS` — generic rows where Type is `request`
 - `MENTION_REVIEWERS` — generic rows where Type is `mention`
@@ -286,7 +287,8 @@ Tests: M new test cases
 Reviews:
   - <reviewer>: <status> (N comments addressed)
   ...
-  (or "Reviewers: none (pr.reviewers override)")
+  (or the line `dx_reviewers_summary_line` prints, e.g.
+  "Reviewers: none (pr.reviewers override set by agent)")
 Merge review state: <none|approved|review-required|changes-requested|unknown> (informational)
 Disagreements left open for the maintainer:
   - <thread url> (<reviewer>)     (or "none")
