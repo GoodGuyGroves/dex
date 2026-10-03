@@ -147,6 +147,20 @@ assert_rejected "$LINENO" dx_override_waive "$SESSION" \
 assert_rejected "$LINENO" dx_override_waive "$SESSION" review.max-waves 3 \
   human "Review wave budgets may be changed but not waived"
 
+# pr.reviewers narrows Phase 5 and 6 to no reviewer requests or mentions. It
+# is a value, never a waiver: waiving it would end the whole PR phase.
+dx_override_set "$SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+assert_eq "none" "$(dx_override_effective "$SESSION" pr.reviewers config 5)" \
+  "session pr.reviewers override"
+assert_rejected "$LINENO" dx_override_set "$SESSION" pr.reviewers bogus \
+  session - agent "Unknown reviewer mode" 0
+assert_rejected "$LINENO" dx_override_waive "$SESSION" pr.reviewers 5 \
+  agent "A reviewer waiver would skip all of Phase 5"
+dx_override_clear "$SESSION" pr.reviewers session - agent "Back to the table"
+assert_eq "config" "$(dx_override_effective "$SESSION" pr.reviewers config 5)" \
+  "cleared pr.reviewers override"
+
 # Concurrent writers must not lose one another. Each writes a separate gate so
 # the final active inventory should contain all of them.
 writer_pids=""

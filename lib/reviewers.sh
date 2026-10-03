@@ -52,6 +52,35 @@ dx_reviewer_default_adapter() {
 }
 
 # dx_reviewers_rows <repo_dir>
+# dx_reviewers_mode [session_id] — `none` when the session's pr.reviewers
+# override says so, else `config` (the `## Reviewers` table applies). The
+# override is how a fork PR avoids pinging the reviewers a tracked dex.md was
+# written for, without editing that file.
+dx_reviewers_mode() {
+  local mode_session="${1:-${DEX_SESSION_ID:-}}" mode="config"
+  if dx_session_id_valid "$mode_session" 2>/dev/null; then
+    mode=$(dx_override_effective "$mode_session" pr.reviewers config \
+      "${DEX_LOOP_PHASE:--}" 2>/dev/null) || mode="config"
+  fi
+  [[ "$mode" == "none" ]] || mode="config"
+  printf '%s\n' "$mode"
+}
+
+# __dx_reviewers_skip_notice <session_id> <what> — returns 0, after saying so
+# on stderr, when pr.reviewers is `none` and <what> must not happen.
+__dx_reviewers_skip_notice() {
+  [[ "$(dx_reviewers_mode "$1")" == "none" ]] || return 1
+  printf 'dex: pr.reviewers is none for this session; not %s\n' "$2" >&2
+}
+
+# dx_reviewers_rows_effective <session_id> <repo_dir> — dx_reviewers_rows,
+# or nothing when the session's pr.reviewers override is `none`.
+dx_reviewers_rows_effective() {
+  [[ $# -eq 2 ]] || return 2
+  [[ "$(dx_reviewers_mode "$1")" == "none" ]] && return 0
+  dx_reviewers_rows "$2"
+}
+
 # Print one TSV line per usable `## Reviewers` row:
 #   handle<TAB>type<TAB>wait<TAB>adapter
 # Handle and Type are the first two columns, as they always were. Wait and
@@ -241,6 +270,7 @@ dx_reviewer_comment() {
   [[ $# -eq 3 ]] || return 2
   local comment_session="$1" comment_pr="$2" comment_body="$3" body_file rc=0
   [[ "$comment_pr" =~ ^[0-9]+$ && -n "$comment_body" ]] || return 2
+  __dx_reviewers_skip_notice "$comment_session" "posting a reviewer comment" && return 0
   if __dx_reviewers_mentions_copilot "$comment_body"; then
     printf '%s\n' "dex: refusing to post a PR comment that mentions @copilot; request Copilot with gh pr edit --add-reviewer @copilot" >&2
     return 4
@@ -373,6 +403,7 @@ dx_reviewer_trigger() {
   local persisted_rc=0 previous_state=""
   [[ "$trig_pr" =~ ^[0-9]+$ ]] || return 2
   dx_session_id_valid "$trig_session" || return 2
+  __dx_reviewers_skip_notice "$trig_session" "asking ${trig_handle} for a review" && return 0
   case "$trig_adapter" in
     copilot|greptile) ;;
     generic) return 3 ;;
@@ -574,7 +605,7 @@ dx_reviewer_gate() {
   local started triggered state result detail elapsed waiting=0
   [[ "$gate_pr" =~ ^[0-9]+$ ]] || return 2
   dx_session_id_valid "$gate_session" || return 2
-  rows=$(dx_reviewers_rows "$gate_repo" 2>/dev/null \
+  rows=$(dx_reviewers_rows_effective "$gate_session" "$gate_repo" 2>/dev/null \
     | awk -F'\t' '$3 == "yes" && $4 != "generic"') || rows=""
   [[ -n "$rows" ]] || return 0
   if [[ -z "$gate_head" ]]; then
