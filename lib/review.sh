@@ -1597,7 +1597,7 @@ __dx_review_contract_number() {
 # suite. Only this session's receipts count: the fingerprints hash the tree,
 # not the environment, and cross-session sharing is an explicit opt-in.
 __dx_review_full_gate_green() {
-  local repo_dir="$1" checkout="" working="" rows="" gate_session=""
+  local repo_dir="$1" checkout="" working="" base="" rows="" gate_session=""
   command -v dx_gate_receipt_lookup >/dev/null 2>&1 || { printf '0\n'; return 0; }
   gate_session="${DEX_SESSION_ID:-}"
   if [[ -z "$gate_session" ]]; then
@@ -1611,8 +1611,10 @@ __dx_review_full_gate_green() {
     printf '0\n'
     return 0
   }
+  base=$(dx_gate_base_fingerprint "$gate_session" "$repo_dir" 2>/dev/null) \
+    || base=""
   rows=$(dx_gate_receipt_lookup "$gate_session" "$checkout" "$working" \
-    "$DX_GATE_FULL_GATE_NAME" 2>/dev/null) || {
+    "$DX_GATE_FULL_GATE_NAME" "$base" 2>/dev/null) || {
     printf '0\n'
     return 0
   }

@@ -576,7 +576,9 @@ dx_host_budget_env() {
 # fingerprint from lib/review.sh, the same working-tree hash bin/review-check.sh
 # keys its own reuse on. A gate whose tree changed while it ran records
 # `stable: false` and is never returned by a lookup: the result is real, but it
-# is not a statement about any tree that still exists.
+# is not a statement about any tree that still exists. Each receipt also
+# records the base the branch was measured against (dx_gate_base_fingerprint),
+# so a pass from before the base moved is not reused after a resume (#51).
 
 # dx_gate_receipt_dir <session_id>
 dx_gate_receipt_dir() {
@@ -595,11 +597,33 @@ dx_gate_receipt_slot() {
   printf '%s\n' "$gate_name"
 }
 
+# dx_gate_base_fingerprint <session_id> [git_dir]
+# `<base>@<sha>` for the branch this session is measured against: the
+# recorded base_branch (a stacked branch) or the default branch, at the commit
+# its remote-tracking ref points to, else the local branch. Offline: it reads
+# refs and never fetches, so a caller that wants a fresh base syncs first.
+# Prints nothing when the base cannot be resolved.
+dx_gate_base_fingerprint() {
+  local session_id="${1:-}" git_dir="${2:-}" base="" sha="" git_args=()
+  [[ -n "$git_dir" ]] && git_args=(-C "$git_dir")
+  [[ -z "$session_id" ]] || base=$(dx_meta_read "$session_id" base_branch 2>/dev/null) || base=""
+  [[ -n "$base" ]] || base=$(dx_default_branch "$git_dir" 2>/dev/null) || base=""
+  [[ -n "$base" ]] || return 0
+  sha=$(git ${git_args[@]+"${git_args[@]}"} rev-parse --verify -q \
+    "refs/remotes/origin/${base}^{commit}" 2>/dev/null) \
+    || sha=$(git ${git_args[@]+"${git_args[@]}"} rev-parse --verify -q \
+      "refs/heads/${base}^{commit}" 2>/dev/null) || sha=""
+  [[ -n "$sha" ]] || return 0
+  printf '%s@%s\n' "$base" "$sha"
+}
+
 # dx_gate_receipt_write <session_id> <gate> <checkout-fp> <working-fp>
 #   <stable:0|1> <exit-code> <duration-seconds> <queue-seconds> <wrapper>
 #   <test-jobs> <parallelism-env> <log-path> <command> [args...]
 # <parallelism-env> is a space-separated list of the variable names that were
-# set, or empty. Written atomically, 0600, under a 0700 directory.
+# set, or empty. DX_GATE_RECEIPT_BASE is the gate's dx_gate_base_fingerprint
+# taken before it ran; when it is not set, the base is read now from the
+# current directory. Written atomically, 0600, under a 0700 directory.
 dx_gate_receipt_write() {
   [[ $# -ge 13 ]] || return 2
   local session_id="$1" gate_name="$2" checkout_fp="$3" working_fp="$4"
@@ -607,13 +631,18 @@ dx_gate_receipt_write() {
   shift 9
   local test_jobs="$1" parallelism_env="$2" gate_log="$3"
   shift 3
-  local receipt_dir receipt_slot receipt_file receipt_tmp
+  local receipt_dir receipt_slot receipt_file receipt_tmp base_fp
   [[ $# -ge 1 ]] || return 2
   receipt_dir=$(dx_gate_receipt_dir "$session_id") || return 2
   receipt_slot=$(dx_gate_receipt_slot "$gate_name") || return 2
   [[ "$stable" =~ ^[01]$ ]] || return 2
   [[ "$exit_code" =~ ^[0-9]{1,3}$ ]] || return 2
   [[ "$duration" =~ ^[0-9]{1,9}$ && "$queued" =~ ^[0-9]{1,9}$ ]] || return 2
+  if [[ -n "${DX_GATE_RECEIPT_BASE+set}" ]]; then
+    base_fp="$DX_GATE_RECEIPT_BASE"
+  else
+    base_fp=$(dx_gate_base_fingerprint "$session_id" 2>/dev/null) || base_fp=""
+  fi
   mkdir -p "$receipt_dir" || return 1
   chmod 700 "$receipt_dir" 2>/dev/null || true
   receipt_file="$receipt_dir/$receipt_slot.json"
@@ -622,6 +651,7 @@ dx_gate_receipt_write() {
     DX_GATE_RECEIPT_GATE="$gate_name" \
     DX_GATE_RECEIPT_CHECKOUT="$checkout_fp" \
     DX_GATE_RECEIPT_WORKING="$working_fp" \
+    DX_GATE_RECEIPT_BASE_FP="$base_fp" \
     DX_GATE_RECEIPT_STABLE="$stable" \
     DX_GATE_RECEIPT_EXIT="$exit_code" \
     DX_GATE_RECEIPT_DURATION="$duration" \
@@ -646,6 +676,7 @@ receipt = {
     "queue_seconds": int(os.environ["DX_GATE_RECEIPT_QUEUED"]),
     "checkout_fingerprint": os.environ["DX_GATE_RECEIPT_CHECKOUT"],
     "working_fingerprint": os.environ["DX_GATE_RECEIPT_WORKING"],
+    "base_fingerprint": os.environ["DX_GATE_RECEIPT_BASE_FP"],
     "stable": os.environ["DX_GATE_RECEIPT_STABLE"] == "1",
     "priority_wrapper": os.environ["DX_GATE_RECEIPT_WRAPPER"],
     "test_jobs": os.environ["DX_GATE_RECEIPT_JOBS"],
@@ -677,9 +708,9 @@ PY
 # shellcheck disable=SC2034  # read by __dx_review_full_gate_green in lib/review.sh
 DX_GATE_FULL_GATE_NAME="full-gate"
 
-# dx_gate_receipt_lookup <session_id|-> <checkout-fp> <working-fp> [gate]
-# Every gate this session already ran against exactly this tree, newest first,
-# one per line:
+# dx_gate_receipt_lookup <session_id|-> <checkout-fp> <working-fp> [gate] [base-fp]
+# Every gate this session already ran against exactly this tree and base,
+# newest first, one per line:
 #
 #   session <TAB> gate <TAB> exit_code <TAB> duration_seconds <TAB>
 #   recorded_at <TAB> command
@@ -690,10 +721,13 @@ DX_GATE_FULL_GATE_NAME="full-gate"
 # would not, and cross-session sharing is deferred until the single-session
 # ladder has shown its numbers. Returns 0 when at least one receipt matched, 1
 # when none did, and 2 for arguments it will not act on. A receipt whose tree
-# moved while the gate ran (`stable: false`) never matches.
+# moved while the gate ran (`stable: false`) never matches, and neither does
+# one whose base differs from <base-fp> (dx_gate_base_fingerprint): a receipt
+# from before base fingerprints has none, so it is re-run rather than trusted.
 dx_gate_receipt_lookup() {
-  [[ $# -ge 3 && $# -le 4 ]] || return 2
+  [[ $# -ge 3 && $# -le 5 ]] || return 2
   local session_id="$1" checkout_fp="$2" working_fp="$3" gate_name="${4:-}"
+  local base_fp="${5:-}"
   local receipt_root
   [[ -n "$checkout_fp" && -n "$working_fp" ]] || return 2
   if [[ "$session_id" == "-" ]]; then
@@ -709,6 +743,7 @@ dx_gate_receipt_lookup() {
   DX_GATE_LOOKUP_CHECKOUT="$checkout_fp" \
   DX_GATE_LOOKUP_WORKING="$working_fp" \
   DX_GATE_LOOKUP_GATE="$gate_name" \
+  DX_GATE_LOOKUP_BASE="$base_fp" \
     python3 - <<'PY'
 import json
 import os
@@ -720,6 +755,7 @@ scope = os.environ["DX_GATE_LOOKUP_SCOPE"]
 checkout = os.environ["DX_GATE_LOOKUP_CHECKOUT"]
 working = os.environ["DX_GATE_LOOKUP_WORKING"]
 wanted = os.environ["DX_GATE_LOOKUP_GATE"]
+base = os.environ["DX_GATE_LOOKUP_BASE"]
 
 paths = (
     sorted(root.glob("*.gate-receipts/*.json"))
@@ -738,6 +774,8 @@ for path in paths:
     if receipt.get("checkout_fingerprint") != checkout:
         continue
     if receipt.get("working_fingerprint") != working:
+        continue
+    if receipt.get("base_fingerprint", "") != base:
         continue
     if wanted and receipt.get("gate") != wanted:
         continue

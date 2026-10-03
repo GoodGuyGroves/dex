@@ -303,10 +303,11 @@ print(receipt["checkout_fingerprint"])
 print(receipt["priority_wrapper"])
 print(receipt["stable"])
 print(" ".join(receipt["parallelism_env"]))
+print(receipt["base_fingerprint"])
 PY
 )"
 IFS=$'\n' read -r -d '' RECEIPT_GATE RECEIPT_EXIT RECEIPT_HEAD RECEIPT_WRAPPER \
-  RECEIPT_STABLE RECEIPT_PARALLELISM <<EOF || true
+  RECEIPT_STABLE RECEIPT_PARALLELISM RECEIPT_BASE <<EOF || true
 $RECEIPT_FIELDS
 EOF
 assert_eq "suite" "$RECEIPT_GATE" "the receipt names its gate"
@@ -315,6 +316,9 @@ assert_eq "$REPO_HEAD" "$RECEIPT_HEAD" "the checkout fingerprint is HEAD"
 assert_eq "True" "$RECEIPT_STABLE" "an unchanged tree records a stable result"
 assert_eq "PARALLEL_WORKERS SECOND_WORKERS" "$RECEIPT_PARALLELISM" \
   "the receipt records which declared variables were set"
+REPO_BASE="$(dx_gate_base_fingerprint "$GATE_SESSION" "$REPO")"
+[[ -n "$REPO_BASE" ]] || fail "the test repository has no resolvable base"
+assert_eq "$REPO_BASE" "$RECEIPT_BASE" "the receipt records the base it was measured against"
 # The wrapper recorded has to be the one this host can actually run, not a
 # constant: a Linux box must not report nice+taskpolicy and vice versa.
 assert_eq "$(dx_host_priority_wrapper)" "$RECEIPT_WRAPPER" \
@@ -329,18 +333,23 @@ fi
 
 REPO_WORKING="$(cd "$REPO" && dx_review_working_fingerprint "$REPO")"
 LOOKUP_OUT="$TMP_DIR/lookup.out"
-dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" "$REPO_WORKING" \
-  > "$LOOKUP_OUT"
+dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" "$REPO_WORKING" "" \
+  "$REPO_BASE" > "$LOOKUP_OUT"
 assert_contains "$(printf '%s\t%s\t%s' "$GATE_SESSION" suite 3)" "$LOOKUP_OUT"
-dx_gate_receipt_lookup - "$REPO_HEAD" "$REPO_WORKING" suite > "$LOOKUP_OUT"
+dx_gate_receipt_lookup - "$REPO_HEAD" "$REPO_WORKING" suite "$REPO_BASE" \
+  > "$LOOKUP_OUT"
 assert_contains "suite" "$LOOKUP_OUT"
 LOOKUP_RC=0
 dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" "$REPO_WORKING" other \
-  >/dev/null 2>&1 || LOOKUP_RC=$?
+  "$REPO_BASE" >/dev/null 2>&1 || LOOKUP_RC=$?
 assert_eq "1" "$LOOKUP_RC" "a gate that never ran has no receipt"
 LOOKUP_RC=0
-dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" changed-tree \
-  >/dev/null 2>&1 || LOOKUP_RC=$?
+dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" "$REPO_WORKING" "" \
+  "other-base@0000000" >/dev/null 2>&1 || LOOKUP_RC=$?
+assert_eq "1" "$LOOKUP_RC" "a different base matches nothing"
+LOOKUP_RC=0
+dx_gate_receipt_lookup "$GATE_SESSION" "$REPO_HEAD" changed-tree "" \
+  "$REPO_BASE" >/dev/null 2>&1 || LOOKUP_RC=$?
 assert_eq "1" "$LOOKUP_RC" "a different working tree matches nothing"
 
 # A command the project did not declare heavy still leases; it is told so.

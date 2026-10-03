@@ -492,8 +492,8 @@ heartbeat that never fails on wait time, sets the parallelism variables the
 project declared, runs at reduced priority (`nice`, plus `taskpolicy` on macOS
 or `ionice`/`systemd-run` on Linux when they work — probed, never assumed),
 logs to `$DX_SESSION_TMP/gates/`, and writes a receipt under
-`$DX_LOOP_DIR/<session>.gate-receipts/` keyed by the checkout and working
-fingerprints. `dx_gate_receipt_lookup` reads those receipts back. A completed
+`$DX_LOOP_DIR/<session>.gate-receipts/` keyed by the checkout, working and
+base fingerprints. `dx_gate_receipt_lookup` reads those receipts back. A completed
 result is never discarded, pass or fail.
 
 Every host fact is measured at runtime on both platforms with a conservative

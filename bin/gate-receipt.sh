@@ -83,10 +83,17 @@ if ! GATE_WORKING=$(dx_review_working_fingerprint "$PWD" 2>/dev/null); then
   exit 2
 fi
 
+# A receipt counts only against the base the branch is measured against now;
+# a resume after the base moved must re-run the gate even with HEAD unchanged.
+GATE_BASE_SESSION="$GATE_SCOPE"
+[[ "$GATE_BASE_SESSION" != "-" ]] || GATE_BASE_SESSION="${DEX_SESSION_ID:-}"
+GATE_BASE=$(dx_gate_base_fingerprint "$GATE_BASE_SESSION" "$PWD" 2>/dev/null) \
+  || GATE_BASE=""
+
 GATE_ROWS=""
 GATE_STATUS=0
 GATE_ROWS=$(dx_gate_receipt_lookup "$GATE_SCOPE" "$GATE_CHECKOUT" \
-  "$GATE_WORKING") || GATE_STATUS=$?
+  "$GATE_WORKING" "" "$GATE_BASE") || GATE_STATUS=$?
 if [[ "$GATE_STATUS" -eq 2 ]]; then
   dx_error "gate-receipt: could not read gate receipts"
   exit 2
