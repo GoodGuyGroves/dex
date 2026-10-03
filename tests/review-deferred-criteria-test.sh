@@ -282,6 +282,10 @@ fi
 # An unchanged rotation keeps its deferrals.
 seal_session "${SESSION_ID}-same" "[$ONE]"
 rotate "${SESSION_ID}-same" "[$ONE]" || fail 'an unchanged rotation was rejected'
+# A rotation that changes other criteria but keeps a sealed deferral as it was
+# reaches the deferral comparison (an identical file returns before it).
+OBJECTIVE="$OBJECTIVE, reworded" rotate "${SESSION_ID}-same" "[$ONE]" \
+  || fail 'a rotation that kept a sealed deferral unchanged was rejected'
 
 # Session cleanup removes the seal's deferral snapshot with the seal itself.
 deferrals_file="$(dx_review_criteria_deferrals_file "${SESSION_ID}-same")"
