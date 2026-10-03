@@ -231,6 +231,18 @@ assert data["command"] == "done", data
 assert data["source"] == "human", data
 assert data["quote"] == 'Skip verification, the "baseline" is known', data
 PY
+grep -Fq 'dx control done source=human reason= quote=Skip verification, the "baseline" is known' \
+  "$(dx_run_logs_file "$QUOTE_RUN_ID")" || assert_at $LINENO
+dx_cleanup_session "$LAUNCH_SESSION"
+
+# A quoted waiver's run-log line also names its gate and reason.
+dx_run_write_for_session "$LAUNCH_SESSION" "$QUOTE_RUN_ID"
+setup_attribution_lifecycle "$LAUNCH_SESSION"
+env DEX_LAUNCHED=1 DEX_SESSION_ID="$LAUNCH_SESSION" bash "$CONTROL" waive \
+  verification.required-gates --source human --quote "Waive the gates, I checked them" \
+  --reason "Human checked the baseline" > "$TMP_DIR/launched-human-waive.out"
+grep -Fq 'dx control waive gate=verification.required-gates source=human reason=Human checked the baseline quote=Waive the gates, I checked them' \
+  "$(dx_run_logs_file "$QUOTE_RUN_ID")" || assert_at $LINENO
 dx_cleanup_session "$LAUNCH_SESSION"
 
 # Resume follows the same rule inside a launch.

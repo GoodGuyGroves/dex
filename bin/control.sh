@@ -159,7 +159,7 @@ parse_policy_options() {
 
 # Record the quoted human instruction once the control has succeeded.
 record_control_quote() {
-  local quote_json reason_json gate_json command_json data_json
+  local quote_json reason_json gate_json command_json data_json log_message
   [[ "$CONTROL_QUOTE_GIVEN" -eq 1 ]] || return 0
   command_json=$(dx_event_json_string "$COMMAND" 64) || return 0
   gate_json=$(dx_event_json_string "$CONTROL_GATE" 120) || return 0
@@ -170,8 +170,11 @@ record_control_quote() {
   dx_event_emit_for_session "$SESSION_ID" "control.quoted" "info" \
     "dx control ${COMMAND} relayed a quoted human instruction" \
     "${CURRENT_PHASE:-}" "$data_json" 2>/dev/null || true
+  log_message="dx control ${COMMAND}"
+  [[ -n "$CONTROL_GATE" ]] && log_message+=" gate=${CONTROL_GATE}"
+  log_message+=" source=human reason=${CONTROL_REASON} quote=${CONTROL_QUOTE}"
   dx_run_log_append_for_session "$SESSION_ID" "info" "lifecycle-control" \
-    "dx control ${COMMAND} source=human quote=${CONTROL_QUOTE}" 2>/dev/null || true
+    "$log_message" 2>/dev/null || true
 }
 
 record_control_policy() {
