@@ -913,15 +913,16 @@ dx_provider_claude() {
   # termination. Still overridable from the environment.
   env_args+=(CLAUDE_CODE_STOP_HOOK_BLOCK_CAP="${CLAUDE_CODE_STOP_HOOK_BLOCK_CAP:-1000}")
 
-  # One host budget for every launch path, the router included. Exported for
-  # this function's lifetime only, so the launched process inherits it while
-  # the caller's shell does not. A name the operator or a parent Dex process
-  # already exported keeps its value (see lib/host-budget.sh).
+  # One host budget for every launch path, the router included. `local -x`
+  # exports it for this call only, so the launched process inherits it while
+  # the caller's shell does not; zsh would make a `declare -x` global. A name
+  # the operator or a parent Dex process already exported keeps its value
+  # (see lib/host-budget.sh).
   local _budget_line
   while IFS= read -r _budget_line; do
     [[ -n "$_budget_line" ]] || continue
     # shellcheck disable=SC2163  # NAME=VALUE lines from dx_host_budget_env
-    declare -x "$_budget_line"
+    local -x "$_budget_line"
   done < <(dx_host_budget_env 2>/dev/null || true)
 
   # Prompt cache lifetime. Through the router Claude Code believes it is on an
@@ -936,10 +937,10 @@ dx_provider_claude() {
   # explicit CLAUDE_CODE_PROMPT_CACHE_TTL from the user wins for lifecycles.
   if [[ "$DX_PROVIDER_ENGINE" != "codex-plugin" ]]; then
     if [[ "${DEX_REVIEW_PASS_ACTIVE:-0}" == 1 || "${DEX_REVIEW_ASSESSMENT_ACTIVE:-0}" == 1 ]]; then
-      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL=5m DEX_PROMPT_CACHE_TTL=5m
+      local -x CLAUDE_CODE_PROMPT_CACHE_TTL=5m DEX_PROMPT_CACHE_TTL=5m
     elif [[ "${DEX_LOOP_ACTIVE:-0}" == 1 ]]; then
-      declare -x CLAUDE_CODE_PROMPT_CACHE_TTL="${CLAUDE_CODE_PROMPT_CACHE_TTL:-1h}"
-      declare -x DEX_PROMPT_CACHE_TTL="$CLAUDE_CODE_PROMPT_CACHE_TTL"
+      local -x CLAUDE_CODE_PROMPT_CACHE_TTL="${CLAUDE_CODE_PROMPT_CACHE_TTL:-1h}"
+      local -x DEX_PROMPT_CACHE_TTL="$CLAUDE_CODE_PROMPT_CACHE_TTL"
     fi
   fi
 
@@ -953,7 +954,7 @@ dx_provider_claude() {
   while IFS= read -r _snapshot_line; do
     [[ -n "$_snapshot_line" ]] || continue
     # shellcheck disable=SC2163  # NAME=VALUE lines from dx_host_snapshot
-    declare -x "$_snapshot_line"
+    local -x "$_snapshot_line"
   done < <(dx_host_snapshot 2>/dev/null || true)
 
   # A phase that never opens a browser launches with no MCP servers at all —
