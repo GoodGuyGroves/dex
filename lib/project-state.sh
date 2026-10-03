@@ -195,6 +195,107 @@ dx_project_teardown_value() {
   dx_project_contract_values "$teardown_repo" "Worktree Teardown" "$teardown_key"
 }
 
+# dx_project_verification_value <repo-dir> <key>
+# A project's raw Phase 4 setting from the fenced block under
+# `## Verification` in its `.dex/dex.md`: `lanes` (the commands that make up
+# the Phase 4 gate, in order) or `known_failures` (a repo-relative file of
+# baseline failures). Same parser and return codes as
+# dx_project_contract_values, with a closed key set.
+dx_project_verification_value() {
+  [[ $# -eq 2 ]] || return 2
+  local verification_repo="$1" verification_key="$2"
+  case "$verification_key" in
+    lanes | known_failures) ;;
+    *) return 2 ;;
+  esac
+  dx_project_contract_values "$verification_repo" "Verification" "$verification_key"
+}
+
+# dx_verification_known_failures <repo-dir>
+# The baseline failures that apply to this checkout, one
+# `test-id<TAB>base-ref<TAB>issue-ref` line each, from the file named by
+# `known_failures:` under `## Verification`. The file holds one such line per
+# failure, with `#` comments and blank lines allowed. An entry applies while
+# its base ref resolves to a commit HEAD contains: the failure was already on
+# the base this branch grew from, so it is not this branch's to fix.
+#
+# Returns 1 when nothing is declared, and 2, with the reason on stderr, when
+# the block is malformed or the path is absolute, leaves the repository, or is
+# not a regular file. A malformed line is reported on stderr and skipped.
+dx_verification_known_failures() {
+  [[ $# -eq 1 && -n "$1" ]] || return 2
+  local failures_repo="$1" declared="" read_rc=0 failures_file test_id base_ref issue_ref extra
+  declared=$(dx_project_verification_value "$failures_repo" known_failures) || read_rc=$?
+  [[ "$read_rc" -eq 0 ]] || return "$read_rc"
+  failures_file=$(python3 - "$failures_repo" "$declared" <<'PY'
+import os
+import sys
+
+repo, declared = sys.argv[1], sys.argv[2]
+if "\n" in declared or not declared or os.path.isabs(declared):
+    print(f"known_failures must be one repository-relative path: {declared!r}", file=sys.stderr)
+    raise SystemExit(2)
+root = os.path.realpath(repo)
+path = os.path.realpath(os.path.join(root, declared))
+if os.path.commonpath([root, path]) != root:
+    print(f"known_failures leaves the repository: {declared}", file=sys.stderr)
+    raise SystemExit(2)
+if not os.path.isfile(path):
+    print(f"known_failures is not a regular file: {declared}", file=sys.stderr)
+    raise SystemExit(2)
+print(path)
+PY
+) || return 2
+  while IFS=$'\t' read -r test_id base_ref issue_ref extra || [[ -n "$test_id" ]]; do
+    case "$test_id" in
+      "" | \#*) continue ;;
+    esac
+    if [[ -z "$base_ref" || -z "$issue_ref" || -n "$extra" ]]; then
+      printf 'dex: skipping malformed known_failures line for %s: want test-id<TAB>base-ref<TAB>issue-ref\n' \
+        "$test_id" >&2
+      continue
+    fi
+    git -C "$failures_repo" rev-parse --verify --quiet "${base_ref}^{commit}" > /dev/null 2>&1 \
+      || continue
+    git -C "$failures_repo" merge-base --is-ancestor "$base_ref" HEAD 2>/dev/null || continue
+    printf '%s\t%s\t%s\n' "$test_id" "$base_ref" "$issue_ref"
+  done < "$failures_file"
+}
+
+# dx_verification_phase_block <repo-dir>
+# The Phase 4 policy a project declared under `## Verification`, as text for
+# the Phase 4 handoff and audit: the lanes that make up the gate and the
+# baseline failures not to fix in this unit. Prints nothing when the project
+# declared neither, so the default Phase 4 text is unchanged.
+dx_verification_phase_block() {
+  [[ $# -eq 1 ]] || return 2
+  local block_repo="$1" lanes="" lanes_rc=0 failures="" failures_rc=0 lane test_id base_ref issue_ref
+  [[ -n "$block_repo" ]] || return 0
+  lanes=$(dx_project_verification_value "$block_repo" lanes 2>/dev/null) || lanes_rc=$?
+  failures=$(dx_verification_known_failures "$block_repo" 2>/dev/null) || failures_rc=$?
+  if [[ "$lanes_rc" -eq 1 && "$failures_rc" -eq 1 ]]; then
+    return 0
+  fi
+  printf '%s\n' "Phase 4 verification policy (.dex/dex.md § Verification):"
+  if [[ "$lanes_rc" -eq 0 && -n "$lanes" ]]; then
+    printf '%s\n' "- Run these lanes, in order, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"
+    while IFS= read -r lane; do
+      [[ -z "$lane" ]] || printf '    %s\n' "$lane"
+    done <<< "$lanes"
+  elif [[ "$lanes_rc" -eq 2 ]]; then
+    printf '%s\n' "- The lanes setting could not be read; use the default Phase 4 gate."
+  fi
+  if [[ "$failures_rc" -eq 0 && -n "$failures" ]]; then
+    printf '%s\n' "- Known baseline failures on this branch's base. Report each one you hit as baseline (<issue-ref>) and do not fix it in this unit:"
+    while IFS=$'\t' read -r test_id base_ref issue_ref; do
+      printf '    %s (base %s, %s)\n' "$test_id" "$base_ref" "$issue_ref"
+    done <<< "$failures"
+  elif [[ "$failures_rc" -eq 2 ]]; then
+    printf '%s\n' "- The known_failures setting could not be read; treat every failure as this unit's to fix or report."
+  fi
+  return 0
+}
+
 dx_project_state_file() {
   local repo_root="$1"
   local git_dir

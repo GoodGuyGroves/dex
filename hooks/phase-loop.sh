@@ -1256,6 +1256,9 @@ if [[ "$CONTROL_VALID" -eq 1 ]]; then
             exit 2
           fi
           CONTROL_RECALL=$(dx_context_provider_block phase_handoff "$CONTROL_TARGET" "$SESSION_ID")
+          CONTROL_VERIFY_POLICY=""
+          [[ "$CONTROL_TARGET" != 4 ]] \
+            || CONTROL_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || CONTROL_VERIFY_POLICY=""
           {
             printf '\n--- Dex phase changed by %s ---\n\n' "$CONTROL_ACTOR"
             printf 'Continue at Phase %s (%s). Earlier gates carry explicit override outcomes in the lifecycle ledger.\n\n' \
@@ -1263,6 +1266,7 @@ if [[ "$CONTROL_VALID" -eq 1 ]]; then
             printf '%s\n\n' "$(dx_host_handoff_line)"
             dx_inline_phase_message "$CONTROL_TARGET"
             [[ -z "$CONTROL_RECALL" ]] || printf '\n%s\n' "$CONTROL_RECALL"
+            [[ -z "$CONTROL_VERIFY_POLICY" ]] || printf '\n%s\n' "$CONTROL_VERIFY_POLICY"
           } >&2
           exit 2
         fi
@@ -2096,6 +2100,11 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
     # The project's own recall for the phase it is handing to, labelled
     # unverified. Empty when .dex/dex.md declares no phase_handoff provider.
     HANDOFF_RECALL=$(dx_context_provider_block phase_handoff "$NEXT_PHASE" "$SESSION_ID")
+    # Phase 4's lanes and known baseline failures, when .dex/dex.md declares
+    # them under ## Verification. Empty otherwise.
+    HANDOFF_VERIFY_POLICY=""
+    [[ "$NEXT_PHASE" != 4 ]] \
+      || HANDOFF_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || HANDOFF_VERIFY_POLICY=""
     # Claude Code takes the handoff as additionalContext, which it shows to the
     # model as a system reminder; its docs advise factual wording there. Codex
     # and an unknown agent keep the structured block.
@@ -2114,6 +2123,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       printf '%s\n\n' "$(dx_host_handoff_line)"
       dx_inline_phase_message "$NEXT_PHASE"
       [[ -z "$HANDOFF_RECALL" ]] || printf '\n%s\n' "$HANDOFF_RECALL"
+      [[ -z "$HANDOFF_VERIFY_POLICY" ]] || printf '\n%s\n' "$HANDOFF_VERIFY_POLICY"
       printf '\n%s\n' "When Phase ${NEXT_PHASE} is genuinely complete, stop so the Stop hook can audit it."
     )
     HANDOFF_MESSAGE="Dex · Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} · $(dx_phase_name "$NEXT_PHASE")"
@@ -2493,6 +2503,13 @@ if [[ $ITERATION -gt 1 ]] && dx_compact_repeat_audit_prompt "${DEX_LOOP_PHASE:-}
   :
 else
   printf '%s\n' "$AUDIT_PROMPT" >&2
+fi
+# Outside the compaction branch, so every Phase 4 audit iteration repeats the
+# project's declared lanes and baseline failures.
+if [[ "${DEX_LOOP_PHASE:-}" == 4 ]]; then
+  AUDIT_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) \
+    || AUDIT_VERIFY_POLICY=""
+  [[ -z "$AUDIT_VERIFY_POLICY" ]] || printf '\n%s\n' "$AUDIT_VERIFY_POLICY" >&2
 fi
 echo "" >&2
 
