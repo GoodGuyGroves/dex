@@ -227,6 +227,12 @@ Phase 5.
 
 ### 5. Attach Request-Type Reviewers
 
+If `dx_reviewers_mode` prints `none`, the session's `pr.reviewers none`
+override is in force: attach, mention and trigger nobody, skip this step, and
+report `Reviewers: none (pr.reviewers override)`. Set it with
+`bash "$DEX_DIR/bin/control.sh" override pr.reviewers none --scope session --reason "<why>"`
+when the tracked table must not be used, for example on a fork PR.
+
 Read the `## Reviewers` section of `.dex/dex.md`. For every row whose Type column is `request`, attach the reviewer to the PR:
 
 ```bash
@@ -310,14 +316,14 @@ Print a summary of the PR for the user:
 - PR link
 - PR description preview (title + summary section)
 - The `PR template:` line, and the `Labels:` line when label rules are declared
-- List of `request` reviewers attached
+- List of `request` reviewers attached, or `Reviewers: none (pr.reviewers override)`
 - Implementation summary
 - UI proof status and reason, plus MP4/poster/manifest paths when READY
 
 Then output:
 
 ```
-Phase 5 complete. PR state: READY. Request reviewers are attached.
+Phase 5 complete. PR state: READY. Request reviewers are attached (or none, per pr.reviewers).
 Phase 6 (Complete) will verify readiness, reconcile reviewer notifications,
 monitor CI/reviews, address comments, and settle the ticket per ticket_close.
 ```
