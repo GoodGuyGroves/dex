@@ -229,12 +229,14 @@ env_value: optional-exact-value
   `warn-review-assessment-bash`, `warn-review-assessment-file-edits`,
   `warn-await-in-loop`, `warn-hardcoded-secrets`, `warn-sensitive-files`,
   `warn-ccr-live-state`, `warn-detached-processes`, `warn-force-push`,
-  `block-copilot-mention`
+  `block-copilot-mention`, `block-review-wave-history-rewrite`
 - Built-in guards advise rather than deny. The message reaches the agent as context
   and the tool call proceeds — the agent is expected to read it and decide, which is why the
-  wording is guidance rather than a verdict. The one exception is `block-copilot-mention`:
-  an `@copilot` mention in a PR or issue comment summons the Copilot coding agent, which can
-  push commits, so that guard denies the command. `action: block` still works for anyone who
+  wording is guidance rather than a verdict. There are two exceptions. `block-copilot-mention`
+  denies the command, because an `@copilot` mention in a PR or issue comment summons the
+  Copilot coding agent, which can push commits. `block-review-wave-history-rewrite` denies an
+  amend or force push inside a review wave (`DEX_REVIEW_PASS_ACTIVE=1`), because the wave has
+  already pushed the commits it would replace. `action: block` still works for anyone who
   wants a hard stop; only then does the fail-closed behaviour below apply.
 - A `block` guard fails closed: one that times out, crashes, or cannot be loaded denies the
   tool call. With every guard on `warn`, those same failures skip the guard and are reported
@@ -492,8 +494,8 @@ heartbeat that never fails on wait time, sets the parallelism variables the
 project declared, runs at reduced priority (`nice`, plus `taskpolicy` on macOS
 or `ionice`/`systemd-run` on Linux when they work — probed, never assumed),
 logs to `$DX_SESSION_TMP/gates/`, and writes a receipt under
-`$DX_LOOP_DIR/<session>.gate-receipts/` keyed by the checkout and working
-fingerprints. `dx_gate_receipt_lookup` reads those receipts back. A completed
+`$DX_LOOP_DIR/<session>.gate-receipts/` keyed by the checkout, working and
+base fingerprints. `dx_gate_receipt_lookup` reads those receipts back. A completed
 result is never discarded, pass or fail.
 
 Every host fact is measured at runtime on both platforms with a conservative
@@ -684,8 +686,9 @@ measured.
   local copy in one hook is how they drifted before. `tests/parser-drift-test.sh` fails
   on any hook that redefines a name the shared module owns
 - Exit code 2 means "block" in guards — other non-zero exits are errors, not blocks. Only
-  `block-copilot-mention` uses it, because the command it stops hands the branch to another
-  agent; every other built-in guard advises, and the agent decides. A guard's job here is to
+  `block-copilot-mention` and `block-review-wave-history-rewrite` use it: one stops a command
+  that hands the branch to another agent, the other stops a review wave replacing commits it
+  already pushed. Every other built-in guard advises, and the agent decides. A guard's job here is to
   put the right thing in front of whoever is about to act, not to be the thing that stops them
 - Never store secrets in state files or `settings.json`
 - Session IDs are not cryptographically random — don't use them for authentication

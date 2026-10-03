@@ -269,6 +269,10 @@ GATE_CHECKOUT=$(git -C "$GATE_REPO" rev-parse --verify HEAD 2>/dev/null) \
   || GATE_CHECKOUT="unborn"
 GATE_WORKING_BEFORE=$(dx_review_working_fingerprint "$GATE_REPO" 2>/dev/null) \
   || GATE_WORKING_BEFORE=""
+# And the base it was measured against, so the receipt goes stale when the
+# base moves even though HEAD did not.
+GATE_BASE=$(dx_gate_base_fingerprint "$GATE_SESSION" "$GATE_REPO" 2>/dev/null) \
+  || GATE_BASE=""
 
 dx_info "${GATE_NAME}: running (queued ${GATE_QUEUE_SECONDS}s, ${GATE_TEST_JOBS} test job(s)); output -> ${GATE_LOG}"
 dx_event_emit_for_session "$GATE_SESSION" "gate.started" "info" \
@@ -323,7 +327,8 @@ fi
 [[ -n "$GATE_WORKING_BEFORE" ]] || GATE_WORKING_BEFORE="unavailable"
 
 GATE_RECEIPT=""
-if ! GATE_RECEIPT=$(dx_gate_receipt_write "$GATE_SESSION" "$GATE_NAME" \
+if ! GATE_RECEIPT=$(DX_GATE_RECEIPT_BASE="$GATE_BASE" \
+  dx_gate_receipt_write "$GATE_SESSION" "$GATE_NAME" \
   "$GATE_CHECKOUT" "$GATE_WORKING_BEFORE" "$GATE_STABLE" "$GATE_EXIT" \
   "$GATE_DURATION" "$GATE_QUEUE_SECONDS" "$GATE_WRAPPER" "$GATE_TEST_JOBS" \
   "$GATE_PARALLELISM_NAMES" "$GATE_LOG" "$@"); then

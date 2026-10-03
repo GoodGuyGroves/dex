@@ -2407,6 +2407,40 @@ def _segment_force_pushes(segment):
     return _push_arguments_force(segment[sub_index + 1:])
 
 
+def _any_command_segment(text, segment_matches, depth=0):
+    """True when any simple command in text satisfies segment_matches,
+    including commands inside heredocs, substitutions, backticks and
+    `bash -c` payloads. The command is read with hooks/shell_parse.py, so
+    words that only mention a command (`echo git push --force`) are data."""
+    if depth > 8 or not text.strip():
+        return False
+
+    shell_text, heredoc_substitutions, heredoc_bodies = strip_heredoc_bodies(text)
+    for fragment in tuple(heredoc_substitutions) + tuple(heredoc_bodies):
+        if _any_command_segment(fragment, segment_matches, depth + 1):
+            return True
+    tokens = shell_tokens(shell_text)
+    for fragment in extract_dollar_substitutions(shell_text):
+        if _any_command_segment(fragment, segment_matches, depth + 1):
+            return True
+    for fragment in extract_executable_backticks(shell_text):
+        if _any_command_segment(fragment, segment_matches, depth + 1):
+            return True
+    for script in shell_c_scripts(shell_text, collect_literal_variables(tokens)):
+        if isinstance(script, str) and _any_command_segment(script, segment_matches, depth + 1):
+            return True
+
+    segment = []
+    for token in tokens:
+        if token in SHELL_SEPARATORS:
+            if segment_matches(segment):
+                return True
+            segment = []
+            continue
+        segment.append(token)
+    return segment_matches(segment)
+
+
 def has_force_push(text, depth=0):
     """True when a command force-pushes with git.
 
@@ -2417,33 +2451,60 @@ def has_force_push(text, depth=0):
     `bash -c` payload, a heredoc or a substitution counts, while
     `echo git push --force` and `git commit -m "--force"` do not.
     """
-    if depth > 8 or not text.strip():
+    return _any_command_segment(text, _segment_force_pushes, depth)
+
+
+# `git commit` options that take the next word as their value, so a message
+# such as `-m --amend` is not the --amend flag.
+COMMIT_VALUE_OPTIONS = {
+    '-m', '-F', '-C', '-c', '-t', '--message', '--file', '--reuse-message',
+    '--reedit-message', '--template', '--author', '--date', '--cleanup',
+    '--trailer', '--fixup', '--squash', '--pathspec-from-file',
+}
+
+
+def _segment_amends(segment):
+    index = 0
+    while index < len(segment) and (is_shell_assignment(segment[index])
+                                    or token_basename(segment[index]) in FORCE_PUSH_PREFIX_WORDS):
+        index += 1
+    if index >= len(segment) or token_basename(segment[index]) != 'git':
         return False
-
-    shell_text, heredoc_substitutions, heredoc_bodies = strip_heredoc_bodies(text)
-    for fragment in tuple(heredoc_substitutions) + tuple(heredoc_bodies):
-        if has_force_push(fragment, depth + 1):
-            return True
-    tokens = shell_tokens(shell_text)
-    for fragment in extract_dollar_substitutions(shell_text):
-        if has_force_push(fragment, depth + 1):
-            return True
-    for fragment in extract_executable_backticks(shell_text):
-        if has_force_push(fragment, depth + 1):
-            return True
-    for script in shell_c_scripts(shell_text, collect_literal_variables(tokens)):
-        if isinstance(script, str) and has_force_push(script, depth + 1):
-            return True
-
-    segment = []
-    for token in tokens:
-        if token in SHELL_SEPARATORS:
-            if _segment_force_pushes(segment):
-                return True
-            segment = []
+    sub_index, _ = git_subcommand_info(segment, index, '')
+    if sub_index >= len(segment) or segment[sub_index] != 'commit':
+        return False
+    skip_value = False
+    for token in segment[sub_index + 1:]:
+        if skip_value:
+            skip_value = False
             continue
-        segment.append(token)
-    return _segment_force_pushes(segment)
+        if token == '--':
+            return False
+        # git takes any unambiguous prefix of a long option, so --amen is
+        # --amend; --am is the shortest no other commit option shares.
+        if len(token) >= 4 and '--amend'.startswith(token):
+            return True
+        if token in COMMIT_VALUE_OPTIONS:
+            skip_value = True
+        elif token.startswith('-') and not token.startswith('--') and len(token) > 2:
+            # A short-option cluster: the first option that takes a value uses
+            # the rest of the word (-mwait), or the next word when it comes
+            # last (-am). -u and -S take an optional value only when attached.
+            for position, letter in enumerate(token[1:], start=1):
+                if letter in 'mFCct':
+                    skip_value = position == len(token) - 1
+                    break
+                if letter in 'uS':
+                    break
+    return False
+
+
+def has_history_rewrite(text):
+    """True when a command rewrites commits a review wave may already have
+    pushed: `git commit --amend` or a force push. bin/branch-sync.sh makes its
+    own lease push and is a separate command, so it never matches here."""
+    return _any_command_segment(
+        text, lambda segment: _segment_force_pushes(segment) or _segment_amends(segment))
 
 
 # An @copilot (or @github-copilot) mention. A word character, dot or dash before
@@ -2851,6 +2912,8 @@ def guard_detector_matches(guard, text):
         return has_await_in_loop(text)
     if detector == 'force-push':
         return has_force_push(text)
+    if detector == 'history-rewrite':
+        return has_history_rewrite(text)
     if detector == 'copilot-mention-comment':
         return has_copilot_mention_comment(text)
     if detector == 'detached-process':

@@ -131,7 +131,11 @@ fingerprint (HEAD) and the working fingerprint, and it is written whether the
 gate passed or failed — a failure is as much a fact about that tree as a pass.
 A gate whose working tree moved while it ran is recorded as `stable: false` and
 never matched again, because it describes neither the tree before nor the tree
-now.
+now. The receipt also records the base the branch was measured against
+(`<base>@<sha>`, from `dx_gate_base_fingerprint`), and a lookup matches only
+the current base. A resume after the base moved therefore re-runs the gate,
+even when HEAD did not change, and a receipt written before Dex recorded bases
+is re-run rather than trusted.
 
 **Every session is told what else is on the machine.** Each provider launch
 exports `DX_HOST_CPUS`, `DX_HOST_MEM_GB`, `DX_HOST_LOAD1`,

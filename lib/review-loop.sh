@@ -812,7 +812,7 @@ __dx_review_wave_message_template() {
   local publication_mode="${8:-standalone}"
   local scope_source_detail scope_boundary publication_boundary
   if [[ "$publication_mode" == "lifecycle" ]]; then
-    publication_boundary="This is a lifecycle Phase 3 wave. Commit and push coherent accepted fixes as you work, without waiting for Phase 4 or final verification. Keep failed and pending checks explicit, satisfy the wave result contract, and do not switch branches or create or update a PR."
+    publication_boundary="This is a lifecycle Phase 3 wave. Commit and push coherent accepted fixes as you work, without waiting for Phase 4 or final verification. Land every fix, including a commit-message or trailer correction, as a new commit: never amend or otherwise rewrite a commit, because each one is already pushed, and leave base rewrites to the lifecycle's \`bash \"\$DEX_DIR/bin/branch-sync.sh\"\`. Keep failed and pending checks explicit, satisfy the wave result contract, and do not switch branches or create or update a PR."
   else
     publication_boundary="Commit, push, and PR actions remain available when useful, but publishing does not replace the review gate."
   fi

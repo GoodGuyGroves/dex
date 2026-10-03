@@ -35,8 +35,11 @@ Confirm every quality gate passed:
 Every required gate needs a passing result for *this* tree, and this is the
 phase that runs the complete suite. Before running it, ask
 `bash "$DEX_DIR/bin/gate-receipt.sh" full-gate` (0 reuse, 1 run it, 3 it failed here):
-a `full-gate` receipt Phase 2 wrote on this exact checkout and working tree is
-the evidence, so reuse it and say so; a receipt for any other gate is not.
+a `full-gate` receipt Phase 2 wrote on this exact checkout, working tree and
+base is the evidence, so reuse it and say so; a receipt for any other gate is
+not. A resume is no exception: never waive or pass this phase on a receipt or
+gate log that `gate-receipt.sh` does not accept for the current HEAD and base,
+such as one recorded before the base moved.
 Otherwise run `dx run-gate --name full-gate <project aggregate gate>` now, which
 records the receipt; one that failed on this tree is a gate to fix, not to
 re-run. When `.dex/dex.md` § Resources declares `full_gate: ci`, run the fast
@@ -96,7 +99,8 @@ ALL of these must be true before you stop:
   `rebased` (gates then ran on the rebased tree), or `not-owned` (reported);
   any other answer was handled under `$DEX_DIR/prompts/base-sync.md`
 - Every required gate has a passing result for this tree: a reused `dx run-gate`
-  receipt with a matching fingerprint, a fresh run, or CI under `full_gate: ci`
+  receipt with matching checkout, working-tree and base fingerprints, a fresh
+  run, or CI under `full_gate: ci`
 - No session-owned background process in flight, per `dx ps`
 - Commits are clean and atomic with conventional messages
 - No unwanted files in the diff

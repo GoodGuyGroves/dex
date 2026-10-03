@@ -119,6 +119,32 @@ dx_gate_receipt_write "$SESSION" "unstable" "$CHECKOUT" "$WORKING" 0 0 12 0 \
   nice 2 "" "$TMP_DIR/gate.log" bin/verify >/dev/null
 assert_eq "1" "$(probe unstable)" "an unstable receipt is not reuse evidence"
 
+# The base the branch is measured against is part of the evidence (#51). A
+# resume after the base moved must re-run the gate even though HEAD and the
+# working tree are the same.
+git -C "$REPO" checkout -qb feature
+git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse main)"
+write_receipt 0 based
+assert_eq "0" "$(probe based)" "a pass against the current base is reused"
+MOVED_BASE=$(git -C "$REPO" commit-tree -p main -m "base moved" \
+  "$(git -C "$REPO" rev-parse 'main^{tree}')")
+git -C "$REPO" update-ref refs/remotes/origin/main "$MOVED_BASE"
+assert_eq "1" "$(probe based)" "a pass from before the base moved is not reused"
+assert_contains "run the gate" "$OUT"
+write_receipt 0 based
+assert_eq "0" "$(probe based)" "a pass against the moved base is reused"
+# A receipt from before base fingerprints were recorded has no base, so it is
+# re-run rather than trusted.
+python3 - "$(dx_gate_receipt_dir "$SESSION")/based.json" <<'LEGACY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    receipt = json.load(handle)
+del receipt["base_fingerprint"]
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(receipt, handle)
+LEGACY
+assert_eq "1" "$(probe based)" "a receipt without a base is not reused"
+
 # Arguments it will not act on.
 assert_eq "2" "$(probe --session "not a session id" "$GATE")" "an invalid session is refused"
 assert_eq "2" "$(probe "not a gate")" "an invalid gate name is refused"

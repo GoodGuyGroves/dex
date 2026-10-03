@@ -127,7 +127,10 @@ reviewers must never receive it.
 
 End with the `Review Wave Result` block from `$DEX_DIR/prompts/review-wave.md`.
 For lifecycle-bound criteria, commit and push coherent accepted-fix checkpoints
-as the wave works instead of leaving them for Phase 4. Do not wait for final
+as the wave works instead of leaving them for Phase 4. Each fix, including a
+correction to an earlier commit's message or trailer, is a new commit: never
+amend or rewrite a pushed commit, and leave base rewrites to the lifecycle's
+`bash "$DEX_DIR/bin/branch-sync.sh"`. Do not wait for final
 verification, but keep failed and pending checks explicit and satisfy the
 wave's recheck contract before reporting its result. Do not switch branches or
 create or update a PR. A standalone review follows its caller's publication

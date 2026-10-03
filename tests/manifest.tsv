@@ -54,6 +54,7 @@ lifecycle-control-cli-test.sh	fast	all	600	hermetic
 lifecycle-control-hook-test.sh	fast	all	600	hermetic
 lifecycle-control-loop-test.sh	fast	all	600	hermetic
 lifecycle-control-parser-test.sh	fast	all	600	hermetic
+lifecycle-exit-complete-test.sh	fast	all	600	hermetic
 lifecycle-progress-test.sh	fast	all	600	hermetic
 lifecycle-relaunch-control-test.sh	fast	all	600	hermetic
 lifecycle-terminal-event-test.sh	service	all	900	hermetic
@@ -134,6 +135,7 @@ session-runtime-core-test.sh	fast	all	600	hermetic
 session-runtime-owner-test.sh	serial	all	600	hermetic
 session-runtime-portability-test.sh	fast	all	600	hermetic
 session-runtime-wiring-test.sh	fast	all	600	hermetic
+session-stale-run-test.sh	fast	all	600	hermetic
 session-startup-claim-test.sh	fast	all	900	hermetic
 session-telemetry-test.sh	fast	all	300	hermetic
 session-title-test.sh	fast	all	600	hermetic

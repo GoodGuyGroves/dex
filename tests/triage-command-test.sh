@@ -70,6 +70,15 @@ bash "$DEX_DIR/hooks/pre-compact.sh" > "$TEST_LOG.compact"
 if [[ "${TEST_INTERRUPT:-0}" == 1 ]]; then
   kill -TERM "$PPID"
 fi
+if [[ -n "${TEST_SIGNAL:-}" ]]; then
+  # A terminal signal reaches the whole foreground job: every Dex subshell
+  # between this provider and the shell that ran the command.
+  ancestor=$PPID
+  while [[ "$ancestor" -gt 1 && "$ancestor" != "$TEST_TOP_PID" ]]; do
+    kill -"$TEST_SIGNAL" "$ancestor"
+    ancestor=$(ps -o ppid= -p "$ancestor" | tr -d ' ')
+  done
+fi
 exit "${TEST_EXIT_CODE:-0}"
 SH
 chmod +x "$TMP_DIR/bin/claude"
@@ -186,6 +195,42 @@ DX_AGENT_OVERRIDE=claude zsh -fc '
   [[ $? -eq 143 ]] || exit 1
 '
 [[ -z "$(find "$DX_STATE_DIR" "$DX_LOOP_DIR" -name 'triage-*' -print)" ]] || assert_at "$LINENO"
+
+# Claude absorbs a Ctrl-C and the session goes on, so triage returns Claude's
+# own status, not 130. A TERM aimed at Dex still ends it as 143. Cleanup runs
+# either way, in both shells.
+for triage_shell in zsh bash; do
+  for case_spec in INT:0 INT:7 TERM:143; do
+    triage_signal=${case_spec%%:*} triage_expected=${case_spec#*:}
+    triage_exit=0
+    [[ "$triage_signal" == INT ]] && triage_exit=$triage_expected
+    if [[ "$triage_shell" == zsh ]]; then
+      triage_rc=0
+      TEST_SIGNAL="$triage_signal" TEST_EXIT_CODE="$triage_exit" \
+        DX_AGENT_OVERRIDE=claude zsh -fc '
+          export TEST_TOP_PID=$$
+          source "$DEX_DIR/dx.sh"
+          cd "$TEST_REPO"
+          dxtriage ENG-123
+        ' >/dev/null 2>&1 || triage_rc=$?
+    else
+      triage_rc=0
+      TEST_SIGNAL="$triage_signal" TEST_EXIT_CODE="$triage_exit" \
+        DX_AGENT_OVERRIDE=claude bash -c '
+          export TEST_TOP_PID=$$
+          source "$DEX_DIR/lib/common.sh"
+          cd "$TEST_REPO"
+          dx_triage_run ENG-123
+        ' >/dev/null 2>&1 || triage_rc=$?
+    fi
+    [[ "$triage_rc" -eq "$triage_expected" ]] \
+      || { printf '%s %s: got %s, want %s\n' "$triage_shell" "$triage_signal" \
+        "$triage_rc" "$triage_expected" >&2; assert_at "$LINENO"; }
+    [[ -z "$(find "$DX_STATE_DIR" "$DX_LOOP_DIR" -name 'triage-*' -print)" ]] \
+      || { printf '%s %s left triage state\n' "$triage_shell" "$triage_signal" >&2
+        assert_at "$LINENO"; }
+  done
+done
 
 # Critical setup failure must not launch an agent, even when a caller handles
 # the command through an if/OR list, which can disable shell errexit.

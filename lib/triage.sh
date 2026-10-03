@@ -89,8 +89,13 @@ dx_triage_run() (
   unset DEX_LOOP_PHASE DEX_LOOP_PROMISE DEX_PHASE_HANDOFF DEX_RUN_ID
   unset DEX_REVIEW_PASS_ACTIVE DEX_POLICY_SESSION_ID DX_CODEX_READ_ONLY
   context_file=$(dx_context_file "$session_id") || return 1
-  trap 'dx_triage_cleanup "$session_id"' EXIT
-  trap 'exit 130' INT
+  # The provider takes Ctrl-C for itself, so an INT keeps this subshell alive
+  # and triage returns the provider's own status. A TERM is meant for Dex and
+  # still ends it as 143. The EXIT trap is expanded now because an `exit` from
+  # the TERM trap unwinds the locals before bash runs it.
+  # shellcheck disable=SC2064
+  trap "dx_triage_cleanup $(printf '%q' "$session_id")" EXIT
+  trap ':' INT
   trap 'exit 143' TERM
   umask 077
   mkdir -p "$DX_STATE_DIR" || return 1

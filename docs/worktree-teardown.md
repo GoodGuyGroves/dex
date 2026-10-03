@@ -15,6 +15,16 @@ already hold somewhere else:
 When the removal happens is a setting too. See
 [`worktree_teardown`](#worktree_teardown).
 
+Removing a worktree also forgets its session: the phase, run ID, clock and
+runtime lease, so the next lifecycle there starts a run of its own. A runtime
+that is still live keeps its lease, and `dxrm` says so. A pending
+[ticket close](#ticket-close) is kept for the merge sweep. When a worktree
+disappears some other way (`git worktree remove`, say), the next
+`dx <ticket>` notices the earlier run. On a terminal it asks whether to
+resume it or start a new run, and a new run is the default. Without a
+terminal it starts a new run and says so. It never discards a run whose
+runtime is still live.
+
 ## Settings
 
 A fenced YAML block under `## Worktree Teardown` in `.dex/dex.md`, read from

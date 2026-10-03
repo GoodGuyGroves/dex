@@ -971,6 +971,45 @@ __dx_auto_init_run() {
   (cd "$1" && bash "$DEX_DIR/bin/init.sh" "${_dx_auto_init_args[@]}")
 }
 
+{ unalias __dx_stale_run_resolve; unfunction __dx_stale_run_resolve; } 2>/dev/null || true
+# __dx_stale_run_resolve <repo-root> <session-id> <worktree-dir> <worktree-name>
+# The session ID comes from the worktree name, so a run whose worktree was
+# removed would be picked up again by the next `dx <ticket>` without a word:
+# its phase, run ID and clock (#55). On a terminal, ask whether to resume it;
+# anywhere else, say so and start a new run. A new run discards the old state,
+# runtime lease included, and refuses when that runtime is still live. Runs
+# before the startup claim, because the discard takes the cleanup claim.
+__dx_stale_run_resolve() {
+  local repo_root="$1" session_id="$2" wt_dir="$3" wt_name="$4"
+  local phase="" answer=""
+  [[ ! -d "$wt_dir" ]] || return 0
+  [[ -e "$(dx_state_file "$session_id")" || -e "$(dx_run_id_file "$session_id")" ]] \
+    || return 0
+  phase=$(dx_lifecycle_phase_state "$session_id" 2>/dev/null) || phase=""
+  [[ -n "$phase" ]] || phase=$(head -n 1 "$(dx_state_file "$session_id")" 2>/dev/null) || phase=""
+  [[ "$phase" =~ ^[0-7]$ ]] || phase="?"
+  if [[ -t 0 && -t 1 && "${DEX_HEADLESS_RUN:-0}" != "1" ]]; then
+    printf 'An earlier run of %s stopped at Phase %s and its worktree was removed.\n' \
+      "$wt_name" "$phase"
+    printf 'Resume it at Phase %s, or start a new run? [r/N] ' "$phase"
+    read -r answer || answer=""
+    case "$answer" in
+      r|R|resume|RESUME)
+        dx_info "Resuming the earlier run of ${wt_name} at Phase ${phase} in a new worktree."
+        return 0
+        ;;
+    esac
+  else
+    dx_warn "An earlier run of ${wt_name} stopped at Phase ${phase} and its worktree was removed. Starting a new run; resuming it needs a terminal."
+  fi
+  if ! __dx_session_discard_state "$repo_root" "$session_id"; then
+    dx_error "The earlier run of ${wt_name} still has a live or unfinished runtime, so Dex left it in place."
+    dx_info "Stop it first (dx ps, dx control stop), or remove it with 'dx sessions forget', then run the command again."
+    return 1
+  fi
+  dx_info "Starting a new run of ${wt_name}."
+}
+
 { unalias __dx_setup_worktree; unfunction __dx_setup_worktree; } 2>/dev/null || true
 __dx_setup_worktree() {
   local raw_input="$1" setup_result=0
@@ -982,6 +1021,8 @@ __dx_setup_worktree() {
   _dx_default_branch=$(dx_default_branch "$_dx_repo_root")
   _dx_workspace_mode="worktree"
   _dx_session_id=$(__dx_session_id_for_workspace "$_dx_workspace_mode" "$_dx_wt_name")
+  __dx_stale_run_resolve "$_dx_repo_root" "$_dx_session_id" "$_dx_wt_dir" "$_dx_wt_name" \
+    || return 1
   __dx_startup_claim_acquire "$_dx_session_id" || return 1
   __dx_setup_worktree_claimed "$raw_input" || setup_result=$?
   if [[ "$setup_result" -ne 0 ]]; then
@@ -3562,8 +3603,16 @@ __dx_run_phases_inline() {
     return 1
   fi
 
-  if [[ $exit_code -eq 0 && "$final_step" -ge 7 ]] \
+  # The terminal proof is what records completion, and it is written before
+  # the provider exits. How the provider then ends (an /exit that the session
+  # reap cut short returns 143) does not undo it, so a valid proof completes
+  # the lifecycle and its teardown whatever the exit code.
+  if [[ "$final_step" -ge 7 ]] \
     && dx_lifecycle_terminal_commit_valid "$session_id"; then
+    if [[ $exit_code -ne 0 ]]; then
+      dx_run_log_append_for_session "$session_id" "info" "dx" \
+        "Provider exited with code ${exit_code} after the lifecycle completed"
+    fi
     dx_run_log_append_for_session "$session_id" "info" "dx" "Ticket lifecycle complete"
     dx_provider_cleanup_session_state "$session_id"
     rm -f "$(dx_active_file "$session_id")" "$(dx_owner_file "$session_id")" "$(dx_loop_config_file "$session_id")" "$(dx_handoff_mode_file "$session_id")" 2>/dev/null
@@ -5320,6 +5369,20 @@ dxreviewloop() {
   dx_review_loop_run "$@"
 }
 
+# __dx_dxrm_discard_session <repo_root> <session_id> — drop a removed
+# workspace's session state, runtime lease included, so the next run starts
+# fresh. A runtime that is still live or not terminal keeps its lease; the
+# rest of the state goes as before, and the warning names what was kept.
+{ unalias __dx_dxrm_discard_session; unfunction __dx_dxrm_discard_session; } 2>/dev/null || true
+__dx_dxrm_discard_session() {
+  local repo_root="$1" session_id="$2"
+  __dx_session_discard_state "$repo_root" "$session_id" 2>/dev/null && return 0
+  dx_cleanup_session "$session_id"
+  if [[ -e "$(dx_session_runtime_file "$session_id")" ]]; then
+    dx_warn "Kept $(dx_session_runtime_file "$session_id"): its runtime is still live or not finished. Run 'dx sessions forget' once it has stopped."
+  fi
+}
+
 # ─── dxrm — remove worktrees ──────────────────────────────────────────────
 
 { unalias dxrm; unfunction dxrm; } 2>/dev/null || true
@@ -5447,7 +5510,7 @@ dxrm() {
 
     # Clean up state files for THIS repo's worktrees only (not cross-repo globs)
     for sid in "${session_ids[@]}"; do
-      dx_cleanup_session "$sid"
+      __dx_dxrm_discard_session "$repo_root" "$sid"
     done
 
     if [[ $removal_failed -eq 1 ]]; then
@@ -5606,7 +5669,7 @@ dxrm() {
   fi
 
   # Clean up state files and last-session pointer
-  dx_cleanup_session "$session_id"
+  __dx_dxrm_discard_session "$repo_root" "$session_id"
   dx_cleanup_last_session "$wt_name"
 
   git worktree prune 2>/dev/null

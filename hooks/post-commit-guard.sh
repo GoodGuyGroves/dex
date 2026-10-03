@@ -142,7 +142,7 @@ if [[ -n "$COMMIT_MSG" ]] && ! grep -qE "$CONVENTIONAL_REGEX" <<< "${COMMIT_MSG}
     echo "Commit message does not follow conventional format." >&2
     echo "Expected: <type>[(<scope>)][!]: <description>" >&2
     echo "Got: $COMMIT_MSG" >&2
-    echo "Amend the commit with a properly formatted message." >&2
+    echo "Amend it with a properly formatted message only if it is not pushed and this is not a review wave; otherwise fix the format in your next commit." >&2
     GUARD_EXIT=2
   fi
 fi
