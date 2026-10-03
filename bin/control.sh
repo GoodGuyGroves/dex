@@ -228,7 +228,7 @@ waiver_comment_repo() {
 waiver_preflight() {
   dx_override_gate_valid "$CONTROL_GATE" \
     && dx_override_gate_supported "$CONTROL_GATE" \
-    && [[ "$CONTROL_GATE" != "review.max-waves" ]] \
+    && [[ "$CONTROL_GATE" != "review.max-waves" && "$CONTROL_GATE" != "pr.reviewers" ]] \
     && dx_override_phase_valid "$CURRENT_PHASE" \
     && dx_override_reason_valid "$CONTROL_REASON"
 }
