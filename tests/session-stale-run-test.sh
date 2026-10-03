@@ -230,4 +230,90 @@ assert_contains "Deleting orphan branch: b8-renamed-28" "$TMP_DIR/clean-renamed.
 assert_eq "" "$(state_of "$SID")" "dxclean on a renamed branch leaves no run ID or runtime"
 assert_eq "runtime-lock" "$(lock_of "$SID")" "dxclean on a renamed branch keeps the lock as dxrm does"
 
+# ── #86: end-of-run teardown releases the run's own runtime lease ─────────
+# A completed lifecycle tears its workspace down inside its own runtime
+# wrapper, while the supervisor still holds the lease. Teardown finishes that
+# lease first, so the session cleanup takes .runtime with it.
+export DX_SESSION_RUNTIME_HEARTBEAT_MILLISECONDS=100
+export DX_SESSION_RUNTIME_OWNER_START_TIMEOUT_MILLISECONDS=5000
+export DX_SESSION_RUNTIME_OWNER_FINISH_TIMEOUT_MILLISECONDS=5000
+export TEST_OTHER_DIR="$TMP_DIR/other-checkout"
+git init -q -b main "$TEST_OTHER_DIR"
+git -C "$TEST_OTHER_DIR" config user.email dex@example.test
+git -C "$TEST_OTHER_DIR" config user.name "Dex Test"
+git -C "$TEST_OTHER_DIR" commit -q --allow-empty -m init
+
+# teardown_in_run <name> <worktree|in-place> <own|other> <none|int|term|exit> <out>
+# Complete <name> inside a runtime wrapper and print the wrapper's status. The
+# wrapper owns <name>'s session (own) or an unrelated one (other). After the
+# teardown the callback continues as <after> says.
+teardown_in_run() {
+  local rc=0
+  TEST_WT_NAME="$1" TEST_MODE="$2" TEST_OWNER="$3" TEST_AFTER="$4" dx_zsh '
+    __dx_resolved_provider_agent() { print -r -- claude; }
+    sid=$(__dx_session_id_for_workspace "$TEST_MODE" "$TEST_WT_NAME")
+    wt_dir="$TEST_REPO"
+    [[ "$TEST_MODE" != worktree ]] || wt_dir="$TEST_REPO/.dex/worktrees/$TEST_WT_NAME"
+    dx_meta_write "$sid" "wt_name=$TEST_WT_NAME" "wt_dir=$wt_dir" "workspace_mode=$TEST_MODE"
+    dx_lifecycle_atomic_write "$(dx_state_file "$sid")" 7
+    run_sid="$sid" run_dir="$wt_dir"
+    [[ "$TEST_OWNER" != other ]] || { run_sid=other-86; run_dir="$TEST_OTHER_DIR"; }
+    __test_teardown() {
+      __dx_cleanup_completed_workspace "$TEST_WT_NAME" "$wt_dir" main "$TEST_MODE" "$sid" \
+        || return $?
+      case "$TEST_AFTER" in
+        int) kill -INT $$ ;;
+        term) kill -TERM $$ ;;
+        exit) exit 0 ;;
+      esac
+      __dx_runtime_set_terminal completed
+    }
+    __dx_run_with_runtime "$run_sid" "$run_dir" __test_teardown
+  ' > "$5" 2>&1 || rc=$?
+  printf '%s\n' "$rc"
+}
+
+# (a) A worktree lifecycle: no .runtime afterwards, the lock stays, no warning.
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-41" -b worktree-ticket-41 HEAD
+SID=$(dx_zsh '__dx_session_id_for_workspace worktree ticket-41')
+rc=$(teardown_in_run ticket-41 worktree own none "$TMP_DIR/own-worktree.out")
+[[ "$rc" == 0 ]] || { cat "$TMP_DIR/own-worktree.out" >&2; fail "worktree teardown in its own run exited $rc"; }
+[[ ! -d "$TEST_REPO/.dex/worktrees/ticket-41" ]] || fail "the completed worktree was kept"
+assert_eq "" "$(state_of "$SID")" "a finished worktree lifecycle leaves no .runtime"
+assert_eq "runtime-lock" "$(lock_of "$SID")" "the persistent runtime lock outlives the teardown"
+assert_not_contains "still live or not finished" "$TMP_DIR/own-worktree.out"
+assert_not_contains "could not close the runtime lease" "$TMP_DIR/own-worktree.out"
+
+# (b) An in-place lifecycle: the checkout goes back to main, no .runtime.
+git -C "$TEST_REPO" switch -q -c b9-inplace-42
+SID=$(dx_zsh '__dx_session_id_for_workspace in-place inplace-42')
+rc=$(teardown_in_run inplace-42 in-place own none "$TMP_DIR/own-inplace.out")
+[[ "$rc" == 0 ]] || { cat "$TMP_DIR/own-inplace.out" >&2; fail "in-place teardown in its own run exited $rc"; }
+assert_eq main "$(git -C "$TEST_REPO" branch --show-current)" "in-place teardown switched back to main"
+assert_eq "" "$(state_of "$SID")" "a finished in-place lifecycle leaves no .runtime"
+assert_not_contains "still live or not finished" "$TMP_DIR/own-inplace.out"
+
+# (c) A run tearing down a workspace whose runtime is live in another process
+# keeps that runtime, and says so.
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-43" -b worktree-ticket-43 HEAD
+SID=$(seed_run ticket-43 7 live)
+rc=$(teardown_in_run ticket-43 worktree other none "$TMP_DIR/other-live.out")
+[[ "$rc" == 0 ]] || { cat "$TMP_DIR/other-live.out" >&2; fail "teardown from another run exited $rc"; }
+assert_eq "runtime" "$(state_of "$SID")" "a runtime live elsewhere keeps its lease"
+assert_contains "is still live or not finished" "$TMP_DIR/other-live.out"
+
+# (e) Once teardown has released the lease, the wrapper's INT, TERM and EXIT
+# traps do nothing: no runtime comes back and no lease error is reported.
+n=44
+for after in int:130 term:143 exit:0; do
+  git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-$n" -b "worktree-ticket-$n" HEAD
+  SID=$(dx_zsh "__dx_session_id_for_workspace worktree ticket-$n")
+  rc=$(teardown_in_run "ticket-$n" worktree own "${after%%:*}" "$TMP_DIR/trap-$n.out")
+  assert_eq "${after#*:}" "$rc" "${after%%:*} after the release keeps its own exit status"
+  assert_eq "" "$(state_of "$SID")" "${after%%:*} after the release brings no .runtime back"
+  assert_not_contains "could not close the runtime lease" "$TMP_DIR/trap-$n.out"
+  assert_not_contains "still live or not finished" "$TMP_DIR/trap-$n.out"
+  n=$((n + 1))
+done
+
 printf 'session stale run tests passed\n'
