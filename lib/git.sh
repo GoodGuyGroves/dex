@@ -761,6 +761,100 @@ dx_branch_lease_push() {
   return 0
 }
 
+# Print the host of origin's configured URL. The raw config value is read on
+# purpose: `git remote get-url` expands insteadOf rewrites, which would hide a
+# GitHub URL behind the path it is mapped to.
+__dx_branch_origin_host() {
+  local repo_dir="$1" origin_url host
+  origin_url=$(git -C "$repo_dir" config --get remote.origin.url 2>/dev/null) || return 1
+  case "$origin_url" in
+    *://*)
+      host="${origin_url#*://}"
+      host="${host%%/*}"
+      host="${host##*@}"
+      host="${host%%:*}"
+      ;;
+    *@*:*)
+      host="${origin_url#*@}"
+      host="${host%%:*}"
+      ;;
+    *) return 1 ;;
+  esac
+  [[ -n "$host" ]] || return 1
+  printf '%s\n' "$host"
+}
+
+# True when gh can resolve origin as a GitHub repository: github.com, or a host
+# gh holds credentials for (checked offline). Anything else is not GitHub.
+__dx_branch_origin_is_github() {
+  local repo_dir="$1" host
+  host=$(__dx_branch_origin_host "$repo_dir") || return 1
+  host=$(printf '%s' "$host" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  [[ "$host" == "github.com" ]] && return 0
+  __dx_ticket_branch_run 10 __dx_ticket_branch_gh "$repo_dir" auth token \
+    --hostname "$host" >/dev/null 2>&1
+}
+
+# __dx_branch_sync_resolve_base <repo_dir> <branch> <session> <remote_branch_oid>
+# Pick the branch this lifecycle branch is built on, in this order:
+#   pr        the open PR's base, when the branch is on a GitHub origin
+#   recorded  session meta base_branch, for a stacked branch with no PR yet
+#   default   the repository's default branch
+# Sets DX_BRANCH_SYNC_BASE_REF (remote/branch) and DX_BRANCH_SYNC_BASE_SOURCE.
+# A gh error against a GitHub origin prints fetch-failed and returns 5 rather
+# than guessing: rebasing a stacked branch onto the default branch would
+# replay its parent's commits.
+__dx_branch_sync_resolve_base() {
+  local repo_dir="$1" branch_name="$2" session_id="$3" remote_branch_oid="$4"
+  local pr_base="" pr_rc=0 recorded_base="" default_branch base_ref
+  DX_BRANCH_SYNC_BASE_REF=""
+  DX_BRANCH_SYNC_BASE_SOURCE=""
+
+  if [[ -n "$remote_branch_oid" ]] && command -v gh >/dev/null 2>&1 \
+    && __dx_branch_origin_is_github "$repo_dir"; then
+    pr_base=$(__dx_ticket_branch_run 60 __dx_ticket_branch_gh "$repo_dir" pr list \
+      --state open --head "$branch_name" --limit 1 --json baseRefName \
+      --jq '.[0].baseRefName // ""' 2>/dev/null) || pr_rc=$?
+    if [[ "$pr_rc" -ne 0 ]]; then
+      if [[ "$pr_rc" -eq 124 ]]; then
+        printf 'fetch-failed\nreason=timed out reading the open PR'"'"'s base for %s\n' "$branch_name"
+      else
+        printf 'fetch-failed\nreason=could not read the open PR'"'"'s base for %s; check gh authentication\n' "$branch_name"
+      fi
+      return 5
+    fi
+    if [[ -n "$pr_base" ]]; then
+      if ! git check-ref-format --branch "$pr_base" >/dev/null 2>&1; then
+        printf 'fetch-failed\nreason=the open PR names an invalid base branch\n'
+        return 5
+      fi
+      DX_BRANCH_SYNC_BASE_REF="origin/${pr_base}"
+      DX_BRANCH_SYNC_BASE_SOURCE="pr"
+      return 0
+    fi
+  fi
+
+  [[ -n "$session_id" ]] && recorded_base=$(dx_meta_read "$session_id" base_branch 2>/dev/null || true)
+  if [[ -n "$recorded_base" ]]; then
+    if ! git check-ref-format --branch "$recorded_base" >/dev/null 2>&1; then
+      printf 'cannot-run\nreason=session meta base_branch is not a valid branch name\n'
+      return 2
+    fi
+    DX_BRANCH_SYNC_BASE_REF="origin/${recorded_base}"
+    DX_BRANCH_SYNC_BASE_SOURCE="recorded"
+    return 0
+  fi
+
+  default_branch=$(dx_default_branch "$repo_dir")
+  if ! base_ref=$(dx_default_branch_base_ref "$repo_dir" "$default_branch" no-fetch 2>/dev/null) \
+    || [[ "$base_ref" != */* ]]; then
+    printf 'fetch-failed\nreason=no remote base branch found for %s\n' "$default_branch"
+    return 5
+  fi
+  DX_BRANCH_SYNC_BASE_REF="$base_ref"
+  DX_BRANCH_SYNC_BASE_SOURCE="default"
+}
+
 # dx_branch_sync_with_base <repo_dir> [--before-ready]
 # Bring a Dex-owned lifecycle branch up to date with its base before final
 # verification (Phase 4) or before its PR is marked ready (--before-ready).
@@ -775,9 +869,9 @@ dx_branch_lease_push() {
 #   7  remote-diverged: the remote branch has commits this checkout lacks
 dx_branch_sync_with_base() {
   local repo_dir="${1:-}" before_ready=0 session_id="${DEX_SESSION_ID:-}"
-  local branch_name default_branch base_ref base_remote base_branch base_oid
+  local branch_name base_ref base_remote base_branch base_oid base_source
   local behind_count remote_line remote_rc=0 remote_branch_oid ready_rebases max_rebases
-  local push_rc=0 old_head
+  local push_rc=0 resolve_rc=0 old_head
   [[ -n "$repo_dir" ]] || { printf 'cannot-run\nreason=usage: dx_branch_sync_with_base <repo_dir> [--before-ready]\n'; return 2; }
   case "${2:-}" in
     "") ;;
@@ -805,35 +899,7 @@ dx_branch_sync_with_base() {
     return 2
   fi
 
-  default_branch=$(dx_default_branch "$repo_dir")
-  if ! base_ref=$(dx_default_branch_base_ref "$repo_dir" "$default_branch" no-fetch 2>/dev/null) \
-    || [[ "$base_ref" != */* ]]; then
-    printf 'fetch-failed\nreason=no remote base branch found for %s\n' "$default_branch"
-    return 5
-  fi
-  base_remote="${base_ref%%/*}"
-  base_branch="${base_ref#*/}"
-  if ! __dx_ticket_branch_run 60 git -C "$repo_dir" fetch --quiet "$base_remote" \
-    "+refs/heads/${base_branch}:refs/remotes/${base_ref}" >/dev/null 2>&1; then
-    printf 'fetch-failed\nbase=%s\nreason=git fetch %s %s failed\n' "$base_ref" "$base_remote" "$base_branch"
-    return 5
-  fi
-  base_oid=$(git -C "$repo_dir" rev-parse --verify --quiet "${base_ref}^{commit}") || {
-    printf 'fetch-failed\nreason=%s does not resolve after fetching\n' "$base_ref"
-    return 5
-  }
-
-  if git -C "$repo_dir" merge-base --is-ancestor "$base_oid" HEAD 2>/dev/null; then
-    printf 'current\nbase=%s\n' "$base_ref"
-    return 0
-  fi
-  behind_count=$(git -C "$repo_dir" rev-list --count "HEAD..${base_oid}")
-  if ! dx_lifecycle_branch_owned "$repo_dir" "$session_id"; then
-    printf 'not-owned\nbase=%s\nbehind=%s\nreason=Dex did not create %s, so it is not rewritten; verification runs on the current tree\n' \
-      "$base_ref" "$behind_count" "$branch_name"
-    return 4
-  fi
-
+  # A PR can only exist for a branch that is on origin, so read that first.
   remote_line=$(__dx_ticket_branch_run 60 git -C "$repo_dir" ls-remote --heads origin \
     "refs/heads/${branch_name}" 2>/dev/null) || remote_rc=$?
   if [[ "$remote_rc" -ne 0 ]]; then
@@ -841,6 +907,37 @@ dx_branch_sync_with_base() {
     return 5
   fi
   remote_branch_oid="${remote_line%%[[:space:]]*}"
+
+  __dx_branch_sync_resolve_base "$repo_dir" "$branch_name" "$session_id" \
+    "$remote_branch_oid" || resolve_rc=$?
+  [[ "$resolve_rc" -eq 0 ]] || return "$resolve_rc"
+  base_ref="$DX_BRANCH_SYNC_BASE_REF"
+  base_source="$DX_BRANCH_SYNC_BASE_SOURCE"
+  base_remote="${base_ref%%/*}"
+  base_branch="${base_ref#*/}"
+  if ! __dx_ticket_branch_run 60 git -C "$repo_dir" fetch --quiet "$base_remote" \
+    "+refs/heads/${base_branch}:refs/remotes/${base_ref}" >/dev/null 2>&1; then
+    printf 'fetch-failed\nbase=%s\nbase_source=%s\nreason=git fetch %s %s failed; the base may not exist on %s\n' \
+      "$base_ref" "$base_source" "$base_remote" "$base_branch" "$base_remote"
+    return 5
+  fi
+  base_oid=$(git -C "$repo_dir" rev-parse --verify --quiet "${base_ref}^{commit}") || {
+    printf 'fetch-failed\nbase=%s\nbase_source=%s\nreason=%s does not resolve after fetching\n' \
+      "$base_ref" "$base_source" "$base_ref"
+    return 5
+  }
+
+  if git -C "$repo_dir" merge-base --is-ancestor "$base_oid" HEAD 2>/dev/null; then
+    printf 'current\nbase=%s\nbase_source=%s\n' "$base_ref" "$base_source"
+    return 0
+  fi
+  behind_count=$(git -C "$repo_dir" rev-list --count "HEAD..${base_oid}")
+  if ! dx_lifecycle_branch_owned "$repo_dir" "$session_id"; then
+    printf 'not-owned\nbase=%s\nbase_source=%s\nbehind=%s\nreason=Dex did not create %s, so it is not rewritten; verification runs on the current tree\n' \
+      "$base_ref" "$base_source" "$behind_count" "$branch_name"
+    return 4
+  fi
+
   if [[ -n "$remote_branch_oid" ]] \
     && ! git -C "$repo_dir" merge-base --is-ancestor "$remote_branch_oid" HEAD 2>/dev/null; then
     printf 'remote-diverged\nreason=origin/%s has commits this checkout does not; integrate them before syncing\n' "$branch_name"
@@ -852,8 +949,8 @@ dx_branch_sync_with_base() {
     [[ "$ready_rebases" =~ ^[0-9]+$ ]] || ready_rebases=0
     max_rebases=$(dx_base_sync_max_rebases "$session_id") || max_rebases=2
     if [[ "$ready_rebases" -ge "$max_rebases" ]]; then
-      printf 'limit\nbase=%s\nbehind=%s\nrebases=%s\nreason=the base moved again after %s pre-ready rebases; raise pr.rebase-attempts to continue\n' \
-        "$base_ref" "$behind_count" "$ready_rebases" "$ready_rebases"
+      printf 'limit\nbase=%s\nbase_source=%s\nbehind=%s\nrebases=%s\nreason=the base moved again after %s pre-ready rebases; raise pr.rebase-attempts to continue\n' \
+        "$base_ref" "$base_source" "$behind_count" "$ready_rebases" "$ready_rebases"
       return 6
     fi
     dx_meta_write "$session_id" "base_sync_ready_rebases=$((ready_rebases + 1))" || return 2
@@ -870,8 +967,8 @@ dx_branch_sync_with_base() {
   fi
   dx_branch_lease_push "$repo_dir" "$session_id" || push_rc=$?
   [[ "$push_rc" -eq 0 ]] || return "$push_rc"
-  printf 'rebased\nbase=%s\nbehind=%s\nfrom=%s\nto=%s\nnext=re-run the full gate on this tree\n' \
-    "$base_ref" "$behind_count" "$old_head" "$(git -C "$repo_dir" rev-parse HEAD)"
+  printf 'rebased\nbase=%s\nbase_source=%s\nbehind=%s\nfrom=%s\nto=%s\nnext=re-run the full gate on this tree\n' \
+    "$base_ref" "$base_source" "$behind_count" "$old_head" "$(git -C "$repo_dir" rev-parse HEAD)"
   return 1
 }
 

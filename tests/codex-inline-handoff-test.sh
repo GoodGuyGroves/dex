@@ -586,7 +586,9 @@ grep -q "override review.pass-timeout 2400 --source agent" "$ctx_file" || assert
 grep -q "waive review.clean-passes --source agent" "$ctx_file" || assert_at $LINENO
 grep -q "Never describe an overridden" "$ctx_file" || assert_at $LINENO
 grep -Fq "\`CLEAN\` waves" "$ctx_file" || assert_at $LINENO
-grep -Fq "\`dx control ...\` or \`bin/control.sh ...\`" "$ctx_file" || assert_at $LINENO
+grep -Fq "standalone \`bash \"\$DEX_DIR/bin/control.sh\" ...\` command is the" "$ctx_file" || assert_at $LINENO
+grep -Fq "only when no \`dx\` executable is on PATH" "$ctx_file" || assert_at $LINENO
+grep -Fq "\`--source human --quote \"<their words>\"\`" "$ctx_file" || assert_at $LINENO
 grep -Fq "\`DEX_POLICY_SESSION_ID\`" "$ctx_file" || assert_at $LINENO
 grep -Fq "\`--session" "$ctx_file" || assert_at $LINENO
 

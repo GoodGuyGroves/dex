@@ -899,7 +899,13 @@ __dx_sessions_mutate() {
   selected_record=$(__dx_sessions_select_current "$selector_value" 0) || return $?
   session_id=$(__dx_sessions_mutation_target "$selected_record" "$mutation_action") \
     || return $?
-  if ! bash "$DEX_DIR/bin/control.sh" --session "$session_id" "$mutation_action"; then
+  # Inside a Dex launch control.sh records an agent, and an agent control
+  # needs a reason.
+  local control_args=()
+  dx_lifecycle_in_dex_launch \
+    && control_args=(--reason "dx sessions ${mutation_action} ${selector_value}")
+  if ! bash "$DEX_DIR/bin/control.sh" --session "$session_id" "$mutation_action" \
+    ${control_args[@]+"${control_args[@]}"}; then
     dx_error "Could not publish the ${mutation_action} request for session '$session_id'."
     return 1
   fi

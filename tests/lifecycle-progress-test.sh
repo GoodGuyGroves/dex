@@ -182,6 +182,56 @@ grep -Fq "◇ marked done by human" "$DISPLAY_OUTPUT"
 grep -Fq "? outcome not recorded" "$DISPLAY_OUTPUT"
 grep -Fq "Controls: /dxpause  /dxskip  /dxresume  /dxrecover" "$DISPLAY_OUTPUT"
 
+# The legend names whoever the ledger recorded. An agent's waiver never reads
+# as a human's, and a review-policy waiver is credited to the override.
+ACTOR_SESSION="lifecycle-progress-actors"
+dx_phase_outcome_record "$ACTOR_SESSION" 0 completed phase-loop actor-0 gates-passed
+dx_phase_outcome_record "$ACTOR_SESSION" 1 waived agent actor-1 agent-complete
+dx_phase_outcome_record "$ACTOR_SESSION" 2 skipped user-prompt actor-2 human-jump
+dx_phase_outcome_record "$ACTOR_SESSION" 3 waived phase-loop actor-3 review-clean-passes-overridden
+dx_phase_outcome_record "$ACTOR_SESSION" 4 waived agent actor-4 agent-complete
+ACTOR_OUTPUT="$TMP_DIR/actors.out"
+ACTOR_SESSION="$ACTOR_SESSION" TEST_REPO="$TEST_REPO" zsh -fc '
+  source "$DEX_DIR/dx.sh"
+  __dx_show_header ticket-progress 7 "$TEST_REPO" main "$ACTOR_SESSION" worktree
+' > "$ACTOR_OUTPUT" 2>&1
+assert_contains "  ◇ marked done by agent  ↷ skipped by human  ◇ marked done under a policy override  ? outcome not recorded" \
+  "$ACTOR_OUTPUT"
+assert_not_contains "marked done by human" "$ACTOR_OUTPUT"
+
+# A waiver known only from an older run journal has no recorded actor.
+JOURNAL_ACTOR_SESSION="lifecycle-progress-journal-actor"
+JOURNAL_ACTOR_RUN_ID="run_20261003T000000Z_1_0ac70000"
+dx_run_write_for_session "$JOURNAL_ACTOR_SESSION" "$JOURNAL_ACTOR_RUN_ID"
+mkdir -p "$(dx_run_dir "$JOURNAL_ACTOR_RUN_ID")"
+printf '%s\n' '{"id":"evt_000001_0ac70000","run_id":"run_20261003T000000Z_1_0ac70000","sequence":1,"type":"phase.waived","phase":"0","severity":"warn"}' \
+  > "$(dx_run_events_file "$JOURNAL_ACTOR_RUN_ID")"
+JOURNAL_ACTOR_OUTPUT="$TMP_DIR/journal-actor.out"
+JOURNAL_ACTOR_SESSION="$JOURNAL_ACTOR_SESSION" TEST_REPO="$TEST_REPO" zsh -fc '
+  source "$DEX_DIR/dx.sh"
+  __dx_show_header ticket-progress 1 "$TEST_REPO" main "$JOURNAL_ACTOR_SESSION" worktree
+' > "$JOURNAL_ACTOR_OUTPUT" 2>&1
+assert_contains "◇ marked done (actor not recorded)" "$JOURNAL_ACTOR_OUTPUT"
+
+# A phase finished through a control gets a phase-log row, as a gated phase
+# does: waived for a done, skipped for each phase a jump passes over. A
+# replayed receipt adds no second row.
+CONTROL_LOG_SESSION="lifecycle-progress-control-log"
+printf '2:%s\n' "$(( $(date +%s) - 60 ))" > "$(dx_times_file "$CONTROL_LOG_SESSION")"
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 2 3 complete 1-1-1 agent
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 2 3 complete 1-1-1 agent
+dx_record_control_phase_outcomes "$CONTROL_LOG_SESSION" 3 6 jump 2-2-2 user-prompt
+CONTROL_LOG_FILE="$(dx_log_file "$CONTROL_LOG_SESSION")"
+assert_eq "2 Implement waived 0|3 Review skipped 0|4 Verify skipped 0|5 PR skipped 0" \
+  "$(awk -F '\t' 'NR > 1 { printf "%s%s %s %s %s", sep, $2, $3, $8, $9; sep = "|" }' \
+    "$CONTROL_LOG_FILE")" "control outcomes appear in the phase log"
+CONTROL_LOG_DURATION=$(awk -F '\t' 'NR == 2 { print $6 }' "$CONTROL_LOG_FILE")
+[[ "$CONTROL_LOG_DURATION" -ge 60 ]] || assert_at $LINENO
+assert_eq "agent-complete" \
+  "$(awk -F '\t' '$2 == 2 { print $6 }' "$(dx_phase_outcomes_file "$CONTROL_LOG_SESSION")")" \
+  "agent completion reason"
+[[ "$(dx_phase_outcome_latest "$CONTROL_LOG_SESSION" 3)" == "skipped" ]] || assert_at $LINENO
+
 # Historical sessions can outlive their compact phase TSV. Reconcile only a
 # validated phase.completed run event; unrelated journal or PR evidence never
 # earns a completion checkmark.

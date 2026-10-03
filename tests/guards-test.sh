@@ -1439,22 +1439,56 @@ fi
 # The exact control command is the escape hatch for a broad project block.
 # Only that command is exempt: separators, substitutions, and shell wrappers
 # keep the full payload under normal guard enforcement.
+#
+# A bare `dx` is exempt only while no `dx` executable is on PATH, because the
+# real `dx` is a shell function. The host PATH may carry one (a dev shell's
+# wrapper does), so these cases run with a PATH that holds only the tools the
+# handler needs.
+BREAK_GLASS_BIN="$GUARD_HOME_TMP/break-glass-bin"
+mkdir -p "$BREAK_GLASS_BIN"
+ln -s "$(command -v python3)" "$BREAK_GLASS_BIN/python3"
+ln -s "$(command -v git)" "$BREAK_GLASS_BIN/git"
+BREAK_GLASS_PATH="$BREAK_GLASS_BIN:/usr/bin:/bin"
 for break_glass_command in \
   'bash "$DEX_DIR/bin/control.sh" override review.pass-timeout 2400 --source agent --reason frobnicate' \
   'bash "$DEX_DIR/bin/control.sh" recover review --source agent --reason frobnicate' \
-  'dx control waive review.clean-passes --source human --reason frobnicate'; do
+  'dx control waive review.clean-passes --source agent --reason frobnicate'; do
   set +e
   GUARD_OUT="$(cd "$OVERRIDE_GUARD_REPO" && mkbashpayload "$break_glass_command" \
-    | env DEX_GUARD_EVENT=bash DEX_DIR="$ROOT" python3 "$HANDLER" 2>&1)"
+    | env PATH="$BREAK_GLASS_PATH" DEX_GUARD_EVENT=bash DEX_DIR="$ROOT" \
+      "$BREAK_GLASS_BIN/python3" "$HANDLER" 2>&1)"
   GUARD_RC=$?
   set -e
   if [[ "$GUARD_RC" -eq 0 && "$GUARD_OUT" == *'break-glass-control'* ]]; then
     pass=$((pass + 1))
   else
-    printf 'FAIL (exact break-glass control; rc=%s)\n%s\n' "$GUARD_RC" "$GUARD_OUT" >&2
+    printf 'FAIL (exact break-glass control `%s`; rc=%s)\n%s\n' \
+      "$break_glass_command" "$GUARD_RC" "$GUARD_OUT" >&2
     fail=$((fail + 1))
   fi
 done
+
+# A `dx` executable found on PATH is some other program, so a bare `dx control`
+# does not inherit the exemption while one is there.
+FAKE_DX_BIN="$GUARD_HOME_TMP/fake-dx-bin"
+mkdir -p "$FAKE_DX_BIN"
+printf '#!/bin/sh\nexit 0\n' > "$FAKE_DX_BIN/dx"
+chmod +x "$FAKE_DX_BIN/dx"
+set +e
+GUARD_OUT="$(cd "$OVERRIDE_GUARD_REPO" \
+  && mkbashpayload 'dx control waive review.clean-passes --source agent --reason frobnicate' \
+  | env PATH="$FAKE_DX_BIN:$BREAK_GLASS_PATH" DEX_GUARD_EVENT=bash DEX_DIR="$ROOT" \
+    "$BREAK_GLASS_BIN/python3" "$HANDLER" 2>&1)"
+GUARD_RC=$?
+set -e
+if [[ "$GUARD_RC" -eq 2 && "$GUARD_OUT" == *'test-session-block'* \
+  && "$GUARD_OUT" != *'break-glass-control'* ]]; then
+  pass=$((pass + 1))
+else
+  printf 'FAIL (a dx executable on PATH must not be exempt; rc=%s)\n%s\n' \
+    "$GUARD_RC" "$GUARD_OUT" >&2
+  fail=$((fail + 1))
+fi
 
 for non_exact_control in \
   'bash "$DEX_DIR/bin/control.sh" override review.pass-timeout 2400 --reason safe; frobnicate' \

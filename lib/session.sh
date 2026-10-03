@@ -2868,6 +2868,21 @@ dx_phase_outcome_record() {
   fi
 }
 
+# dx_phase_outcome_latest_source <session_id> <phase>
+# Print who recorded the phase's latest ledger outcome (agent, user-prompt,
+# terminal, phase-loop, ...), or nothing when the ledger has no row for it.
+dx_phase_outcome_latest_source() {
+  local session_id="$1" phase="$2" outcome_file
+  dx_session_id_valid "$session_id" || return 0
+  [[ "$phase" =~ ^[0-6]$ ]] || return 0
+  outcome_file=$(dx_phase_outcomes_file "$session_id")
+  [[ -f "$outcome_file" && ! -L "$outcome_file" ]] || return 0
+  awk -F '\t' -v phase="$phase" '
+    NR > 1 && $2 == phase { source = $4 }
+    END { if (source != "") print source }
+  ' "$outcome_file" 2>/dev/null || true
+}
+
 # dx_phase_outcome_latest <session_id> <phase>
 # Prefer the explicit ledger, then recognize successful legacy TSV phase rows.
 dx_phase_outcome_latest() {

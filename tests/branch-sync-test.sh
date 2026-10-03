@@ -37,6 +37,32 @@ source "$ROOT/lib/common.sh"
 HOME_MARKER="$TMP_DIR/home-marker"
 touch "$HOME_MARKER"
 
+# A fake gh answers the PR-base lookup from FAKE_GH_PR_BASE (empty: no PR,
+# "error": the call fails) and knows only the host in FAKE_GH_HOST. Every call
+# is logged so a case can assert gh was or was not asked.
+FAKE_GH_BIN="$TMP_DIR/fake-gh-bin"
+FAKE_GH_LOG="$TMP_DIR/fake-gh.log"
+mkdir -p "$FAKE_GH_BIN"
+cat > "$FAKE_GH_BIN/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+case "$1 $2" in
+  "auth token")
+    [[ "$4" == "${FAKE_GH_HOST:-}" ]] && { printf 'token\n'; exit 0; }
+    exit 1
+    ;;
+  "pr list")
+    [[ "${FAKE_GH_PR_BASE:-}" == "error" ]] && { printf 'HTTP 502\n' >&2; exit 1; }
+    printf '%s\n' "${FAKE_GH_PR_BASE:-}"
+    exit 0
+    ;;
+esac
+exit 1
+SH
+chmod +x "$FAKE_GH_BIN/gh"
+export PATH="$FAKE_GH_BIN:$PATH" FAKE_GH_LOG
+unset FAKE_GH_PR_BASE FAKE_GH_HOST
+
 FIXTURE_COUNT=0
 
 # new_fixture <branch> — a bare origin with main, a clone on <branch> with
@@ -371,6 +397,125 @@ grep -qF 'branch-sync.sh" sync --before-ready' "$ROOT/hooks/phase-loop.sh" || as
 FORCED=$(grep -rnE -- 'push (-f|--force)|--force-with-lease' "$ROOT/prompts" "$ROOT/skills" \
   | grep -v 'prompts/base-sync.md' || true)
 [[ -z "$FORCED" ]] || assert_at $LINENO
+
+# --- The base follows the open PR, then a recorded base, then the default. ---
+# github_origin <url> — present origin as <url> while git still reaches the
+# local bare remote through an insteadOf rewrite.
+github_origin() {
+  git -C "$FIXTURE_REPO" config --local "url.${FIXTURE_REMOTE}.insteadOf" "$1"
+  git -C "$FIXTURE_REPO" remote set-url origin "$1"
+}
+
+# advance_branch <branch> — someone lands work on another branch on origin.
+advance_branch() {
+  local branch_name="$1" file="parent-$RANDOM.txt"
+  git -C "$FIXTURE_SEED" fetch -q origin
+  if git -C "$FIXTURE_SEED" show-ref --verify --quiet "refs/remotes/origin/$branch_name"; then
+    git -C "$FIXTURE_SEED" switch -q -C "$branch_name" "origin/$branch_name"
+  else
+    git -C "$FIXTURE_SEED" switch -q -C "$branch_name" origin/main
+  fi
+  printf 'parent\n' > "$FIXTURE_SEED/$file"
+  git -C "$FIXTURE_SEED" add "$file"
+  git -C "$FIXTURE_SEED" commit -q -m "test: advance $branch_name ($file)"
+  git -C "$FIXTURE_SEED" push -q origin "$branch_name"
+}
+
+# A branch stacked on a parent, before any PR, follows the recorded base.
+new_fixture 21-stacked-child
+advance_branch 20-parent
+git -C "$FIXTURE_REPO" fetch -q origin
+git -C "$FIXTURE_REPO" rebase -q origin/20-parent
+publish_branch
+owned_session stacked-recorded
+dx_meta_write "$SESSION" "base_branch=20-parent"
+advance_branch 20-parent
+advance_main main-only.txt
+run_sync
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == rebased* ]] || assert_at $LINENO
+[[ "$SYNC_OUT" == *"base=origin/20-parent"* && "$SYNC_OUT" == *"base_source=recorded"* ]] \
+  || assert_at $LINENO
+git -C "$FIXTURE_REPO" merge-base --is-ancestor origin/20-parent HEAD || assert_at $LINENO
+[[ ! -e "$FIXTURE_REPO/main-only.txt" ]] || assert_at $LINENO
+# The local bare origin is not GitHub, so gh is never asked.
+[[ ! -s "$FAKE_GH_LOG" ]] || assert_at $LINENO
+
+# An open PR's base wins over the recorded one, and main's work stays out.
+new_fixture 31-pr-child
+advance_branch 30-pr-parent
+git -C "$FIXTURE_REPO" fetch -q origin
+git -C "$FIXTURE_REPO" rebase -q origin/30-pr-parent
+publish_branch
+owned_session stacked-pr
+dx_meta_write "$SESSION" "base_branch=main"
+github_origin "https://github.com/example/repo.git"
+advance_branch 30-pr-parent
+advance_main main-only.txt
+: > "$FAKE_GH_LOG"
+FAKE_GH_PR_BASE=30-pr-parent run_sync
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == rebased* ]] || assert_at $LINENO
+[[ "$SYNC_OUT" == *"base=origin/30-pr-parent"* && "$SYNC_OUT" == *"base_source=pr"* ]] \
+  || assert_at $LINENO
+[[ ! -e "$FIXTURE_REPO/main-only.txt" ]] || assert_at $LINENO
+grep -q -- '--head 31-pr-child' "$FAKE_GH_LOG" || assert_at $LINENO
+
+# No open PR falls back to the recorded base.
+FAKE_GH_PR_BASE="" run_sync
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == *"base_source=recorded"* ]] || assert_at $LINENO
+[[ -e "$FIXTURE_REPO/main-only.txt" ]] || assert_at $LINENO
+
+# A gh failure against a GitHub origin fails closed and rewrites nothing.
+HEAD_BEFORE=$(git -C "$FIXTURE_REPO" rev-parse HEAD)
+advance_main
+FAKE_GH_PR_BASE=error run_sync
+[[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == fetch-failed* ]] || assert_at $LINENO
+[[ "$SYNC_OUT" == *"could not read the open PR's base"* ]] || assert_at $LINENO
+[[ "$(git -C "$FIXTURE_REPO" rev-parse HEAD)" == "$HEAD_BEFORE" ]] || assert_at $LINENO
+
+# A PR base or recorded base missing on origin fails closed too.
+FAKE_GH_PR_BASE=no-such-base run_sync
+[[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == *"base_source=pr"* ]] || assert_at $LINENO
+FAKE_GH_PR_BASE='bad..name' run_sync
+[[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == *"invalid base branch"* ]] || assert_at $LINENO
+dx_meta_write "$SESSION" "base_branch=gone-parent"
+FAKE_GH_PR_BASE="" run_sync
+[[ "$SYNC_RC" -eq 5 && "$SYNC_OUT" == *"base=origin/gone-parent"* ]] || assert_at $LINENO
+[[ "$(git -C "$FIXTURE_REPO" rev-parse HEAD)" == "$HEAD_BEFORE" ]] || assert_at $LINENO
+dx_meta_write "$SESSION" "base_branch=bad..name"
+FAKE_GH_PR_BASE="" run_sync
+[[ "$SYNC_RC" -eq 2 && "$SYNC_OUT" == cannot-run* ]] || assert_at $LINENO
+
+# A host gh holds credentials for counts as GitHub; any other host does not.
+new_fixture 41-enterprise
+publish_branch
+owned_session enterprise
+github_origin "git@ghe.example.test:team/repo.git"
+advance_main
+: > "$FAKE_GH_LOG"
+FAKE_GH_PR_BASE=error run_sync
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == *"base_source=default"* ]] || assert_at $LINENO
+grep -q -- '--hostname ghe.example.test' "$FAKE_GH_LOG" || assert_at $LINENO
+grep -q '^pr list' "$FAKE_GH_LOG" && assert_at $LINENO
+advance_main
+FAKE_GH_HOST=ghe.example.test FAKE_GH_PR_BASE=error run_sync
+[[ "$SYNC_RC" -eq 5 ]] || assert_at $LINENO
+FAKE_GH_HOST=ghe.example.test FAKE_GH_PR_BASE="" run_sync
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == *"base_source=default"* ]] || assert_at $LINENO
+
+# Without gh at all, the PR lookup is skipped and the default base is used.
+advance_main
+NO_GH_PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$FAKE_GH_BIN" | paste -sd: -)
+NO_GH_BIN="$TMP_DIR/no-gh-bin"
+mkdir -p "$NO_GH_BIN"
+for tool_name in git python3 awk sed grep tr cat date mktemp mv rm mkdir chmod head tail \
+  cut sort wc dirname basename env sleep ps kill uname id; do
+  tool_path=$(PATH="$NO_GH_PATH" command -v "$tool_name" 2>/dev/null || true)
+  [[ -n "$tool_path" ]] && ln -sf "$tool_path" "$NO_GH_BIN/$tool_name"
+done
+SYNC_RC=0
+SYNC_OUT=$(cd "$FIXTURE_REPO" && PATH="$NO_GH_BIN" dx_branch_sync_with_base "$FIXTURE_REPO" 2>&1) \
+  || SYNC_RC=$?
+[[ "$SYNC_RC" -eq 1 && "$SYNC_OUT" == *"base_source=default"* ]] || assert_at $LINENO
 
 # --- State stays in Dex's state directory; nothing lands in HOME. ---
 [[ -z "$(find "$HOME" -newer "$HOME_MARKER" -type f -print)" ]] || assert_at $LINENO

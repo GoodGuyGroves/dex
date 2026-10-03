@@ -240,9 +240,9 @@ dx accounts                # Show CCR subscription accounts and quota
 dx control pause           # Pause, stop, or hand control back to a running lifecycle
 dx control recover review --reason "review owner stopped after interrupt"
 dx control override review.pass-timeout 2400 --source agent --reason "checks need longer"
-dx control override review.clean-passes 2 --source human --reason "two clean waves approved"
+dx control override review.clean-passes 2 --source human --quote "two clean waves are enough" --reason "approved in chat"
 dx control override review.max-waves 12 --source agent --reason "another clean sequence is warranted"
-dx control waive review.clean-passes --source human --reason "approved in this session"
+dx control waive review.clean-passes --source agent --reason "provider failures block independent waves"
 dx sessions list           # List trusted lifecycle sessions in this repository
 dx sessions resume ticket:999  # Resume a specific lifecycle and provider conversation
 dx sessions doctor         # Diagnose inconsistent, dead, or unsafe session state
