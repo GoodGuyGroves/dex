@@ -89,6 +89,13 @@ def _structured_entries(rel, data):
     return entries
 
 
+# A conversation transcript and the per-checkout directory holding it:
+# Claude Code's own session files, written by every session that starts.
+# They are the CLI's state, not Dex's, so the snapshot leaves them out; the
+# auto-memory beside them stays visible (FORBIDDEN).
+CLI_SESSION_FILE = re.compile(r"^\.claude/projects/[^/]+(/[^/]+\.jsonl)?$")
+
+
 def snapshot(root, excludes):
     root = os.path.abspath(root)
     excludes = [os.path.abspath(path) for path in excludes]
@@ -105,6 +112,8 @@ def snapshot(root, excludes):
             if full in excludes:
                 continue
             rel = os.path.relpath(full, root)
+            if CLI_SESSION_FILE.match(rel):
+                continue
             try:
                 info = os.lstat(full)
                 mode = format(stat.S_IMODE(info.st_mode), "o")
@@ -617,6 +626,13 @@ def selftest(dex_dir):
                       (".claude/projects/-repo/memory", False),
                       (".claude/projects/-repo/memory.md", False)):
         assert any(pattern.match(path) for _, pattern in FORBIDDEN) == hit, path
+    # The CLI's session files are left out; auto-memory beside them is not.
+    for path, hit in ((".claude/projects/-repo", True), (".claude/projects/-repo/abc.jsonl", True),
+                      (".claude/projects/-repo/memory", False),
+                      (".claude/projects/-repo/memory/MEMORY.md", False),
+                      (".claude/projects/-repo/memory.md", False),
+                      (".claude/projects", False), (".claude/plans/a.jsonl", False)):
+        assert bool(CLI_SESSION_FILE.match(path)) == hit, path
     return 0
 
 
