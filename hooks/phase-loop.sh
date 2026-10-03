@@ -46,6 +46,27 @@ print(json.dumps(payload, separators=(",", ":")))
 ' "$reason" "$system_message"
 }
 
+# A phase handoff under Claude Code. A decision:block is shown in the pane as
+# a hook error, while hookSpecificOutput.additionalContext reaches the model
+# as a system reminder and continues the conversation (Claude Code hooks
+# reference, "Stop decision control"; probed on 2.1.280). The systemMessage
+# keeps the one visible progress line.
+dx_stop_json_continue() {
+  local context="$1" system_message="${2:-}"
+  python3 -c '
+import json
+import sys
+
+payload = {
+    "hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": sys.argv[1]},
+    "suppressOutput": True,
+}
+if sys.argv[2]:
+    payload["systemMessage"] = sys.argv[2]
+print(json.dumps(payload, separators=(",", ":")))
+' "$context" "$system_message"
+}
+
 # dx_hold_release_pending <release-file> <wave-epoch>
 # True when `dx review release` asked, during this wave, for the Phase 3 hold to
 # wake the session. A request from before the wave started is stale: it is
@@ -2083,9 +2104,19 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
     # The project's own recall for the phase it is handing to, labelled
     # unverified. Empty when .dex/dex.md declares no phase_handoff provider.
     HANDOFF_RECALL=$(dx_context_provider_block phase_handoff "$NEXT_PHASE" "$SESSION_ID")
+    # Claude Code takes the handoff as additionalContext, which it shows to the
+    # model as a system reminder; its docs advise factual wording there. Codex
+    # and an unknown agent keep the structured block.
+    HANDOFF_QUIET=0
+    [[ "${DX_PROVIDER_AGENT:-}" == "claude" ]] && HANDOFF_QUIET=1
     HANDOFF_REASON=$(
-      printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
-      printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
+      if [[ "$HANDOFF_QUIET" -eq 1 ]]; then
+        printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} is complete, and Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE")) is now active in this same agent session."
+        printf '%s\n\n' "The lifecycle continues here without asking the user whether to proceed. The Phase ${NEXT_PHASE} instructions follow."
+      else
+        printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
+        printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
+      fi
       # An inline handoff does not relaunch the provider, so the snapshot it was
       # started with is as old as the session. This line is the refresh.
       printf '%s\n\n' "$(dx_host_handoff_line)"
@@ -2093,8 +2124,12 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       [[ -z "$HANDOFF_RECALL" ]] || printf '\n%s\n' "$HANDOFF_RECALL"
       printf '\n%s\n' "When Phase ${NEXT_PHASE} is genuinely complete, stop so the Stop hook can audit it."
     )
-    dx_stop_json_block "$HANDOFF_REASON" \
-      "Dex · Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} · $(dx_phase_name "$NEXT_PHASE")"
+    HANDOFF_MESSAGE="Dex · Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} · $(dx_phase_name "$NEXT_PHASE")"
+    if [[ "$HANDOFF_QUIET" -eq 1 ]]; then
+      dx_stop_json_continue "$HANDOFF_REASON" "$HANDOFF_MESSAGE"
+    else
+      dx_stop_json_block "$HANDOFF_REASON" "$HANDOFF_MESSAGE"
+    fi
     exit 0
   fi
 

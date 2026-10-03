@@ -60,6 +60,17 @@ Claude reviews its own work critically (audit loop)
 Claude continues with the next phase in the same session
 ```
 
+Under Claude Code (`DX_PROVIDER_AGENT=claude`), the hook passes the handoff to
+the next phase as `hookSpecificOutput.additionalContext` and exits 0. Claude
+Code gives it to the model as a system reminder and the conversation
+continues, so the pane shows the one `Dex · Phase N complete → Phase M` line
+instead of a "Stop hook error". This follows the Claude Code hooks reference
+("Stop decision control") and was confirmed with a probe on Claude Code
+2.1.280. The phase transition is committed before that output, as it is for
+the block. Under Codex, or when the launch names no agent, the handoff stays a
+structured `decision: "block"`. Audit prompts, completion receipts and genuine
+failures still block in every case.
+
 ## Phase Audit Prompts
 
 Each phase has its own audit prompt in `prompts/phase-audits/`:

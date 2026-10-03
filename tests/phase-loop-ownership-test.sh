@@ -29,7 +29,7 @@ unset DEX_LOOP_ACTIVE DEX_REVIEW_PASS_ACTIVE DEX_PHASE_HANDOFF DEX_LOOP_PHASE \
   DEX_LOOP_PROMISE DEX_LOOP_PROMPT DEX_LOOP_MIN_AUDITS DEX_LOOP_MAX_ITERATIONS \
   DEX_LOOP_STALL_TIMEOUT DEX_LOOP_STALL_ESCALATE DEX_COMPLETE_WAIT_MINUTES \
   DEX_REVIEW_PASS_TIMEOUT \
-  DEX_REVIEW_PASS_RECHECK_SECONDS DEX_SESSION_ID
+  DEX_REVIEW_PASS_RECHECK_SECONDS DEX_SESSION_ID DX_PROVIDER_AGENT
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dex-phase-loop-test.XXXXXX")"
 cleanup() {
@@ -997,6 +997,51 @@ assert_out_contains "Phase 3 handoff records accepted fixes" "Commit and push ac
 assert_out_lacks "Phase 3 handoff does not defer review-fix history" "Do not commit, push, or create a PR in Phase 3"
 assert_file_eq "Phase 2 selection advances to Phase 3" "$DX_STATE_DIR/$SID.phase" "3"
 rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+
+# Under Claude Code the same handoff is additionalContext with exit 0, which
+# continues the conversation without the pane reporting a Stop hook error.
+# Codex, and a launch that names no agent (above), keep the structured block.
+for HANDOFF_AGENT in claude codex; do
+  SID="repo-test-7-handoff-${HANDOFF_AGENT}"
+  touch "$DX_LOOP_DIR/$SID.active" "$DX_LOOP_DIR/$SID.phase-2.ready"
+  printf '%s\n' "inline" > "$DX_LOOP_DIR/$SID.handoff-mode"
+  printf '%s\n' "2" > "$DX_STATE_DIR/$SID.phase"
+  configure_lifecycle_completion "$SID" 2 "$ROOT/prompts/phase-audits/2-implement.md"
+  write_review_criteria "$SID"
+  dx_review_approve_criteria "$SID" initial "$(dx_review_criteria_hash "$(dx_review_criteria_file "$SID")")" >/dev/null
+  dx_review_write_selection "$SID" normal lifecycle-agent bounded-production-change "$REVIEW_REPO"
+  write_lifecycle_completion "$SID" 2
+  set +e
+  OUT="$(cd "$REVIEW_REPO" && printf '{"session_id":"claude-phase-2-handoff"}' | env DEX_SESSION_ID="$SID" DEX_LOOP_ACTIVE=1 DEX_LOOP_PHASE=2 DEX_PHASE_HANDOFF=inline DX_PROVIDER_AGENT="$HANDOFF_AGENT" bash "$HOOK" 2>&1)"
+  RC=$?
+  set -e
+  assert_rc "${HANDOFF_AGENT} Phase 2 handoff exits 0" 0
+  if [[ "$HANDOFF_AGENT" == claude ]]; then
+    python3 -c 'import json,sys
+p = json.loads(sys.argv[1])
+assert "decision" not in p and "reason" not in p, p
+out = p["hookSpecificOutput"]
+assert out["hookEventName"] == "Stop", p
+ctx = out["additionalContext"]
+assert "Phase 2 is complete, and Phase 3 (Review) is now active in this same agent session." in ctx, ctx
+assert "Commit and push accepted review fixes" in ctx, ctx
+assert "When Phase 3 is genuinely complete" in ctx, ctx
+assert p["systemMessage"] == "Dex · Phase 2 complete → Phase 3 · Review", p
+assert p["suppressOutput"] is True, p
+' "$OUT" || fail "Claude Phase 2 handoff was not quiet additionalContext"
+  else
+    python3 -c 'import json,sys
+p = json.loads(sys.argv[1])
+assert p["decision"] == "block", p
+assert "Phase Handoff: Phase 2 complete" in p["reason"], p
+assert "hookSpecificOutput" not in p, p
+assert p["systemMessage"] == "Dex · Phase 2 complete → Phase 3 · Review", p
+' "$OUT" || fail "Codex Phase 2 handoff did not keep the structured block"
+  fi
+  assert_file_eq "${HANDOFF_AGENT} handoff advances to Phase 3" "$DX_STATE_DIR/$SID.phase" "3"
+  rm -f "$DX_LOOP_DIR/$SID".* "$DX_STATE_DIR/$SID".*
+done
+SID="repo-test-7-main"
 
 # --- case 8: a legacy Phase 3 marker is rejected before review gates run ---
 SID="repo-test-8-main"
