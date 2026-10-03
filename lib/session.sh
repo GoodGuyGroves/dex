@@ -3085,7 +3085,7 @@ dx_cleanup_session() {
     if [[ -z "$(dx_meta_read "$sid" ticket_close_pending)" ]] || ! __dx_meta_keep_ticket_close "$sid"; then
       rm -f "$(dx_meta_file "$sid")" 2>/dev/null || true
     fi
-    rm -f "$(dx_state_file "$sid")" "$(dx_times_file "$sid")" "$(dx_context_file "$sid")" "$(dx_log_file "$sid")" "$(dx_phase_outcomes_file "$sid")" "$(dx_branch_file "$sid")" "$(dx_agent_session_handle_file "$sid" claude)" "$(dx_agent_session_handle_file "$sid" codex)" "${DX_STATE_DIR}/${sid}.interventions" "${DX_STATE_DIR}/${sid}.human-complete" "${DX_STATE_DIR}/${sid}.terminal-commit" "${DX_STATE_DIR}/${sid}.overrides" 2>/dev/null || true
+    rm -f "$(dx_state_file "$sid")" "$(dx_times_file "$sid")" "$(dx_context_file "$sid")" "$(dx_log_file "$sid")" "$(dx_phase_outcomes_file "$sid")" "$(dx_branch_file "$sid")" "$(dx_agent_session_handle_file "$sid" claude)" "$(dx_agent_session_handle_file "$sid" codex)" "${DX_STATE_DIR}/${sid}.interventions" "${DX_STATE_DIR}/${sid}.human-complete" "${DX_STATE_DIR}/${sid}.terminal-commit" "${DX_STATE_DIR}/${sid}.overrides" "${DX_STATE_DIR}/${sid}.run-id" 2>/dev/null || true
     rm -f "${DX_STATE_DIR}/${sid}.override-lock/owner" 2>/dev/null || true
     rmdir "${DX_STATE_DIR}/${sid}.override-lock" 2>/dev/null || true
   fi
