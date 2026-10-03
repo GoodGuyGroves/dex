@@ -62,6 +62,7 @@ RTK hook wiring.
 | Variable | Purpose |
 |----------|---------|
 | `DX_RTK_ENABLED=0` | Skip RTK install, checks, and hooks. |
+| `DEX_OFFLINE=1` | Skip only the RTK download; an installed RTK keeps working. See [Offline mode](reference.md#offline-mode). |
 | `DX_RTK_BIN=/path/to/rtk` | Force Dex to use a specific RTK binary. |
 | `DX_RTK_INSTALL_DIR=/path` | Override Dex's RTK install directory. |
 | `DX_RTK_VERSION=vX.Y.Z` | Pin the RTK release downloaded from GitHub. |

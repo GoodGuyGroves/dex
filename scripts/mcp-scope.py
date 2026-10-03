@@ -89,6 +89,22 @@ def _contract():
     return module
 
 
+def _registry_layer(registry):
+    """Dex's registry servers. Under DX_MCP_LOCAL_ONLY=1 (set by the shell from
+    dx_offline) the remote ones are left out, by the same rule launch-mcp uses."""
+    servers = _servers(_read(registry), "mcpServers") if registry else {}
+    if servers and os.environ.get("DX_MCP_LOCAL_ONLY") == "1":
+        here = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location(
+            "dex_settings_json", os.path.join(here, "settings-json.py"))
+        if spec is None or spec.loader is None:
+            raise ScopeError("scripts/settings-json.py is missing")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        servers = {name: entry for name, entry in servers.items() if not module.remote_server(entry)}
+    return servers
+
+
 # ── The project's declarations ──────────────────────────────────────────────
 
 def _printable(text):
@@ -254,7 +270,7 @@ def layers(cwd, root=None, registry=None, home=None, config_dir=None):
     if here is None:
         here = _object(projects.get(root)) or {}
     available = {}
-    for layer in (_servers(_read(registry), "mcpServers") if registry else {},
+    for layer in (_registry_layer(registry),
                   _servers(user, "mcpServers"), _servers(project, "mcpServers"),
                   _servers(here, "mcpServers")):
         available.update(layer)

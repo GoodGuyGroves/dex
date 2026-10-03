@@ -36,6 +36,10 @@
 # skills, plugins, MCP servers, settings and DEX_/DX_/CLAUDE_ environment
 # values. Intended differences live in parity-allow.tsv.
 #
+# Offline: with DEX_OFFLINE=1, init, sync, the tools bootstrap, status and a
+# lifecycle phase must also leave no curl, npm or npx call in the stub log and
+# clone no marketplace.
+#
 # Scope: this detects accidental global writes by Dex. It is not a sandbox
 # against deliberately evasive code: hard-link tricks beyond the nlink check,
 # setuid or executable-bit payloads, and daemons that hide their argv and cwd
@@ -268,6 +272,8 @@ record() {
     || fail "step $1 left a hook in ~/.claude/settings.json that is neither the user's nor Dex's (above)"
 }
 
+# Extra NAME=value pairs for every step, after the fixed ones so they win.
+STEP_ENV=()
 GRACE_SECONDS=10   # for a step's own processes to finish
 SETTLE_SECONDS=5   # before a sandbox's final snapshot
 # test-timeout.py's status when --grace ran out with processes still running.
@@ -294,6 +300,7 @@ step() {
       XDG_DATA_HOME="$SB_HOME/.local/share" XDG_STATE_HOME="$SB_HOME/.local/state" \
       ${TOOLCHAIN_ENV[@]+"${TOOLCHAIN_ENV[@]}"} ${dex_env[@]+"${dex_env[@]}"} "${MARKETPLACE_ENV[@]}" \
       DEXCODE_SYNC=0 DEXCODE_CONTEXT_SYNC=0 PYTHONDONTWRITEBYTECODE=1 \
+      ${STEP_ENV[@]+"${STEP_ENV[@]}"} \
       GW_STEP="$label" GW_STUB_DIR="$SB_STUB" GW_FIXTURES="$RTK_FIXTURES" GW_DEX_DIR="$ROOT" \
       GW_REAL_NODE="$REAL_NODE" GW_FIRE_HOOKS="${GW_PLAIN:-0}" \
       python3 "$TIMEOUT" --grace "$GRACE_SECONDS" 300 "$@" < "$input"
@@ -446,6 +453,46 @@ plain_step plain-fresh
 finish_sandbox
 plain_hooks_ok "$SB_STUB/hooks.jsonl" plain-fresh
 cat "$SB_OBSERVED" >> "$ALL_OBSERVED"
+
+# DEX_OFFLINE=1: init, sync, the tools bootstrap, status and a lifecycle phase
+# make no network call from Dex's own tooling and no global write. Sync is on
+# and a DexCode token is present, so only the switch can stop it, and the
+# marketplaces point at a dead remote, so a clone that slipped through would
+# fail rather than quietly succeed against the local fixtures.
+new_sandbox "$TMP_DIR/offline"
+STEP_ENV=(DEX_OFFLINE=1 DEXCODE_SYNC=1 DEXCODE_CONTEXT_SYNC=1
+  DEXCODE_TOKEN=dxc_offline_harness_0123456789abcdef
+  DX_CLAUDE_OFFICIAL_MARKETPLACE_URL=https://127.0.0.1:1/offline-guard.git
+  DX_OPENAI_CODEX_MARKETPLACE_URL=https://127.0.0.1:1/offline-guard-codex.git)
+dx_step offline-init "$DEFAULTS" 0 'dx init'
+dx_step offline-sync "$NO_INPUT" 0 'dx sync'
+dx_step offline-tools "$NO_INPUT" 0 'dx tools bootstrap'
+dx_step offline-status "$NO_INPUT" 0 'dx status'
+dx_step offline-phase "$NO_INPUT" 1 'dxcomplete'
+STEP_ENV=()
+finish_sandbox
+cat "$SB_OBSERVED" >> "$ALL_OBSERVED"
+python3 -c '
+import json, sys
+bad = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    call = json.loads(line)
+    if not call["step"].startswith("offline-"):
+        continue
+    if call["tool"] == "curl" or (call["tool"] in ("npm", "npx") and call["argv"] not in (["--version"], ["-v"])):
+        bad.append(call)
+for call in bad:
+    print("%s: %s %s" % (call["step"], call["tool"], " ".join(call["argv"])), file=sys.stderr)
+sys.exit(1 if bad else 0)
+' "$SB_STUB/calls.jsonl" || fail "an offline step reached for the network (above)"
+[[ ! -e "$SB_DEX_HOME/tools/plugins/marketplaces" ]] || fail "an offline bootstrap cloned a plugin marketplace"
+grep -q '"playwright"' "$SB_DEX_HOME/tools/mcp-registry.json" \
+  || fail "the offline bootstrap skipped the local browser MCP registration"
+! grep -q openaiDeveloperDocs "$SB_DEX_HOME/tools/mcp-registry.json" \
+  || fail "the offline bootstrap registered the remote docs MCP"
+assert_contains "not fetched (DEX_OFFLINE=1)" "$SB_STUB/offline-tools.out"
+grep -Eq '^  Network:[[:space:]]+offline' "$SB_STUB/offline-status.out" \
+  || fail "dx status did not report the offline posture"
 
 run_scenario installed 1
 # The installed run's other steps repeat the isolated run's entry points; its

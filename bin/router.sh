@@ -50,4 +50,15 @@ for router_arg in "$@"; do
   case "$router_arg" in -h|--help|help) usage; exit 0 ;; esac
 done
 [[ $# -gt 0 ]] || { usage; exit 0; }
+# The router CLI takes its action from the first argument that is not an
+# option or an option's value, so `dx router --json setup` and
+# `dx router --scope x install` are network actions too. Every non-option
+# argument is checked rather than mirroring the CLI's value options here.
+if [[ "$1" == router ]]; then
+  for router_arg in "${@:2}"; do
+    case "$router_arg" in
+      setup|install|update) dx_offline_refuse "dx router $router_arg" || exit 1 ;;
+    esac
+  done
+fi
 dx_router_command "$@"

@@ -12,6 +12,7 @@ dx_factory_sync_status_file() { printf '%s/status.json\n' "$(dx_factory_sync_dir
 __dx_factory_sync_last_log_file() { printf '%s/last-log\n' "$(dx_factory_sync_dir "$1")"; }
 
 dx_factory_sync_requested() {
+  dx_offline && return 1
   local value="${DEX_FACTORY_SYNC:-}"
   case "$value" in
     1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn])

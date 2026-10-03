@@ -519,6 +519,22 @@ def registry_servers(path):
     return servers
 
 
+def remote_server(entry):
+    """A server reached over the network rather than started locally."""
+    return isinstance(entry, dict) and (
+        "url" in entry or entry.get("type") in ("http", "sse", "streamable-http"))
+
+
+def launch_registry_servers(path):
+    """The registry servers a launch may load. The shell sets DX_MCP_LOCAL_ONLY=1
+    from dx_offline (lib/common.sh) to leave out the remote ones; it is
+    internal to Dex, not a user setting."""
+    servers = registry_servers(path)
+    if os.environ.get("DX_MCP_LOCAL_ONLY") == "1":
+        servers = {name: entry for name, entry in servers.items() if not remote_server(entry)}
+    return servers
+
+
 def quiet_load(path):
     """A user file Dex only reads: unreadable or invalid counts as empty."""
     try:
@@ -618,7 +634,7 @@ def command_launch_mcp(registry, root):
                   | name_list(state, "projects", project, "disabledMcpjsonServers"))
     for layer in ("settings.json", "settings.local.json"):
         taken |= name_list(quiet_load(os.path.join(root, ".claude", layer)), "disabledMcpjsonServers")
-    servers = {name: entry for name, entry in registry_servers(registry).items() if name not in taken}
+    servers = {name: entry for name, entry in launch_registry_servers(registry).items() if name not in taken}
     if servers:
         emit({"mcpServers": servers}, compact=True)
 
@@ -689,7 +705,7 @@ def command_codex_mcp_overrides(registry, codex_config):
     def strings(value):
         return isinstance(value, dict) and all(isinstance(item, str) for item in value.values())
 
-    for name, entry in registry_servers(registry).items():
+    for name, entry in launch_registry_servers(registry).items():
         if name in taken or not re.match(r"^[A-Za-z0-9_-]+$", name) or not isinstance(entry, dict):
             continue
         if isinstance(entry.get("command"), str):

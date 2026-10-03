@@ -3864,6 +3864,7 @@ __dx_run_spec_cli() {
     source_label=$(dx_run_spec_redact_source "$spec_url")
     input_spec="$tmp_dir/remote-spec.json"
     local fetch_token
+    dx_offline_refuse "dx run --spec-url" || return 1
     fetch_token=$(dx_run_spec_token "$run_token" 2>/dev/null || true)
     if ! error_text=$(dx_run_spec_fetch "$spec_url" "$input_spec" "$fetch_token" 2>&1); then
       dx_error "$error_text"
@@ -4230,6 +4231,10 @@ __dx_choose_prompt_mode() {
 { unalias dx; unfunction dx; } 2>/dev/null || true
 dx() {
   dx_resolve_state_paths  # pick up a DEX_HOME exported since dx.sh was sourced
+  # A DEX_OFFLINE set but not exported in this shell must still reach the
+  # bin/ scripts and hooks dx starts. zsh's `local -x NAME` alone would hide
+  # the value, so it is copied.
+  [[ -z "${DEX_OFFLINE:-}" ]] || local -x DEX_OFFLINE="$DEX_OFFLINE"
   if [[ $# -eq 0 ]]; then
     echo "Usage: dx <NUMBER>        (e.g. dx 999, dx ENG-999)"
     echo "       dx \"<description>\" (e.g. dx \"fix login bug\")"

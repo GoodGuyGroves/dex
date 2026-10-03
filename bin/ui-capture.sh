@@ -286,6 +286,7 @@ if [[ -n "$install_scope" && "$mode" != "install" ]]; then
 fi
 
 if [[ "$mode" == "install" ]]; then
+  dx_offline_refuse "dx ui-capture install" || exit 1
   dx_install_ui_capture_tooling ${install_scope:+"$install_scope"}
   exit $?
 fi
@@ -383,7 +384,19 @@ PY
     ;;
 esac
 
-if ! dx_install_ui_capture_playwright; then
+# Narration's voice model downloads on first use; offline keeps the captions.
+if dx_offline && [[ "$narration" -eq 1 ]]; then
+  narration=0
+  dx_skip "Local narration off (DEX_OFFLINE=1); the video keeps its captions"
+fi
+
+tooling_ready=1
+if dx_offline && ! dx_ui_capture_tooling_ready; then
+  dx_offline_refuse "Installing UI capture tooling" || tooling_ready=0
+elif ! dx_install_ui_capture_playwright; then
+  tooling_ready=0
+fi
+if [[ "$tooling_ready" -eq 0 ]]; then
   dx_error "UI capture tooling is not ready"
   if [[ "$mode" == "capture" || "$mode" == "revise" ]]; then
     record_capture_failure "$session_id" "UI capture tooling setup" "$storyboard" \

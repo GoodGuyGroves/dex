@@ -16,6 +16,15 @@ function caches(env = process.env) {
   env.PLAYWRIGHT_BROWSERS_PATH ||= path.join(tools, 'ms-playwright');
   env.npm_config_cache ||= path.join(tools, 'npm-cache');
 }
+// DEX_OFFLINE uses lib/common.sh dx_offline's values; no shell sits between
+// the agent CLI and this script, so it reads them itself (tests/offline-test.sh
+// checks the two agree). npm's offline mode resolves @latest from the npx cache
+// and makes no registry request.
+function offline(env = process.env) {
+  if (!/^(1|true|yes|on)$/i.test(env.DEX_OFFLINE || '')) return false;
+  env.npm_config_offline = 'true';
+  return true;
+}
 function playwright(env = process.env) {
   const directory = path.join(dexPath('DX_TOOL_DIR', env), 'ui-capture/node_modules/playwright');
   try { return require(directory); }
@@ -53,7 +62,7 @@ function command(name, args = [], env = process.env, session = '') {
   if (process.platform === 'linux' && !env.DISPLAY && !env.WAYLAND_DISPLAY) options.push('--headless');
   return ['npx', '-y', packages[name], ...options, ...args];
 }
-function run(argv) {
+function run(argv, offlineMode = false) {
   const grouped = process.platform !== 'win32';
   const child = spawn(argv[0], argv.slice(1), { stdio: 'inherit', detached: grouped });
   const listeners = new Map(['SIGINT', 'SIGTERM', 'SIGHUP'].map(signal => [signal, () => {
@@ -65,6 +74,7 @@ function run(argv) {
   child.on('error', () => { console.error('Could not start browser MCP. Check Node.js and npx.'); process.exitCode = 1; });
   child.on('close', code => {
     for (const [signal, listener] of listeners) process.removeListener(signal, listener);
+    if (code && offlineMode) console.error('Browser MCP failed with DEX_OFFLINE set; if npm says ENOTCACHED, start it once online or unset DEX_OFFLINE.');
     process.exitCode = code ?? 1;
   });
   return child;
@@ -73,8 +83,8 @@ if (require.main === module) {
   try {
     const [name, ...args] = process.argv.slice(2);
     caches();
-    run(command(name, args, process.env, profile(name, args)));
+    run(command(name, args, process.env, profile(name, args)), offline());
   }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }
-module.exports = { caches, playwright, profile, command, run, packages };
+module.exports = { caches, offline, playwright, profile, command, run, packages };

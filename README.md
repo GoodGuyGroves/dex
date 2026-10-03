@@ -344,6 +344,11 @@ Bash rewrite hook. With `dx tools bootstrap --codex-home`, Codex also gets
 global instructions to prefix shell commands with RTK when compact output is
 enough. Set `DX_RTK_ENABLED=0` to skip this bootstrap.
 
+Set `DEX_OFFLINE=1` to turn off every optional network call Dex makes:
+DexCode and Factory sync, tool downloads and remote MCP servers. Lifecycle
+`git` and `gh` traffic is unaffected. See
+[docs/reference.md](docs/reference.md#offline-mode).
+
 The MCP servers and plugins the bootstrap adds are per launch too. The browser
 MCPs and the OpenAI docs MCP go into Dex's MCP registry, and the official
 plugin marketplaces are cloned at a pinned commit, both under

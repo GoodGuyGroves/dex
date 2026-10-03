@@ -247,6 +247,13 @@ dx_install_rtk_binary() {
     fi
   fi
 
+  # Only the fetch is offline-gated: dx_rtk_enabled also decides whether an
+  # installed RTK runs, and that keeps working.
+  if dx_offline; then
+    dx_skip "RTK download skipped (DEX_OFFLINE=1)"
+    return 0
+  fi
+
   command -v curl >/dev/null 2>&1 || {
     dx_warn "curl is required to install RTK"
     return 1

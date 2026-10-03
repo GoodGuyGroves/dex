@@ -223,6 +223,32 @@ dx_pause() {
   sleep "$seconds"
 }
 
+# DEX_OFFLINE=1 turns off every optional network call Dex's own tooling makes:
+# DexCode and Factory sync, tool downloads, marketplace fetches and remote MCP
+# servers in Dex's registry. Lifecycle git/gh traffic is not affected. Each
+# path asks this predicate rather than reading the variable, so it is read live
+# (a shell that sourced dx.sh before the export still sees it) and never copied
+# into another variable that could outlive it. Defined above the module loads
+# so the DX_COMMON_MODULES fast path has it too.
+dx_offline() {
+  case "${DEX_OFFLINE:-}" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# dx_offline_refuse <what> — fail a command whose whole job is network access.
+dx_offline_refuse() {
+  dx_offline || return 0
+  local offline_message="$1 needs the network; unset DEX_OFFLINE to allow it"
+  if command -v dx_error >/dev/null 2>&1; then
+    dx_error "$offline_message"
+  else
+    printf '[error] %s\n' "$offline_message" >&2
+  fi
+  return 1
+}
+
 # Source sibling libraries — guard each call so partial installs get a clear error.
 __dx_require_lib() {
   local lib="$DEX_DIR/lib/$1"

@@ -477,9 +477,10 @@ dx_run_sync_artifact() {
   local sync_state existing_id uploaded_sha current_sha uploaded_fingerprint current_fingerprint local_artifact_id remainder remote_id filename metadata_b64 metadata_json
 
   command -v dx_dexcode_upload_artifact >/dev/null 2>&1 || return 0
-  if command -v dx_dexcode_value_disabled >/dev/null 2>&1; then
-    dx_dexcode_value_disabled "${DEXCODE_SYNC:-1}" && return 0
+  if command -v dx_dexcode_sync_disabled >/dev/null 2>&1; then
+    dx_dexcode_sync_disabled && return 0
   else
+    dx_offline && return 0
     [[ "${DEXCODE_SYNC:-1}" != "0" ]] || return 0
   fi
 

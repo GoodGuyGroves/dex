@@ -67,7 +67,27 @@ dx_dexcode_value_disabled() {
   esac
 }
 
+# The DexCode opt-outs, each also off under DEX_OFFLINE (see dx_offline).
+dx_dexcode_sync_disabled() {
+  dx_offline || dx_dexcode_value_disabled "${DEXCODE_SYNC:-1}"
+}
+
+dx_dexcode_context_sync_disabled() {
+  dx_offline || dx_dexcode_value_disabled "${DEXCODE_CONTEXT_SYNC:-1}"
+}
+
+# __dx_dexcode_offline_required_note <VAR> — DEX_OFFLINE wins over a sync the
+# caller marked required; say so instead of failing an offline run.
+__dx_dexcode_offline_required_note() {
+  local required_var="$1" required_value=""
+  dx_offline || return 0
+  eval "required_value=\${${required_var}:-0}"
+  [[ "$required_value" == "1" ]] || return 0
+  dx_warn "${required_var}=1 ignored: DEX_OFFLINE=1"
+}
+
 dx_dexcode_factory_sync_disabled() {
+  dx_offline && return 0
   case "${DEX_FACTORY_SYNC:-}" in
     ""|1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Oo][Nn]) return 1 ;;
     *) return 0 ;;
@@ -896,6 +916,7 @@ USAGE
         ;;
     esac
   done
+  dx_offline_refuse "dx login" || return 1
 
   api_url="${api_url%/}"
   if ! dx_dexcode_api_url_valid "$api_url"; then
@@ -1131,6 +1152,8 @@ USAGE
         ;;
     esac
   done
+  # The profile refresh is a network call; offline shows the saved details.
+  ! dx_offline || offline=1
 
   local connection token api_url sync_url api_label sync_label tmp_dir profile_file account project project_slug session_sync event_sync context_sync
   if ! connection=$(dx_dexcode_active_connection 2>/dev/null); then
@@ -1187,14 +1210,19 @@ PY
   session_sync="enabled"
   event_sync="enabled"
   context_sync="enabled"
-  if dx_dexcode_value_disabled "${DEXCODE_SYNC:-1}"; then
+  if dx_dexcode_sync_disabled; then
     session_sync="disabled"
     event_sync="disabled"
   elif dx_dexcode_factory_sync_disabled; then
     event_sync="disabled"
   fi
-  if dx_dexcode_value_disabled "${DEXCODE_CONTEXT_SYNC:-1}"; then
+  if dx_dexcode_context_sync_disabled; then
     context_sync="disabled"
+  fi
+  if dx_offline; then
+    session_sync="${session_sync/disabled/disabled (DEX_OFFLINE=1)}"
+    event_sync="${event_sync/disabled/disabled (DEX_OFFLINE=1)}"
+    context_sync="${context_sync/disabled/disabled (DEX_OFFLINE=1)}"
   fi
   dx_info "DexCode organisation: ${account}"
   if [[ -n "$project_slug" && "$project_slug" != "$project" ]]; then
@@ -2156,7 +2184,8 @@ PY
 
 dx_dexcode_prepare_run_sync() {
   local run_id="$1" repo_dir="$2" workspace_mode="$3" workspace_name="$4" raw_input="$5" command_name="${6:-dx}"
-  dx_dexcode_value_disabled "${DEXCODE_SYNC:-1}" && return 0
+  __dx_dexcode_offline_required_note DEXCODE_SYNC_REQUIRED
+  dx_dexcode_sync_disabled && return 0
 
   local connection token api_url factory_url event_endpoint tmp_dir payload_file response_file http_status timeout_seconds
   dx_run_validate_id "$run_id" 2>/dev/null || return 1
@@ -2285,7 +2314,7 @@ dx_dexcode_upload_artifact() {
   local metadata_json="${8:-}"
   [[ -n "$metadata_json" ]] || metadata_json="{}"
 
-  dx_dexcode_value_disabled "${DEXCODE_SYNC:-1}" && return 0
+  dx_dexcode_sync_disabled && return 0
   dx_run_validate_id "$run_id" 2>/dev/null || return 0
   [[ -n "$file_path" ]] || return 0
 
@@ -2482,7 +2511,8 @@ dx_dexcode_content_type() {
 
 dx_dexcode_sync_project_context() {
   local repo_dir="${1:-}" connection token api_url factory_url project_slug tmp_dir payload_file response_file http_status timeout_seconds failure_label response_valid=0
-  dx_dexcode_value_disabled "${DEXCODE_CONTEXT_SYNC:-1}" && return 0
+  __dx_dexcode_offline_required_note DEXCODE_CONTEXT_SYNC_REQUIRED
+  dx_dexcode_context_sync_disabled && return 0
   [[ -n "$repo_dir" ]] || repo_dir=$(git rev-parse --show-toplevel 2>/dev/null || true)
   [[ -n "$repo_dir" && -d "$repo_dir/.dex" ]] || return 0
 
@@ -2611,6 +2641,7 @@ USAGE
         dx_error "Unknown dx dexcode use option: $1"
         return 1
       fi
+      dx_offline_refuse "dx dexcode use" || return 1
       dx_dexcode_select_project --force
       ;;
     help|-h|--help)

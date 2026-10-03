@@ -48,6 +48,15 @@ In `dx.sh`, every function definition is preceded by:
 unalias <name> 2>/dev/null; unfunction <name> 2>/dev/null
 ```
 
+## Network Calls
+
+Any optional network call Dex's own tooling makes (a download, a sync, a
+remote MCP server) asks `dx_offline` (`lib/common.sh`) and skips with
+`dx_skip "… (DEX_OFFLINE=1)"` when it is true. Never read `DEX_OFFLINE`
+directly. A command whose whole job is the network calls
+`dx_offline_refuse "<command>"` instead. Lifecycle git/gh traffic is exempt.
+Cover the new path in `tests/offline-test.sh`.
+
 ## Atomic File Operations
 
 When writing shared files (e.g., `~/.claude/settings.json`), use temp files + atomic `mv`.

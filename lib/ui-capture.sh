@@ -352,6 +352,16 @@ dx_ui_capture_tooling_ready() {
 }
 
 dx_install_ui_capture_playwright() {
+  # Both the npm install and the Chromium download fetch; offline, report what
+  # is already there and fetch nothing.
+  if dx_offline; then
+    if dx_ui_capture_tooling_ready; then
+      dx_ok "UI capture, media, and local narration tooling already installed"
+    else
+      dx_skip "UI capture tooling install skipped (DEX_OFFLINE=1)"
+    fi
+    return 0
+  fi
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1 || ! command -v npx >/dev/null 2>&1; then
     dx_warn "Node.js, npm, and npx are required for UI capture; install Node.js and re-run 'dx install'"
     return 1
