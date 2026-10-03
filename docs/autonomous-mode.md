@@ -267,6 +267,17 @@ for any item the list does not name. The Phase 1 seal snapshots the list. A
 reapproved replacement may drop a deferral but is refused if it adds one or
 changes any field of one, so deferrals are fixed at plan approval.
 
+The approval binds the snapshot. With deferrals, its line is
+`2<TAB>revision<TAB>criteria_hash<TAB>snapshot_sha256`; without any, it stays
+`1<TAB>revision<TAB>criteria_hash` and the snapshot is `[]`. Every read of the
+seal (`dx_review_read_criteria_approval`, used by each phase receipt and
+review wave) checks that the snapshot matches the recorded digest and that
+the criteria defer nothing the snapshot does not hold. A hand-edited snapshot
+or approval therefore fails closed, and an initial seal made after the
+approval is removed cannot widen an existing snapshot. The records are
+unkeyed local files: rewriting the criteria, snapshot, hash and digest so
+that all four agree is not detected, the same limit the criteria hash has.
+
 Only a wave with zero verified findings and zero fixes writes `CLEAN`. A wave
 that fixes anything writes `FINDINGS_FIXED:N`, resets the counter, and forces a
 fresh review of the updated scope. A valid upward escalation also resets the
@@ -1018,11 +1029,12 @@ Loop state is stored in `~/.claude/.dex-loops/`:
   and verification requirements created after plan approval; each lifecycle
   assessor and wave gets a temporary child-scoped copy
 - `.review-criteria-approval` — versioned approval seal containing the canonical
-  criteria hash; replacements require explicit reapproval and invalidate prior
-  review authorization
+  criteria hash (version 1), plus the deferral snapshot's SHA-256 when the
+  seal holds deferrals (version 2); replacements require explicit reapproval
+  and invalidate prior review authorization
 - `.review-criteria-deferrals` — the `deferred_criteria` held by the seal, as
-  canonical JSON; a reapproval may only narrow it, and the narrowed set
-  replaces it
+  canonical JSON; it must match the approval's digest on every read, a
+  reapproval may only narrow it, and the narrowed set replaces it
 - `.review-selection` — risk tier, selection source, bounded reason codes,
   scope fingerprint, criteria binding, and trusted policy binding recorded
   before the first wave and rebound after review fixes
