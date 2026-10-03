@@ -684,4 +684,33 @@ reset_gh
   || fail "request under a derived-session none did not return 0"
 [[ ! -s "$GH_FAKE_CALLS" ]] || fail "gh ran under a derived-session none: $(cat "$GH_FAKE_CALLS")"
 
+# --- pr.reviewers attribution: the summary line names who set the override -----
+# An agent can set pr.reviewers none itself, so the Phase 5 and 6 summaries
+# print the recorded source; the free-text reason stays out of PR text.
+LINE_SESSION="repo-reviewers-line-test"
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "no override: no summary line"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - agent \
+  "Fork PR: skip @someone upstream" 0
+assert_eq "Reviewers: none (pr.reviewers override set by agent)" \
+  "$(dx_reviewers_summary_line "$LINE_SESSION")" "agent-set none names the agent"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - human \
+  "The human said no reviewers on this fork" 0
+assert_eq "Reviewers: none (pr.reviewers override set by human)" \
+  "$(dx_reviewers_summary_line "$LINE_SESSION")" "a later human row replaces the agent row"
+dx_override_set "$LINE_SESSION" pr.reviewers config session - agent \
+  "Use the tracked reviewer table" 0
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "config: no summary line"
+dx_override_set "$LINE_SESSION" pr.reviewers none session - agent "Fork PR" 0
+dx_override_clear "$LINE_SESSION" pr.reviewers session - agent "Back to the table"
+rc=0; out=$(dx_reviewers_summary_line "$LINE_SESSION") || rc=$?
+assert_eq "1:" "$rc:$out" "cleared: no summary line"
+assert_eq "Reviewers: none (pr.reviewers override set by agent)" \
+  "$(unset DEX_SESSION_ID; dx_reviewers_summary_line)" "bare form reads the derived session"
+BROKEN_SESSION="repo-reviewers-line-broken"
+printf 'not an override journal\n' > "$(dx_override_file "$BROKEN_SESSION")"
+rc=0; out=$(dx_reviewers_summary_line "$BROKEN_SESSION" 2>/dev/null) || rc=$?
+assert_eq "1:" "$rc:$out" "unreadable journal falls back to config"
+
 printf 'reviewers tests passed\n'
