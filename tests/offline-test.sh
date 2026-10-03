@@ -111,4 +111,30 @@ rc=0; DEXCODE_SYNC=0 DEXCODE_SYNC_REQUIRED=1 dx_dexcode_prepare_run_sync run_tes
 assert_not_contains "ignored: DEX_OFFLINE" "$OUT"
 unset DEXCODE_TOKEN
 
+# ── 3. RTK ──────────────────────────────────────────────────────────────────
+# No RTK yet: the download is skipped and bootstrap still succeeds.
+export DX_RTK_INSTALL_DIR="$TMP_DIR/rtk/bin"
+: > "$NET_LOG"
+DEX_OFFLINE=1 dx_install_rtk_binary > "$OUT" 2>&1 || assert_at $LINENO
+assert_contains "RTK download skipped (DEX_OFFLINE=1)" "$OUT"
+assert_eq 0 "$(net_calls)" "network calls from offline RTK install"
+[[ ! -e "$DX_RTK_INSTALL_DIR/rtk" ]] || assert_at $LINENO
+# An installed RTK keeps working: still enabled, still found, nothing fetched.
+mkdir -p "$DX_RTK_INSTALL_DIR"
+cat > "$DX_RTK_INSTALL_DIR/rtk" <<'RTK'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "rewrite" && "${2:-}" == "git status" ]]; then
+  printf 'rtk git status\n'
+  exit 0
+fi
+exit 1
+RTK
+chmod +x "$DX_RTK_INSTALL_DIR/rtk"
+DEX_OFFLINE=1 dx_rtk_enabled || assert_at $LINENO
+DEX_OFFLINE=1 dx_install_rtk_binary > "$OUT" 2>&1 || assert_at $LINENO
+assert_contains "RTK available at" "$OUT"
+assert_not_contains "DEX_OFFLINE" "$OUT"
+assert_eq "$DX_RTK_INSTALL_DIR/rtk" "$(DEX_OFFLINE=1 dx_rtk_resolved_binary)" "offline RTK resolution"
+assert_eq 0 "$(net_calls)" "network calls with RTK installed"
+
 echo "offline-test: ok"
