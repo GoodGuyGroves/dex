@@ -1230,6 +1230,8 @@ dx_review_loop_run() {
   local branch
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
   [[ -n "$branch" ]] || branch="HEAD"
+  # Once per loop, so every wave and acceptance check reads the same base.
+  dx_review_base_resolve "$PWD" "$base_session_id" >/dev/null 2>&1 || true
   scope_snapshot=$(__dx_review_scope_snapshot "$PWD") || {
     dx_error "Could not resolve the review comparison scope."
     return 1

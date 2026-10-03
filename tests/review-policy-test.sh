@@ -838,6 +838,119 @@ assert_eq "1" "$(dx_cleanup_stale_review_credit 7)" "stale review credit cleanup
 [[ ! -e "$stale_ledger" && ! -L "$stale_ledger" ]] || assert_at $LINENO
 [[ ! -e "$stale_proof_dir" && ! -L "$stale_proof_dir" ]] || assert_at $LINENO
 
+# A stacked branch is reviewed against its PR's base, then its recorded
+# base_branch, and only then the default branch (#59). gh is faked; origin is a
+# github.com URL that is never contacted, with remote-tracking refs set by hand.
+STACKED_REPO="$TMP_DIR/stacked-repo"
+FAKE_GH_BIN="$TMP_DIR/fake-gh-bin"
+export FAKE_GH_LOG="$TMP_DIR/fake-gh.log"
+mkdir -p "$FAKE_GH_BIN"
+cat > "$FAKE_GH_BIN/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+case "${FAKE_GH_PR_BASE:-}" in
+  error) exit 1 ;;
+  *) printf '%s\n' "${FAKE_GH_PR_BASE:-}" ;;
+esac
+GH
+chmod +x "$FAKE_GH_BIN/gh"
+git init -q -b main "$STACKED_REPO"
+git -C "$STACKED_REPO" config user.name "Dex Test"
+git -C "$STACKED_REPO" config user.email "dex-test@example.com"
+git -C "$STACKED_REPO" remote add origin https://github.com/example/stacked.git
+printf 'base\n' > "$STACKED_REPO/base.txt"
+git -C "$STACKED_REPO" add base.txt
+git -C "$STACKED_REPO" commit -qm "test: initialize stacked fixture"
+git -C "$STACKED_REPO" switch -qc parent
+printf 'parent\n' > "$STACKED_REPO/parent.txt"
+git -C "$STACKED_REPO" add parent.txt
+git -C "$STACKED_REPO" commit -qm "test: add parent change"
+git -C "$STACKED_REPO" switch -qc feature
+printf 'feature\n' > "$STACKED_REPO/feature.txt"
+git -C "$STACKED_REPO" add feature.txt
+git -C "$STACKED_REPO" commit -qm "test: add stacked feature change"
+git -C "$STACKED_REPO" update-ref refs/remotes/origin/main "$(git -C "$STACKED_REPO" rev-parse main)"
+git -C "$STACKED_REPO" update-ref refs/remotes/origin/parent "$(git -C "$STACKED_REPO" rev-parse parent)"
+git -C "$STACKED_REPO" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+stacked_parent_oid=$(git -C "$STACKED_REPO" rev-parse parent)
+stacked_main_oid=$(git -C "$STACKED_REPO" rev-parse main)
+stacked_session="stacked-review"
+
+stacked_scope_files() {
+  local mode ref merge_base
+  IFS=$'\t' read -r mode ref _ merge_base < <(dx_review_scope_descriptor "$STACKED_REPO")
+  printf '%s %s ' "$mode" "$ref"
+  git -C "$STACKED_REPO" diff --name-only "$merge_base" HEAD | LC_ALL=C sort | tr '\n' ' '
+}
+
+stacked_resolve() {
+  PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$stacked_session" \
+    dx_review_base_resolve "$STACKED_REPO" "$stacked_session"
+}
+
+# No session meta: nothing is recorded and the scope is today's.
+: > "$FAKE_GH_LOG"
+assert_eq "default" "$(FAKE_GH_PR_BASE=parent stacked_resolve)" "no meta keeps the default base"
+assert_no_file "$(dx_meta_file "$stacked_session")"
+assert_eq "changes origin/main feature.txt parent.txt " \
+  "$(DEX_SESSION_ID="$stacked_session" stacked_scope_files)" "no meta reviews against the default branch"
+
+dx_meta_write "$stacked_session" "current_branch=feature"
+
+# Neither a PR nor a recorded base: the default branch, as before.
+assert_eq "default" "$(FAKE_GH_PR_BASE='' stacked_resolve)" "no PR and no recorded base"
+assert_eq "" "$(dx_meta_read "$stacked_session" review_base_branch)" "default base records no branch"
+assert_eq "changes origin/main feature.txt parent.txt " \
+  "$(DEX_SESSION_ID="$stacked_session" stacked_scope_files)" "default scope is unchanged"
+
+# A recorded base_branch with no PR.
+dx_meta_write "$stacked_session" "base_branch=parent"
+assert_eq "recorded" "$(FAKE_GH_PR_BASE='' stacked_resolve)" "recorded base without a PR"
+assert_eq "changes origin/parent feature.txt " \
+  "$(DEX_SESSION_ID="$stacked_session" stacked_scope_files)" "recorded base scopes the branch's own change"
+
+# The open PR's base wins over the recorded base.
+dx_meta_write "$stacked_session" "base_branch=main"
+: > "$FAKE_GH_LOG"
+assert_eq "pr" "$(FAKE_GH_PR_BASE=parent stacked_resolve)" "open PR base wins"
+assert_contains "pr list --state open --head feature" "$FAKE_GH_LOG"
+assert_eq "parent" "$(dx_meta_read "$stacked_session" review_base_branch)" "PR base recorded"
+assert_eq "changes origin/parent feature.txt " \
+  "$(DEX_SESSION_ID="$stacked_session" stacked_scope_files)" "PR base scopes the branch's own change"
+# The descriptor itself never calls gh, so every recomputation agrees.
+: > "$FAKE_GH_LOG"
+first_descriptor=$(PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$stacked_session" dx_review_scope_descriptor "$STACKED_REPO")
+assert_eq "$first_descriptor" \
+  "$(PATH="$FAKE_GH_BIN:$PATH" DEX_SESSION_ID="$stacked_session" dx_review_scope_descriptor "$STACKED_REPO")" \
+  "review descriptor is repeatable"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "review descriptor makes no gh call"
+[[ "$first_descriptor" == *"$stacked_parent_oid"* ]] || assert_at "$LINENO"
+
+# A gh failure falls through to the recorded base instead of blocking.
+dx_meta_write "$stacked_session" "base_branch=parent"
+assert_eq "recorded" "$(FAKE_GH_PR_BASE=error stacked_resolve)" "gh error falls through"
+
+# An invalid PR base name is ignored.
+assert_eq "recorded" "$(FAKE_GH_PR_BASE='bad..name' stacked_resolve)" "invalid PR base is ignored"
+
+# DEX_OFFLINE skips the PR lookup entirely.
+: > "$FAKE_GH_LOG"
+assert_eq "recorded" "$(DEX_OFFLINE=1 FAKE_GH_PR_BASE=main stacked_resolve)" "offline skips the PR lookup"
+assert_eq "" "$(cat "$FAKE_GH_LOG")" "offline makes no gh call"
+
+# A recorded base with no local ref uses the usual order.
+dx_meta_write "$stacked_session" "review_base_branch=gone"
+assert_eq "changes origin/main feature.txt parent.txt " \
+  "$(DEX_SESSION_ID="$stacked_session" stacked_scope_files)" "missing base ref falls back to the default branch"
+
+# A branch with nothing beyond its base is an empty scope, not the parent's.
+git -C "$STACKED_REPO" switch -q parent
+dx_meta_write "$stacked_session" "review_base_branch=parent"
+IFS=$'\t' read -r stacked_mode stacked_ref stacked_oid stacked_mb < <(DEX_SESSION_ID="$stacked_session" dx_review_scope_descriptor "$STACKED_REPO")
+assert_eq "none origin/parent $stacked_parent_oid" "$stacked_mode $stacked_ref $stacked_oid" "no own changes against the base"
+[[ "$stacked_mb" == "$stacked_parent_oid" && "$stacked_main_oid" != "$stacked_parent_oid" ]] || assert_at "$LINENO"
+dx_cleanup_session "$stacked_session"
+
 dx_cleanup_session "$session_id"
 [[ ! -e "$(dx_review_selection_file "$session_id")" ]] || assert_at $LINENO
 [[ ! -e "$(dx_review_state_file "$session_id")" ]] || assert_at $LINENO
