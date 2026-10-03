@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook — honor direct human lifecycle control and pause Phase 6 watchers.
+# Claude Code sends task-notifications and other sessions' messages through
+# this hook too; only the text a human typed is read for either purpose.
 set -euo pipefail
 
 # Standalone sessions never own implementation lifecycle state.
@@ -23,9 +25,16 @@ HOOK_INPUT=$(cat)
 # prompt, and two python3 launches to read two keys out of the same object was
 # the largest thing it did.
 #
-# The prompt is printed last and may contain newlines; the session id may not,
-# so a single leading line carries it. Fields are printed even when absent, so
-# the caller can tell "not present" from "payload was not JSON" (exit 1).
+# The same start separates what the human typed from the envelopes Claude Code
+# wraps around a task-notification or another session's message
+# ($DEX_DIR/scripts/prompt_origin.py). The printed prompt is only the typed
+# text, and the origin line says "system" when the turn had none. A missing or
+# broken helper falls back to the whole prompt: it must never block one.
+#
+# The prompt is printed last and may contain newlines; the session id and the
+# origin may not, so a leading line carries each. Fields are printed even when
+# absent, so the caller can tell "not present" from "payload was not JSON"
+# (exit 1).
 __dx_hook_fields_from_json() {
   printf '%s' "$HOOK_INPUT" | python3 -c '
 import json
@@ -41,9 +50,20 @@ def text(value):
     return value if isinstance(value, str) else ""
 
 
+prompt = text(data.get("prompt", ""))
+typed = prompt
+try:
+    sys.path.insert(0, sys.argv[1])
+    from prompt_origin import human_prompt_text
+
+    typed = human_prompt_text(prompt)
+except Exception:
+    pass
+
 print(text(data.get("session_id", "")).replace("\n", " "))
-print(text(data.get("prompt", "")), end="")
-' 2>/dev/null
+print("system" if prompt.strip() and not typed.strip() else "human")
+print(typed, end="")
+' "$DEX_DIR/scripts" 2>/dev/null
 }
 
 __dx_complete_phase_active() {
@@ -118,21 +138,30 @@ __dx_prompt_resumes_watchers() {
 }
 
 HOOK_CLAUDE_SESSION_ID=""
+PROMPT_ORIGIN="human"
 PROMPT=""
 if HOOK_FIELDS=$(__dx_hook_fields_from_json); then
+  HOOK_CLAUDE_SESSION_ID="${HOOK_FIELDS%%$'\n'*}"
+  HOOK_FIELDS="${HOOK_FIELDS#*$'\n'}"
   case "$HOOK_FIELDS" in
     # Command substitution eats the trailing newline, so an empty prompt leaves
-    # no separator behind and the session id would be read as the prompt too.
+    # no separator behind and the origin would be read as the prompt too.
     *$'\n'*)
-      HOOK_CLAUDE_SESSION_ID="${HOOK_FIELDS%%$'\n'*}"
+      PROMPT_ORIGIN="${HOOK_FIELDS%%$'\n'*}"
       PROMPT="${HOOK_FIELDS#*$'\n'}"
       ;;
-    *) HOOK_CLAUDE_SESSION_ID="$HOOK_FIELDS" ;;
+    *) PROMPT_ORIGIN="$HOOK_FIELDS" ;;
   esac
 else
   # Not JSON: the whole payload is the prompt, as it was before hooks sent one.
   PROMPT="$HOOK_INPUT"
 fi
+
+# Nothing in a task-notification or another session's message was typed by
+# the human, so it can neither claim the session, publish a lifecycle control,
+# nor pause the Phase 6 watcher (#35).
+[[ "$PROMPT_ORIGIN" == "system" ]] && exit 0
+
 PROMPT_LC=$(printf '%s' "$PROMPT" | tr '[:upper:]' '[:lower:]')
 HOOK_SESSION_VALID=0
 dx_lifecycle_session_id_valid "$HOOK_CLAUDE_SESSION_ID" && HOOK_SESSION_VALID=1
