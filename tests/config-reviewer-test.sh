@@ -2,6 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/helpers.sh
+source "$ROOT/tests/helpers.sh"
+# config.sh runs below on PATH=/usr/bin:/bin. On macOS /usr/bin/git is the
+# xcrun shim, which looks for git under DEVELOPER_DIR; a Nix dev shell points
+# that at an Apple SDK with no git, so git fails and config.sh reports "Not in
+# a git repository". run-all.sh starts tests from `env -i`, so only a direct
+# run inherits these.
+unset DEVELOPER_DIR SDKROOT
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dex-config-reviewer-test.XXXXXX")"
 
 cleanup() {
