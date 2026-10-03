@@ -198,8 +198,8 @@ must not reconstruct criteria from prior state or conversation context.
 An item listed under the criteria file's `deferred_criteria` was sealed at plan
 approval as unsatisfiable on this branch, with an owner and a reason. The wave
 reports it as `deferred` with evidence and does not write `BLOCKED` or a
-finding for it; a `deferred`
-outcome for any unlisted item is invalid evidence and earns no credit.
+finding for it; a `deferred` outcome for any unlisted item is invalid evidence
+and earns no credit.
 
 Do not give a wave prior review reports, findings fingerprints, clean-pass
 counts, telemetry, or previous conversation context: the wrapper owns that
