@@ -163,6 +163,107 @@ if DX_TEST_SUITE_DIR="$suite_dir" DX_TEST_MANIFEST="$TMP_DIR/incomplete.tsv" \
 fi
 assert_contains "tests missing from manifest: f-timeout-test.sh" "$TMP_DIR/incomplete.out"
 
+# Drift the base branch already has is not this branch's to fix: it warns and
+# the run goes on. Drift the branch adds still stops the run.
+drift_repo="$TMP_DIR/drift-repo"
+mkdir -p "$drift_repo/tests"
+drift_git() { git -C "$drift_repo" -c user.email=dex@example.test -c user.name="Dex Test" "$@"; }
+drift_git init -q
+for name in ok-test.sh unlisted-on-base-test.sh; do
+  printf '#!/usr/bin/env bash\ntrue\n' > "$drift_repo/tests/$name"
+done
+printf '%s\n' \
+  $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$drift_repo/tests/manifest.tsv"
+drift_git add -A
+drift_git commit -q -m base
+drift_git branch -M base
+drift_git switch -q -c work
+printf '#!/usr/bin/env bash\ntrue\n' > "$drift_repo/tests/new-test.sh"
+drift_git add -A
+drift_git commit -q -m 'add a test without a manifest row'
+if DX_TEST_SUITE_DIR="$drift_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_LOG_DIR="$TMP_DIR/new-drift-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/new-drift.out" 2>&1; then
+  fail "drift added on the branch was accepted"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/new-drift.out"
+assert_not_contains "tests missing from manifest: unlisted-on-base-test.sh" "$TMP_DIR/new-drift.out"
+# With no base named and no default branch to find, the resolver's fallback is
+# the current branch, which is no base: the branch's drift stays fatal.
+if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DX_TEST_SUITE_DIR="$drift_repo/tests" \
+  DX_TEST_LOG_DIR="$TMP_DIR/self-base-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/self-base.out" 2>&1; then
+  fail "the current branch was taken as its own base"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/self-base.out"
+# Pushed, the same branch resolves to origin/work: still no base.
+git init -q --bare "$TMP_DIR/drift-origin.git"
+drift_git remote add origin "$TMP_DIR/drift-origin.git"
+drift_git push -q -u origin work
+if GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 DX_TEST_SUITE_DIR="$drift_repo/tests" \
+  DX_TEST_LOG_DIR="$TMP_DIR/pushed-self-base-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/pushed-self-base.out" 2>&1; then
+  fail "the pushed current branch was taken as its own base"
+fi
+assert_contains "tests missing from manifest: new-test.sh" "$TMP_DIR/pushed-self-base.out"
+drift_git remote remove origin
+
+printf '%s\n' \
+  $'gone-on-base-test.sh\tfast\tall\t10\thermetic' \
+  $'new-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$drift_repo/tests/manifest.tsv"
+drift_git commit -q -am 'declare the new test'
+DX_TEST_SUITE_DIR="$drift_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_LOG_DIR="$TMP_DIR/base-drift-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/base-drift.out" 2>&1 \
+  || fail "drift the base already had stopped the run: $(cat "$TMP_DIR/base-drift.out")"
+assert_contains "warning: tests missing from manifest, already on base: unlisted-on-base-test.sh" \
+  "$TMP_DIR/base-drift.out"
+assert_contains "warning: manifest entries without test files, already on base: gone-on-base-test.sh" \
+  "$TMP_DIR/base-drift.out"
+assert_contains "PASS new-test.sh" "$TMP_DIR/base-drift.out"
+assert_contains "PASS ok-test.sh" "$TMP_DIR/base-drift.out"
+
+# A DX_TEST_MANIFEST outside the suite's repo has no base in that history.
+# Decoys at the paths a wrong lookup would read both carry the same extra row,
+# so a lookup in the suite's repo would excuse it as base drift.
+loc_repo="$TMP_DIR/loc-repo"
+mkdir -p "$loc_repo/tests"
+loc_git() { git -C "$loc_repo" -c user.email=dex@example.test -c user.name="Dex Test" "$@"; }
+loc_git init -q
+printf '#!/usr/bin/env bash\ntrue\n' > "$loc_repo/tests/ok-test.sh"
+printf '%s\n' \
+  $'ghost-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$TMP_DIR/ghost-manifest.tsv"
+cp "$TMP_DIR/ghost-manifest.tsv" "$loc_repo/manifest.tsv"
+cp "$TMP_DIR/ghost-manifest.tsv" "$loc_repo/tests/manifest.tsv"
+loc_git add -A
+loc_git commit -q -m base
+loc_git branch -M base
+
+mkdir -p "$TMP_DIR/outside"
+cp "$TMP_DIR/ghost-manifest.tsv" "$TMP_DIR/outside/manifest.tsv"
+if DX_TEST_SUITE_DIR="$loc_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_MANIFEST="$TMP_DIR/outside/manifest.tsv" DX_TEST_LOG_DIR="$TMP_DIR/outside-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/outside.out" 2>&1; then
+  fail "drift in a manifest outside git was excused as base drift"
+fi
+assert_contains "manifest entries without test files: ghost-test.sh" "$TMP_DIR/outside.out"
+assert_not_contains "already on base" "$TMP_DIR/outside.out"
+
+other_repo="$TMP_DIR/other-repo"
+mkdir -p "$other_repo/tests"
+git -C "$other_repo" init -q
+cp "$TMP_DIR/ghost-manifest.tsv" "$other_repo/tests/manifest.tsv"
+if DX_TEST_SUITE_DIR="$loc_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_MANIFEST="$other_repo/tests/manifest.tsv" DX_TEST_LOG_DIR="$TMP_DIR/other-repo-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/other-repo.out" 2>&1; then
+  fail "drift in a manifest from another repo was excused as base drift"
+fi
+assert_contains "manifest entries without test files: ghost-test.sh" "$TMP_DIR/other-repo.out"
+assert_not_contains "already on base" "$TMP_DIR/other-repo.out"
+
 printf '%s\n' \
   "$(cat "$fixture_manifest")" \
   $'a-hermetic-test.sh\tfast\tall\t10\thermetic' > "$TMP_DIR/duplicate.tsv"

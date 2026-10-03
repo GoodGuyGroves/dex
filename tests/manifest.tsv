@@ -1,7 +1,8 @@
 # name	lane	platform	timeout_seconds	isolation
 # Every tests/*-test.sh file appears once. run-all.sh rejects drift before it
-# starts a test. `service` and `serial` run exclusively; `fast` and `slow` may
-# run in parallel. Use `shared` isolation only when a test must inherit state.
+# starts a test; drift the base branch already has only warns. `service` and
+# `serial` run exclusively; `fast` and `slow` may run in parallel. Use `shared`
+# isolation only when a test must inherit state.
 attribution-model-test.sh	fast	all	600	hermetic
 attribution-modes-test.sh	fast	all	600	hermetic
 attribution-test.sh	slow	all	1200	hermetic
