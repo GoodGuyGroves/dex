@@ -764,10 +764,12 @@ __dx_last_session_active_in_place() {
   __dx_active_in_place_phase_for_workspace "$wt_name" >/dev/null
 }
 
-# __dx_cleanup_lifecycle_state_for_branch <branch>
-# Remove state tied to a deleted canonical Dex lifecycle branch.
+# __dx_cleanup_lifecycle_state_for_branch <branch> <repo_root>
+# Remove state tied to a deleted canonical Dex lifecycle branch. The worktree
+# session's runtime lease goes with it when the run is over; a live or
+# unfinished runtime keeps its lease and the rest of the state goes as before.
 __dx_cleanup_lifecycle_state_for_branch() {
-  local branch="$1" wt_name worktree_session_id in_place_session_id
+  local branch="$1" repo_root="$2" wt_name worktree_session_id in_place_session_id
 
   if [[ "$branch" != worktree-ticket-* ]] && [[ "$branch" != worktree-task-* ]]; then
     return 0
@@ -777,7 +779,8 @@ __dx_cleanup_lifecycle_state_for_branch() {
   worktree_session_id=$(dx_session_id "$wt_name")
   in_place_session_id=$(__dx_session_id_for_workspace "in-place" "$wt_name")
 
-  dx_cleanup_session "$worktree_session_id"
+  __dx_session_discard_state "$repo_root" "$worktree_session_id" 2>/dev/null \
+    || dx_cleanup_session "$worktree_session_id"
   dx_cleanup_session "$in_place_session_id"
   dx_cleanup_last_session "$wt_name"
 }
@@ -5485,7 +5488,7 @@ dxrm() {
       __dx_ticket_branch_worktree "$repo_root" "$branch" >/dev/null && continue
       echo "Deleting branch ${branch}..."
       if dx_branch_delete_safe "$repo_root" "$branch"; then
-        __dx_cleanup_lifecycle_state_for_branch "$branch"
+        __dx_cleanup_lifecycle_state_for_branch "$branch" "$repo_root"
       fi
     done < <(git branch --list 'worktree-ticket-*' 'worktree-task-*' 2>/dev/null | sed 's/^[*+ ]*//')
 
@@ -5657,7 +5660,7 @@ dxrm() {
   if [[ $has_branch -eq 1 ]]; then
     echo "  Deleting branch ${branch_name}..."
     if dx_lifecycle_branch_release "$repo_root" "$branch_name" && [[ $has_dir -eq 0 ]]; then
-      __dx_cleanup_lifecycle_state_for_branch "$branch_name"
+      __dx_cleanup_lifecycle_state_for_branch "$branch_name" "$repo_root"
     fi
   fi
 
@@ -5944,15 +5947,16 @@ __dx_clean_skip_recorded_branch() {
   return 1
 }
 
-# __dx_clean_recorded_session <session_id> <wt_name> <worktrees_dir>
+# __dx_clean_recorded_session <session_id> <wt_name> <worktrees_dir> <repo_root>
 # After dxclean deleted a recorded branch, drop its session state unless a
-# worktree of that name still exists.
+# worktree of that name still exists. A finished runtime's lease goes too.
 { unalias __dx_clean_recorded_session; unfunction __dx_clean_recorded_session; } 2>/dev/null || true
 __dx_clean_recorded_session() {
-  local sid="$1" wt_name="$2" worktrees_dir="$3"
+  local sid="$1" wt_name="$2" worktrees_dir="$3" repo_root="$4"
   [[ -n "$sid" ]] || return 0
   [[ -n "$wt_name" && -d "$worktrees_dir/$wt_name" ]] && return 0
-  dx_cleanup_session "$sid" || true
+  __dx_session_discard_state "$repo_root" "$sid" 2>/dev/null \
+    || dx_cleanup_session "$sid" || true
 }
 
 # ─── dxclean — prune stale worktrees + gone branches ─────────────────────────
@@ -6153,8 +6157,8 @@ dxclean() {
 
     echo "  Deleting gone branch: ${branch}"
     if dx_lifecycle_branch_release "$repo_root" "$branch"; then
-      __dx_cleanup_lifecycle_state_for_branch "$branch"
-      __dx_clean_recorded_session "${branch_sids[$branch]:-}" "${branch_wt_names[$branch]:-}" "$worktrees_dir"
+      __dx_cleanup_lifecycle_state_for_branch "$branch" "$repo_root"
+      __dx_clean_recorded_session "${branch_sids[$branch]:-}" "${branch_wt_names[$branch]:-}" "$worktrees_dir" "$repo_root"
       cleaned=$((cleaned + 1))
     fi
   done < <(git branch -vv 2>/dev/null | grep ': gone]' | sed 's/^[*+ ]*//' | awk '{print $1}')
@@ -6197,8 +6201,8 @@ dxclean() {
       fi
       echo "  Deleting orphan branch: ${branch}"
       if dx_lifecycle_branch_release "$repo_root" "$branch"; then
-        __dx_cleanup_lifecycle_state_for_branch "$branch"
-        __dx_clean_recorded_session "${branch_sids[$branch]:-}" "$ticket_name" "$worktrees_dir"
+        __dx_cleanup_lifecycle_state_for_branch "$branch" "$repo_root"
+        __dx_clean_recorded_session "${branch_sids[$branch]:-}" "$ticket_name" "$worktrees_dir" "$repo_root"
         cleaned=$((cleaned + 1))
       fi
     fi

@@ -76,12 +76,17 @@ state_of() { # <sid> — which of phase, run-id, runtime still exist
   printf '%s\n' "${present# }"
 }
 
+lock_of() { # <sid> — "runtime-lock" while the persistent runtime lock exists
+  [[ ! -e "$DX_STATE_DIR/$1.runtime-lock" ]] || printf 'runtime-lock\n'
+}
+
 # ── #29: dxrm takes the runtime lease with the session ─────────────────────
 git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-21" -b worktree-ticket-21 HEAD
 SID=$(seed_run ticket-21 3 finished)
 [[ "$(state_of "$SID")" == "phase run-id runtime" ]] || assert_at $LINENO
 dx_zsh 'dxrm 21' > "$TMP_DIR/dxrm.out" 2>&1 || { cat "$TMP_DIR/dxrm.out" >&2; fail "dxrm 21 failed"; }
 assert_eq "" "$(state_of "$SID")" "dxrm leaves no phase, run ID or runtime behind"
+assert_eq "runtime-lock" "$(lock_of "$SID")" "the persistent runtime lock outlives the session"
 
 # A ticket close waiting for the merge outlives the session, as it did before
 # dxrm took the runtime lease too.
@@ -103,6 +108,25 @@ SID=$(seed_run ticket-22 3 live)
 dx_zsh 'dxrm 22' > "$TMP_DIR/dxrm-live.out" 2>&1 || true
 assert_eq "runtime" "$(state_of "$SID")" "a live runtime keeps its lease; the rest goes"
 assert_contains "is still live or not finished" "$TMP_DIR/dxrm-live.out"
+
+# The same when the worktree directory is already gone (#84): dxrm finds the
+# run through its branch and still takes a finished runtime's lease. The
+# persistent .runtime-lock inode stays, as it does with the worktree present.
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-24" -b worktree-ticket-24 HEAD
+SID=$(seed_run ticket-24 3 finished)
+[[ "$(lock_of "$SID")" == "runtime-lock" ]] || assert_at $LINENO
+git -C "$TEST_REPO" worktree remove "$TEST_REPO/.dex/worktrees/ticket-24"
+dx_zsh 'dxrm 24' > "$TMP_DIR/dxrm-gone.out" 2>&1 || { cat "$TMP_DIR/dxrm-gone.out" >&2; fail "dxrm 24 failed"; }
+assert_eq "" "$(state_of "$SID")" "dxrm without a worktree leaves no phase, run ID or runtime"
+assert_eq "runtime-lock" "$(lock_of "$SID")" "dxrm without a worktree keeps the lock as with one"
+assert_not_contains "still live or not finished" "$TMP_DIR/dxrm-gone.out"
+
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-25" -b worktree-ticket-25 HEAD
+SID=$(seed_run ticket-25 3 live)
+git -C "$TEST_REPO" worktree remove "$TEST_REPO/.dex/worktrees/ticket-25"
+dx_zsh 'dxrm 25' > "$TMP_DIR/dxrm-gone-live.out" 2>&1 || true
+assert_eq "runtime" "$(state_of "$SID")" "without a worktree, a live runtime still keeps its lease"
+assert_contains "is still live or not finished" "$TMP_DIR/dxrm-gone-live.out"
 
 # ── #55: a run whose worktree was removed is not reattached silently ────────
 setup_ticket() { # <ticket> — the worktree setup `dx <ticket>` runs
@@ -167,5 +191,43 @@ SID=$(seed_run ticket-34 5 finished)
 setup_ticket 34 > "$TMP_DIR/present.out" 2>&1 || { cat "$TMP_DIR/present.out" >&2; fail "setup with the worktree present failed"; }
 assert_not_contains "its worktree was removed" "$TMP_DIR/present.out"
 assert_eq "phase run-id runtime" "$(state_of "$SID")" "an existing worktree resumes as before"
+
+# ── #84: dxclean takes a finished runtime when the worktree is gone ─────────
+# dxclean prunes a pushed lifecycle branch whose worktree is gone, through the
+# branch name or, for a branch renamed away from worktree-*, the session record.
+git -C "$TMP_DIR" init -q --bare origin.git
+git -C "$TEST_REPO" remote add origin "$TMP_DIR/origin.git"
+seed_gone_branch() { # <worktree-name> <branch> <runtime> — prints the session id
+  local wt="$TEST_REPO/.dex/worktrees/$1" sid
+  git -C "$TEST_REPO" worktree add -q "$wt" -b "$2" HEAD
+  git -C "$TEST_REPO" push -q origin "$2"
+  sid=$(seed_run "$1" 3 "$3")
+  git -C "$TEST_REPO" worktree remove "$wt"
+  printf '%s\n' "$sid"
+}
+dxclean_out() { # <file>
+  dx_zsh 'dxclean' > "$1" 2>&1 || { cat "$1" >&2; fail "dxclean failed"; }
+}
+
+SID=$(seed_gone_branch ticket-26 worktree-ticket-26 finished)
+dxclean_out "$TMP_DIR/clean-gone.out"
+assert_contains "Deleting orphan branch: worktree-ticket-26" "$TMP_DIR/clean-gone.out"
+assert_eq "" "$(state_of "$SID")" "dxclean without a worktree leaves no phase, run ID or runtime"
+assert_eq "runtime-lock" "$(lock_of "$SID")" "dxclean without a worktree keeps the lock as dxrm does"
+
+SID=$(seed_gone_branch ticket-27 worktree-ticket-27 live)
+dxclean_out "$TMP_DIR/clean-gone-live.out"
+assert_contains "Deleting orphan branch: worktree-ticket-27" "$TMP_DIR/clean-gone-live.out"
+assert_eq "runtime" "$(state_of "$SID")" "dxclean keeps a live runtime's lease"
+
+# A renamed branch reaches dxclean only through the session record. A finished
+# lifecycle has no active phase, so dxclean does not skip it.
+SID=$(seed_gone_branch ticket-28 b8-renamed-28 finished)
+TEST_SID="$SID" dx_zsh 'dx_meta_write "$TEST_SID" current_branch=b8-renamed-28'
+rm -f "$DX_STATE_DIR/$SID.phase"
+dxclean_out "$TMP_DIR/clean-renamed.out"
+assert_contains "Deleting orphan branch: b8-renamed-28" "$TMP_DIR/clean-renamed.out"
+assert_eq "" "$(state_of "$SID")" "dxclean on a renamed branch leaves no run ID or runtime"
+assert_eq "runtime-lock" "$(lock_of "$SID")" "dxclean on a renamed branch keeps the lock as dxrm does"
 
 printf 'session stale run tests passed\n'
