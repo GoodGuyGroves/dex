@@ -213,6 +213,12 @@ rm -f "$WATCH_PAUSE_FILE"
 owned_payload "$NOTIFICATION" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-notification.out"
 [[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
 [[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
+# Two notifications on one line, and a blank prompt, carry no typed text.
+owned_payload "${NOTIFICATION}${NOTIFICATION//task-notification>/agent-message>}" "$CONTROL_OWNER" \
+  | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-adjacent.out"
+[[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
+owned_payload "" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-blank.out"
+[[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
 owned_payload "Why did CI fail?" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-typed.out"
 [[ -f "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
 rm -f "$WATCH_PAUSE_FILE"

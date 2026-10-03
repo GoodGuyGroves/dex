@@ -61,7 +61,7 @@ except Exception:
     pass
 
 print(text(data.get("session_id", "")).replace("\n", " "))
-print("system" if prompt.strip() and not typed.strip() else "human")
+print("human" if typed.strip() else "system")
 print(typed, end="")
 ' "$DEX_DIR/scripts" 2>/dev/null
 }
@@ -159,7 +159,7 @@ fi
 
 # Nothing in a task-notification or another session's message was typed by
 # the human, so it can neither claim the session, publish a lifecycle control,
-# nor pause the Phase 6 watcher (#35).
+# nor pause the Phase 6 watcher (#35). A blank prompt has no typed text either.
 [[ "$PROMPT_ORIGIN" == "system" ]] && exit 0
 
 PROMPT_LC=$(printf '%s' "$PROMPT" | tr '[:upper:]' '[:lower:]')

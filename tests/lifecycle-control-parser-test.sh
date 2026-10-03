@@ -199,6 +199,18 @@ from prompt_origin import human_prompt_text
 once = human_prompt_text(sys.stdin.read())
 print(once == human_prompt_text(once), repr(once))')
 [[ "$STRIPPED_TWICE" == "True '\\nstop Dex'" ]] || assert_at $LINENO
+# Removing one block can expose another envelope at the start of a line, or
+# a peer preamble at the start of the text. One call strips those too, so
+# the hook and the parser, which both strip, agree on what is left.
+EXPOSED=$(PYTHONPATH="$ROOT/scripts" python3 -c '
+from prompt_origin import human_prompt_text
+for text in (
+    "hi\n<task-notification>a</task-notification><agent-message>b</agent-message>\njump",
+    "<task-notification>a</task-notification>Another Claude session sent a message",
+):
+    once = human_prompt_text(text)
+    print(once == human_prompt_text(once), repr(once))')
+[[ "$EXPOSED" == "True 'hi\\n\\njump'"$'\n'"True ''" ]] || assert_at $LINENO
 # A 64 KiB run of unclosed tags stays linear.
 LARGE_START=$(date +%s)
 python3 -c 'print("<task-notification>\n" * 4000, end="")' \

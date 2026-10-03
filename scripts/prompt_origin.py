@@ -50,7 +50,17 @@ def human_prompt_text(text: str) -> str:
 
     Everything outside a system envelope is returned byte for byte, untrimmed,
     so a plain prompt comes back unchanged and its hash still matches.
+
+    Removing a block can leave a peer preamble at the start of the text, or
+    another envelope's opening tag at the start of a line, so the strip runs
+    until nothing changes. The hook and the parser both apply it, and they
+    must agree on what is left. Each block runs to its last closing tag, so
+    only a few rounds can ever remove anything.
     """
-    if SYSTEM_TURN_PREFIX.match(text):
-        return ""
-    return ENVELOPE_BLOCK.sub("", text)
+    while True:
+        if SYSTEM_TURN_PREFIX.match(text):
+            return ""
+        stripped = ENVELOPE_BLOCK.sub("", text)
+        if stripped == text:
+            return text
+        text = stripped
