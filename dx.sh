@@ -4230,6 +4230,10 @@ __dx_choose_prompt_mode() {
 { unalias dx; unfunction dx; } 2>/dev/null || true
 dx() {
   dx_resolve_state_paths  # pick up a DEX_HOME exported since dx.sh was sourced
+  # A DEX_OFFLINE set but not exported in this shell must still reach the
+  # bin/ scripts and hooks dx starts. zsh's `local -x NAME` alone would hide
+  # the value, so it is copied.
+  [[ -z "${DEX_OFFLINE:-}" ]] || local -x DEX_OFFLINE="$DEX_OFFLINE"
   if [[ $# -eq 0 ]]; then
     echo "Usage: dx <NUMBER>        (e.g. dx 999, dx ENG-999)"
     echo "       dx \"<description>\" (e.g. dx \"fix login bug\")"
