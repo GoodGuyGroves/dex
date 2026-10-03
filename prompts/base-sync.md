@@ -42,7 +42,7 @@ The first output line is the status word; `key=value` lines follow.
 | Exit | Status | Do this |
 |------|--------|---------|
 | 0 | `current` / `disabled` | Nothing to do. Continue. |
-| 1 | `rebased` | The tree changed and is already pushed. Every earlier gate result is stale: run `dx run-gate --name full-gate <project aggregate gate>` on this tree before continuing. Before ready, sync again after the gate passes. |
+| 1 | `rebased` | The tree changed and is already pushed. Every earlier gate result is stale: run `dx run-gate --name full-gate <project aggregate gate>` on this tree before continuing, or, when `.dex/dex.md` declares `## Verification` lanes, all of them in the one `full-gate` call from `$DEX_DIR/prompts/phase-audits/4-verify.md` (a call per lane keeps only the last lane's result). Before ready, sync again after the gate passes. |
 | 2 | `cannot-run` | Fix the stated cause, such as uncommitted tracked changes or a detached HEAD, and run it again. A rebase left in progress is listed as conflicts; finish or abort it first. |
 | 3 | `conflict` | The rebase stopped. Apply the conflict policy below. |
 | 4 | `not-owned` | Dex did not create this branch, so it is never rewritten. Record the `behind=` count and base in the phase summary and the PR handoff, then continue on the current tree. |

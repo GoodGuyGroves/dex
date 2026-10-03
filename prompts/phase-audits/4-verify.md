@@ -30,7 +30,27 @@ Confirm every quality gate passed:
 - Format: PASS? If not, run the formatter and re-check.
 - Lint: PASS? If not, fix lint errors (don't disable rules).
 - Typecheck: PASS? If not, fix type errors.
-- Tests: ALL passing? No skipped tests, no flaky failures? If any test was skipped or failed intermittently, investigate and fix the root cause.
+- Tests: ALL passing? No skipped tests, no flaky failures? If any test was skipped or failed intermittently, investigate and fix the root cause — unless it is a known baseline failure (below).
+
+When `.dex/dex.md` declares a `## Verification` block, the Phase 4 handoff and
+this audit print its policy (`dx_verification_phase_block`):
+
+- Declared `lanes` are the required Phase 4 gate, run in order in place of the
+  project aggregate gate. Run every lane even when an earlier one fails, so a
+  baseline failure cannot hide a later lane, and record them all in one call
+  under the `full-gate` receipt name (a gate keeps one receipt per name, so a
+  call per lane would keep only the last lane's result):
+  `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`.
+- A failing test listed under `known_failures` for a base this branch contains
+  was failing before this unit. Report it as `baseline (<issue-ref>)` and do
+  not fix it here: a fix belongs in its own issue and branch. Rerun it alone
+  first when it may be a timing flake. A failure not on that list is this
+  unit's to fix.
+- A lane run that fails only on listed baseline failures, with every lane
+  run to the end, still meets the gate:
+  its `full-gate` receipt records the failure (`gate-receipt.sh full-gate`
+  answers 3), and the summary names every failing test as
+  `baseline (<issue-ref>)`. Any other failing test makes it a gate to fix.
 
 Every required gate needs a passing result for *this* tree, and this is the
 phase that runs the complete suite. Before running it, ask
@@ -40,9 +60,11 @@ base is the evidence, so reuse it and say so; a receipt for any other gate is
 not. A resume is no exception: never waive or pass this phase on a receipt or
 gate log that `gate-receipt.sh` does not accept for the current HEAD and base,
 such as one recorded before the base moved.
-Otherwise run `dx run-gate --name full-gate <project aggregate gate>` now, which
-records the receipt; one that failed on this tree is a gate to fix, not to
-re-run. When `.dex/dex.md` § Resources declares `full_gate: ci`, run the fast
+Otherwise run `dx run-gate --name full-gate <project aggregate gate>`, or the
+declared `## Verification` lanes in the one-call form above, now, which records
+the receipt; one that failed on this tree is a gate to fix, not to re-run,
+unless every failure in it is a listed baseline failure (above). When
+`.dex/dex.md` § Resources declares `full_gate: ci`, run the fast
 gates and focused tests here, leave the complete suite to CI, keep the PR a
 draft, and let Phase 6 treat CI as the final gate — unless this ticket
 changed the gates, CI, or test infrastructure, which runs locally regardless.
@@ -100,7 +122,11 @@ ALL of these must be true before you stop:
   any other answer was handled under `$DEX_DIR/prompts/base-sync.md`
 - Every required gate has a passing result for this tree: a reused `dx run-gate`
   receipt with matching checkout, working-tree and base fingerprints, a fresh
-  run, or CI under `full_gate: ci`
+  run, or CI under `full_gate: ci`.
+  With a declared `## Verification` policy, the declared lanes are the required
+  gate; a lane run whose only failures are listed `known_failures` entries
+  counts as passing when the summary lists each as `baseline (<issue-ref>)`
+  with no fix commit for it on this branch
 - No session-owned background process in flight, per `dx ps`
 - Commits are clean and atomic with conventional messages
 - No unwanted files in the diff

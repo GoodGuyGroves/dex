@@ -37,6 +37,14 @@ its `## Quality Gates` section as authoritative:
   the rest through `dx run-gate --name <receipt-name> <command>`, which records
   the receipt Phase 4 reads.
 - Do not replace a named gate with an inferred, narrower alternative.
+- A `## Verification` block (`dx_verification_phase_block "$(git rev-parse --show-toplevel)"`
+  prints it) narrows Phase 4 on purpose: its `lanes` are the required gate,
+  every one run in order, even after one fails, under the `full-gate` receipt
+  name. Run them all in one
+  `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`
+  call: a gate keeps one receipt per name, so a call per lane would keep only
+  the last lane's result. Its `known_failures` entries are baseline failures to report as
+  `baseline (<issue-ref>)`, never fix in this unit.
 - Treat a missing command, stale instruction, or un-runnable gate as a failure
   to resolve or report, not permission to skip it.
 - If an outlier justifies skipping a required gate, ask the human or apply a
@@ -90,6 +98,9 @@ CI, or test infrastructure runs the full suite locally regardless.
 
 When a check fails:
 
+0. If the failing test is listed by `dx_verification_known_failures`, it was
+   already failing on this branch's base. Report it as `baseline (<issue-ref>)`
+   and move on; do not commit a fix for it here.
 1. Diagnose the exact failure.
 2. Make the smallest valid fix.
 3. When that fix forms a coherent checkpoint, commit and push it without
@@ -119,5 +130,8 @@ human action.
 
 List every required gate and its result. Include concise failure output and the
 remaining action for any gate that did not pass. Do not report the pipeline as
-successful while a required gate is failed, skipped, or unverified. If the
+successful while a required gate is failed, skipped, or unverified. The one
+exception is a declared-lanes `full-gate` run, every lane run to the end, whose
+only failures are listed `known_failures` entries: it meets the gate, and the
+report names each of those tests as `baseline (<issue-ref>)`. If the
 phase proceeds by override, report it as waived with the recorded reason.
