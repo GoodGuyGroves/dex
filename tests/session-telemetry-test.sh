@@ -346,7 +346,9 @@ report_dir="$2"
   nohup /bin/sleep 300 > /dev/null 2>&1 &
   printf '%s\n' "$!" > "$report_dir/summary-child.pid"
   disown 2>/dev/null || true
-  /bin/sleep 300
+  # exec, so the holder is this PID on every bash: 3.2 keeps the subshell alive
+  # after it has started a background job instead of exec'ing its last command.
+  exec /bin/sleep 300
 ) &
 printf '%s\n' "$!" > "$report_dir/summary-holder.pid"
 PROVIDER
