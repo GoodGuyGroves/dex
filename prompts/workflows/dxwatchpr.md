@@ -169,7 +169,7 @@ If `/dxprreview` reports escalations, proceed to Step 7 (Escalation).
 
 ### 5. Re-Request Reviewers After a Push
 
-If this cycle pushed any new commits (from a CI fix or `/dxprreview`), re-trigger reviewers so they get a fresh notification that there's something new to look at. Read the reviewer rows with `dx_reviewers_rows "$(git rev-parse --show-toplevel)"` (`handle<TAB>type<TAB>wait<TAB>adapter`); generic rows go to `REQUEST_REVIEWERS` or `MENTION_REVIEWERS` by type, and `greptile` or `copilot` rows are adapter rows (see `$DEX_DIR/prompts/reviewers/<adapter>.md`):
+If this cycle pushed any new commits (from a CI fix or `/dxprreview`), re-trigger reviewers so they get a fresh notification that there's something new to look at. Skip this step when `dx_reviewers_mode` prints `none` (the `pr.reviewers none` override). Read the reviewer rows with `dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --show-toplevel)"` (`handle<TAB>type<TAB>wait<TAB>adapter`); generic rows go to `REQUEST_REVIEWERS` or `MENTION_REVIEWERS` by type, and `greptile` or `copilot` rows are adapter rows (see `$DEX_DIR/prompts/reviewers/<adapter>.md`):
 
 ```bash
 POST_HEAD=$(git rev-parse HEAD)

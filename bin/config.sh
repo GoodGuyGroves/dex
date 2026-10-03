@@ -298,7 +298,8 @@ fi
 REVIEWERS="## Reviewers
 
 Request reviewers are attached before Phase 5 marks the PR ready for review.
-Mention reviewers are notified in Phase 6. Two types:
+Mention reviewers are notified in Phase 6. A session with the pr.reviewers none
+override requests, mentions and waits for no one. Two types:
 - \`request\` — native GitHub review request via Dex's reviewer helper
 - \`mention\` — \`@<handle>\` posted as a PR comment (for AI agents that watch mentions)
 

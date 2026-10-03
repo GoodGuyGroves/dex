@@ -68,8 +68,8 @@ Each phase has its own audit prompt in `prompts/phase-audits/`:
 | 2. Implement | `2-implement.md` | Task completion, TDD verification, coherent checkpoint history pushed as work develops, UI proof decision, evidence table, Phase 3 risk selection |
 | 3. Review | `3-review-loop.md` | Independent `/dxreviewloop` waves, accepted-fix checkpoints pushed, selected tier's global clean gate reached |
 | 4. Verify | `4-verify.md` | Final PR checks passing, verification repair checkpoints pushed, branch current on origin |
-| 5. PR | `5-pr.md` | Description quality, scope match, current visual media attached or handed off with a warning, PR ready with `request` reviewers attached |
-| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment, monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, settle the ticket per `ticket_close`, clean up local worktree/branch |
+| 5. PR | `5-pr.md` | Description quality, scope match, current visual media attached or handed off with a warning, PR ready with `request` reviewers attached (none under `pr.reviewers none`) |
+| 6. Complete | `6-complete.md` | Cycle loop: verify readiness, request reviewers, post mention comment (neither under `pr.reviewers none`), monitor CI/reviews through `/dxwatchpr`, address failures, re-request after each push, settle the ticket per `ticket_close`, clean up local worktree/branch |
 
 During Phase 0, `dx_ticket_branch_prepare` resolves the branch name supplied by
 the tracker. If that branch exists on `origin`, Dex fetches its current tip and
@@ -333,7 +333,9 @@ wrapper-clocked transition marks rather than reviewer estimates.
 Phase 2 treats UI proof as an explicit agent judgment. `/dxuicapture` can produce a short before/after or after-only walkthrough when it improves the review, record a reasoned `SKIPPED` decision for a visible but disproportionate case, or record `N/A` when nothing changes in the browser. A human can request the full diff-aware capture at any time with `/dxproof` or its `/dxcapture` alias. Generated videos, screenshots, traces, captions, browser logs, and the handoff manifest stay under `~/.claude/.dex-artifacts/`; the lifecycle surfaces their status without turning capture into a hard product-correctness gate. For `READY` proof, Phase 5 attaches the current image/video bundle to the PR when GitHub CLI supports `--attach`. Older clients and incomplete uploads keep a visible local handoff. See [ui-capture.md](ui-capture.md).
 
 Phase 6 (Complete) is autonomous and bounded: it reads `## Reviewers` from
-`.dex/dex.md` to know who to notify. The autonomous loop re-reads
+`.dex/dex.md` to know who to notify, through `dx_reviewers_rows_effective`, so
+a session with the `pr.reviewers none` override notifies, re-requests and
+waits for no one. The autonomous loop re-reads
 `dx_complete_wait_minutes` (default 5) and `dx_complete_max_cycles` (default 3)
 each cycle, addresses failures through `/dxwatchpr` and `/dxprreview`, and
 re-requests reviewers after each push. It settles the ticket per
@@ -350,7 +352,7 @@ AI reviewers can opt into a wait. A `## Reviewers` row may add `Wait` and
 | @greptileai | mention | yes | greptile | Greptile AI review |
 | Copilot | request | yes | copilot | GitHub Copilot review |
 
-With `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
+Unless the session sets `pr.reviewers none`, with `Wait: yes`, Phase 6 does not complete until that reviewer has reviewed
 the PR's current head commit, or until `DEX_REVIEWER_WAIT_MINUTES` (default 20)
 runs out for that head. A timeout is reported as "not reviewed", never as a
 clean review. The adapter says how to ask and how to tell the review is done:
@@ -947,7 +949,8 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.phase-0.ready` — Phase 0 marker written after ticket setup; the Stop hook blocks the Phase 0 stop without it
 - `.phase-1.started` / `.phase-1.ready` — Phase 1 markers written by `dxplan`; the Stop hook does not count plan audit iterations until the approval marker exists
 - `.phase-2.ready` — Phase 2 marker written by `dximplement` only after every
-  acceptance criterion and verification gate is complete and a valid
+  acceptance criterion and verification gate is complete (or sealed-deferred
+  under `deferred_criteria`) and a valid
   current-scope, policy-bound review-risk selection exists; the Stop hook
   ignores `PHASE_2_COMPLETE` without it
 - `.phase-3.busy` — Phase 3 marker written by `dxreviewloop` while a review wave is running; the Stop hook does not count audit iterations while waiting, detects a dead recorded owner, and directs the agent to attributed recovery rather than manual deletion

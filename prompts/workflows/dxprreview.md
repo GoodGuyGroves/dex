@@ -321,8 +321,9 @@ What the helper does for each outcome:
 Reactions go only on comments whose author is a bot account, because bots such
 as Greptile and Copilot learn from them; human reviewers get the reply alone.
 On a Greptile comment, the helper starts Dex's first disagreement reply in a
-thread with the Greptile handle so Greptile re-reads the thread. Do not add
-the handle or the marker yourself.
+thread with the Greptile handle so Greptile re-reads the thread, except when
+`dx_reviewers_mode` prints `none` (the `pr.reviewers none` override): then it
+mentions no reviewer. Do not add the handle or the marker yourself.
 
 The helper prints `comment_id<TAB>reply=posted<TAB>reaction=…<TAB>thread=…`
 and reads the thread state from GitHub itself. Return codes:

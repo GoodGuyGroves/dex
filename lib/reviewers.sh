@@ -608,7 +608,9 @@ EOF
 # repositories without required status checks, where a half-registered check
 # list can otherwise look green. Without it, CI is green when every check
 # passed or was skipped. Greptile's check runs are left out when a Greptile
-# reviewer row exists, because dx_reviewer_gate owns them.
+# reviewer row exists, because dx_reviewer_gate owns them; under pr.reviewers
+# none the gate waits for no one, and leaving them out keeps CI from waiting
+# on a reviewer that was never asked.
 # CI that stays pending on one head longer than dx_complete_pending_minutes is
 # `stalled`, which Phase 6 treats as an idle cycle instead of a waiting one.
 # rc: 0 green, 1 pending, 3 failed, 4 stalled, 2 error.
