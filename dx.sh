@@ -3562,8 +3562,16 @@ __dx_run_phases_inline() {
     return 1
   fi
 
-  if [[ $exit_code -eq 0 && "$final_step" -ge 7 ]] \
+  # The terminal proof is what records completion, and it is written before
+  # the provider exits. How the provider then ends (an /exit that the session
+  # reap cut short returns 143) does not undo it, so a valid proof completes
+  # the lifecycle and its teardown whatever the exit code.
+  if [[ "$final_step" -ge 7 ]] \
     && dx_lifecycle_terminal_commit_valid "$session_id"; then
+    if [[ $exit_code -ne 0 ]]; then
+      dx_run_log_append_for_session "$session_id" "info" "dx" \
+        "Provider exited with code ${exit_code} after the lifecycle completed"
+    fi
     dx_run_log_append_for_session "$session_id" "info" "dx" "Ticket lifecycle complete"
     dx_provider_cleanup_session_state "$session_id"
     rm -f "$(dx_active_file "$session_id")" "$(dx_owner_file "$session_id")" "$(dx_loop_config_file "$session_id")" "$(dx_handoff_mode_file "$session_id")" 2>/dev/null
