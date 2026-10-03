@@ -127,5 +127,8 @@ human action.
 
 List every required gate and its result. Include concise failure output and the
 remaining action for any gate that did not pass. Do not report the pipeline as
-successful while a required gate is failed, skipped, or unverified. If the
+successful while a required gate is failed, skipped, or unverified. The one
+exception is a declared-lanes `full-gate` run, every lane run to the end, whose
+only failures are listed `known_failures` entries: it meets the gate, and the
+report names each of those tests as `baseline (<issue-ref>)`. If the
 phase proceeds by override, report it as waived with the recorded reason.
