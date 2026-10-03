@@ -293,7 +293,7 @@ dx_verification_phase_block() {
     command rm -f "$err_file"
   fi
   if [[ "$lanes_rc" -eq 0 && -n "$lanes" ]]; then
-    body+="- Run every one of these lanes, in order and even after one fails, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate:"$'\n'
+    body+="- Run every one of these lanes, in order and even after one fails, as the required Phase 4 gate (receipt name full-gate), instead of the project's aggregate gate. Run them all inside one dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit \$rc' call: a gate keeps one receipt, so a separate call per lane would leave only the last lane's result:"$'\n'
     while IFS= read -r lane; do
       [[ -z "$lane" ]] || body+="    ${lane}"$'\n'
     done <<< "$lanes"

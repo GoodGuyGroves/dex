@@ -80,6 +80,7 @@ assert_eq $'bash tests/check.sh\nDX_TEST_LANES=fast bash tests/run-all.sh' \
 block=$(dx_verification_phase_block "$REPO")
 block_has "$block" "Phase 4 verification policy (.dex/dex.md § Verification):"
 block_has "$block" "required Phase 4 gate (receipt name full-gate)"
+block_has "$block" "inside one dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1;"
 block_has "$block" "    bash tests/check.sh"
 block_has "$block" "    DX_TEST_LANES=fast bash tests/run-all.sh"
 block_lacks "$block" "baseline"
