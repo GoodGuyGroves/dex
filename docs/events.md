@@ -349,6 +349,8 @@ Artifact upload remains best effort. A registration, storage, or confirmation
 failure leaves the local file and manifest intact so the run can continue.
 Set `DEXCODE_SYNC=0` (or `false`, `no`, or `off`) to disable run and artifact
 sync. `DEXCODE_CONTEXT_SYNC` accepts the same values for project context.
+`DEX_OFFLINE=1` turns both off, along with Factory event sync; see
+[Offline mode](reference.md#offline-mode).
 DexCode API requests time out after 15 seconds by default; set
 `DEXCODE_HTTP_TIMEOUT_SECONDS` to a value from 1 to 3600 to change that limit.
 Sending an artifact's bytes is not an API request and gets its own budget of

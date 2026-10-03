@@ -140,6 +140,7 @@ the gate map.
 |----------|---------|---------|
 | `DEX_DIR` | Installation directory | `$HOME/work/dex` |
 | `DEX_HOME` | One root for all Dex state; see [State root](#state-root). Empty counts as unset | unset |
+| `DEX_OFFLINE` | `1` turns off every optional network call Dex's own tooling makes; see [Offline mode](#offline-mode) | unset |
 | `DEX_AUTO_INIT` | `1` lets `dx` set up `.dex/` in a repository without one when there is no terminal to ask on; see [Auto-init](#auto-init) | unset |
 | `DEX_EXTRA_SETTINGS` | A Claude settings file layered last into every Dex launch's `--settings` file; an unreadable one stops the launch | unset |
 | `DEX_LAUNCHED` | Set to `1` in every Claude session Dex launches; the opt-in global hooks (`dx install --global-hooks`) do nothing when it is set | unset |
@@ -413,3 +414,47 @@ $DEX_HOME/
   commands, never exported into your shell, and a value you already set (a
   Nix-provided browser bundle, say) wins. Browser MCP servers registered by
   `dx ui-capture install` carry `DEX_HOME` in their entry.
+
+## Offline mode
+
+`DEX_OFFLINE=1` turns off every optional network call Dex's own tooling makes.
+It is for restricted networks, and for anyone who wants no data to leave the
+machine. `1`, `true`, `yes` and `on` (any case) turn it on. Any other value,
+or no value, leaves Dex as it was. Nothing in `.dex/dex.md` changes.
+
+What it turns off:
+
+- DexCode run, artifact and project-context sync, and Factory event sync.
+  It wins over an explicit `DEXCODE_SYNC=1`, `DEXCODE_CONTEXT_SYNC=1` or
+  `DEX_FACTORY_SYNC=true`. With `DEXCODE_SYNC_REQUIRED=1` or
+  `DEXCODE_CONTEXT_SYNC_REQUIRED=1` the run warns that the requirement was
+  ignored rather than failing.
+- The RTK release check and download. An RTK that is already installed keeps
+  rewriting commands; `DX_RTK_ENABLED=0` is what turns RTK off.
+- The tool bootstrap's downloads: the UI-capture `npm install` and Chromium
+  download, the plugin marketplace clone and fetch, and registering the remote
+  OpenAI docs MCP. Each reports `[skip] … (DEX_OFFLINE=1)`, and the bootstrap
+  still succeeds. Work that is already done is reported as it always is.
+- Remote MCP servers in Dex's own registry (a `url`, or type `http` or `sse`)
+  are left out of every launch, including one an earlier online bootstrap
+  registered. Servers you configured yourself are not touched.
+- Browser MCP servers start `npx` with npm's offline mode, so
+  `@latest` resolves from the npm cache. One that was never started online
+  fails with npm's `ENOTCACHED` error.
+- UI-capture narration, whose voice model downloads on first use, is turned
+  off. The video keeps its captions.
+
+Commands whose whole job is the network exit non-zero with
+`<command> needs the network; unset DEX_OFFLINE to allow it`: `dx login`,
+`dx dexcode use`, `dx worker register`, `dx worker run`, `dx run --spec-url`,
+`dx ui-capture install` (and a capture that would first have to install its
+tooling), and `dx router setup`, `install` and `update`. `dx whoami` shows the
+saved details without refreshing them.
+
+What it does not cover: the lifecycle's own `git` and `gh` traffic (fetch,
+push, pull requests, issues), the model traffic of Claude, Codex and the CCR
+router, and anything your own MCP servers or hooks do.
+
+`dx status` shows the posture on its `Network:` row. Export the variable, or
+set it in the shell that runs `dx`; `dx` passes it on to the scripts and hooks
+it starts.
