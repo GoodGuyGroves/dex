@@ -129,6 +129,20 @@ owned_payload "Stop Dex." "claude-bystander" | env DEX_LOOP_ACTIVE=0 bash "$HOOK
 [[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
 [[ ! -e "$OWNER_FILE" ]] || assert_at $LINENO
 
+# A background agent's task-notification reaches this hook as a prompt (#35).
+# Quoting a phase control in its report neither publishes the control nor
+# binds ownership: nothing in it was typed by the human.
+NOTIFICATION='<task-notification>
+<task-id>a1b2c3</task-id>
+<status>completed</status>
+<summary>Agent "Explore lifecycle control" finished</summary>
+<result>Agents run bash "$DEX_DIR/bin/control.sh" jump verify to skip ahead.</result>
+</task-notification>'
+owned_payload "$NOTIFICATION" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=1 bash "$HOOK" > "$TMP_DIR/notification.out"
+[[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
+[[ ! -e "$OWNER_FILE" ]] || assert_at $LINENO
+[[ ! -s "$TMP_DIR/notification.out" ]] || assert_at $LINENO
+
 # The launcher-authorized prompt binds ownership before publishing control.
 owned_payload "Please stop now." "$CONTROL_OWNER" | bash "$HOOK" > "$TMP_DIR/stop.out"
 [[ "$(dx_lifecycle_control_read "$DEX_SESSION_ID" action)" == "cancel" ]] || assert_at $LINENO
@@ -181,6 +195,33 @@ dx_clear_lifecycle_control "$DEX_SESSION_ID"
 rm -f "$PAUSED_FILE"
 owned_payload "Do not stop Dex; keep reviewing." "$CONTROL_OWNER" | bash "$HOOK" > "$TMP_DIR/negated.out"
 [[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
+
+# The owner's own notification is still not a human control, while the
+# human typing the same phase move is.
+owned_payload "$NOTIFICATION" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=1 bash "$HOOK" > "$TMP_DIR/notification.out"
+[[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
+owned_payload "jump to verify" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=1 bash "$HOOK" > "$TMP_DIR/typed-jump.out"
+[[ "$(dx_lifecycle_control_read "$DEX_SESSION_ID" action)" == "jump" ]] || assert_at $LINENO
+[[ "$(dx_lifecycle_control_read "$DEX_SESSION_ID" target_phase)" == "4" ]] || assert_at $LINENO
+[[ "$(dx_lifecycle_control_read "$DEX_SESSION_ID" source)" == "user-prompt" ]] || assert_at $LINENO
+grep -q "Phase 4" "$TMP_DIR/typed-jump.out" || assert_at $LINENO
+dx_clear_lifecycle_control "$DEX_SESSION_ID"
+
+# In Phase 6 a typed prompt pauses the PR watcher; a notification does not.
+WATCH_PAUSE_FILE=$(dx_watch_pause_file "$DEX_SESSION_ID")
+rm -f "$WATCH_PAUSE_FILE"
+owned_payload "$NOTIFICATION" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-notification.out"
+[[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
+[[ ! -e "$CONTROL_FILE" ]] || assert_at $LINENO
+# Two notifications on one line, and a blank prompt, carry no typed text.
+owned_payload "${NOTIFICATION}${NOTIFICATION//task-notification>/agent-message>}" "$CONTROL_OWNER" \
+  | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-adjacent.out"
+[[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
+owned_payload "" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-blank.out"
+[[ ! -e "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
+owned_payload "Why did CI fail?" "$CONTROL_OWNER" | env DEX_LOOP_PHASE=6 bash "$HOOK" > "$TMP_DIR/phase6-typed.out"
+[[ -f "$WATCH_PAUSE_FILE" ]] || assert_at $LINENO
+rm -f "$WATCH_PAUSE_FILE"
 
 owned_payload "Skip verification and prepare the PR." "$CONTROL_OWNER" | bash "$HOOK" > "$TMP_DIR/jump.out"
 [[ "$(dx_lifecycle_control_read "$DEX_SESSION_ID" action)" == "jump" ]] || assert_at $LINENO

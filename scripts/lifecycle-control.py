@@ -6,8 +6,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+
+# Running this file by path already puts scripts/ on sys.path, but not under
+# PYTHONSAFEPATH, so name the directory rather than depend on the default.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from prompt_origin import human_prompt_text  # noqa: E402
 
 
 PHASE_ALIASES = {
@@ -299,7 +305,9 @@ def direct_jump_or_skip(text: str, current_phase: int | None) -> dict[str, objec
 
 
 def parse_prompt(text: str, current_phase: int | None) -> dict[str, object]:
-    text = text[:65536]
+    # A task-notification or another session's message is not the human's
+    # text, however much it talks about phase controls.
+    text = human_prompt_text(text)[:65536]
     explicit = explicit_directive(text, current_phase)
     if explicit:
         return explicit

@@ -563,6 +563,12 @@ the agent's next tool call. Pause and stop detach the session from Dex's Stop
 hook's phase sequencing while preserving the workspace and current phase for a
 later resume.
 
+Only the text the human typed counts. Claude Code delivers background-task
+notifications and messages from other sessions through the same hook, so
+`$DEX_DIR/scripts/prompt_origin.py` strips their envelopes first. A subagent
+report that quotes `control.sh jump verify` records no control, claims no
+session, and does not pause the Phase 6 watcher.
+
 The compact forms are `/dxpause`, `/dxskip`, `/dxjump verify`, `/dxresume`, and
 `/dxrecover`. `/dxskip` works in any active phase and moves to the next one;
 `/dxjump <phase>` names the destination. Skip records the current phase as
