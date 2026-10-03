@@ -2301,10 +2301,12 @@ __dx_session_management_cleanup_completed_exact() { # <repo-dir> <sid>
 # a runtime, the claim-based exact cleanup goes first and takes the lease with
 # the rest of the session. Returns its status (1 refused: the runtime is live
 # or not terminal; 3 could not run) without touching the lease or any other
-# state, so the caller decides what a refusal means.
+# state, so the caller decides what a refusal means. A ticket close waiting for
+# the merge outlives the session, as it does with dx_cleanup_session.
 __dx_session_discard_state() {
   [[ $# -eq 2 ]] || return 3
-  local repo_dir="$1" session_id="$2" runtime_file meta_file cleanup_result=0
+  local repo_dir="$1" session_id="$2" runtime_file meta_file meta_tmp
+  local saved_meta="" cleanup_result=0
   dx_session_id_valid "$session_id" || return 3
   runtime_file=$(dx_session_runtime_file "$session_id") || return 3
   if [[ -e "$runtime_file" || -L "$runtime_file" ]]; then
@@ -2314,10 +2316,21 @@ __dx_session_discard_state() {
     meta_file=$(dx_meta_file "$session_id")
     if [[ -f "$meta_file" && ! -L "$meta_file" && -O "$meta_file" ]]; then
       chmod 600 "$meta_file" 2>/dev/null || true
+      if [[ -n "$(dx_meta_read "$session_id" ticket_close_pending)" ]]; then
+        saved_meta=$(cat "$meta_file" 2>/dev/null) || saved_meta=""
+      fi
     fi
     __dx_session_management_cleanup_exact "$repo_dir" "$session_id" any-terminal \
       || cleanup_result=$?
     [[ "$cleanup_result" -eq 0 ]] || return "$cleanup_result"
+    # The exact cleanup removes the whole .meta; put it back so
+    # dx_cleanup_session below keeps only the pending ticket close from it.
+    if [[ -n "$saved_meta" ]]; then
+      meta_tmp="${meta_file}.tmp.$$"
+      if (umask 077 && printf '%s\n' "$saved_meta" > "$meta_tmp"); then
+        mv -f "$meta_tmp" "$meta_file" 2>/dev/null || rm -f "$meta_tmp"
+      fi
+    fi
   fi
   dx_cleanup_session "$session_id"
 }

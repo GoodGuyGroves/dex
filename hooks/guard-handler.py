@@ -2484,6 +2484,11 @@ def _segment_amends(segment):
             return True
         if token in COMMIT_VALUE_OPTIONS:
             skip_value = True
+        elif (token.startswith('-') and not token.startswith('--') and len(token) > 2
+              and token[-1] in 'mFCct'):
+            # A short-option cluster such as -am ends in an option that takes
+            # the next word as its value.
+            skip_value = True
     return False
 
 

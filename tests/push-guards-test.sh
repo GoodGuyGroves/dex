@@ -134,14 +134,16 @@ check_history_rewrite() {
 }
 
 for rewrite in 'git commit --amend --no-edit' 'git commit --amend -m "fix: x"' \
-  'git commit -a --amend' 'git -C . commit --amend' "bash -c 'git commit --amend'" \
+  'git commit -a --amend' 'git commit -am fix --amend' 'git -C . commit --amend' \
+  "bash -c 'git commit --amend'" \
   'echo "$(git commit --amend --no-edit)"' 'git push --force-with-lease' \
   'git -C . push -f origin b' 'git push origin +HEAD:b' \
   'git add a.txt && git commit --amend --no-edit && git push --force-with-lease'; do
   check_history_rewrite block "$rewrite" DEX_REVIEW_PASS_ACTIVE=1
 done
 for ordinary in 'git commit -m review-fix' 'git commit -m "--amend"' \
-  'git commit -m fix -m "--amend the docs"' 'echo git commit --amend' 'git push' \
+  'git commit -m fix -m "--amend the docs"' 'git commit -am "--amend"' \
+  'echo git commit --amend' 'git push' \
   'git push -u origin HEAD' 'bash "$DEX_DIR/bin/branch-sync.sh" push' \
   'bash "$DEX_DIR/bin/branch-sync.sh" sync' 'git commit -- --amend'; do
   check_history_rewrite allow "$ordinary" DEX_REVIEW_PASS_ACTIVE=1

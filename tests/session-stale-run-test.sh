@@ -83,6 +83,18 @@ SID=$(seed_run ticket-21 3 finished)
 dx_zsh 'dxrm 21' > "$TMP_DIR/dxrm.out" 2>&1 || { cat "$TMP_DIR/dxrm.out" >&2; fail "dxrm 21 failed"; }
 assert_eq "" "$(state_of "$SID")" "dxrm leaves no phase, run ID or runtime behind"
 
+# A ticket close waiting for the merge outlives the session, as it did before
+# dxrm took the runtime lease too.
+git -C "$TEST_REPO" worktree add -q "$TEST_REPO/.dex/worktrees/ticket-23" -b worktree-ticket-23 HEAD
+SID=$(seed_run ticket-23 3 finished)
+TEST_SID="$SID" dx_zsh 'dx_meta_write "$TEST_SID" ticket_close_pending=1 ticket_close_target=Done'
+dx_zsh 'dxrm 23' > "$TMP_DIR/dxrm-close.out" 2>&1 || { cat "$TMP_DIR/dxrm-close.out" >&2; fail "dxrm 23 failed"; }
+assert_eq "" "$(state_of "$SID")" "dxrm with a pending ticket close still drops the run"
+assert_eq "1" "$(TEST_SID="$SID" dx_zsh 'dx_meta_read "$TEST_SID" ticket_close_pending')" \
+  "the pending ticket close is kept for the merge sweep"
+assert_eq "" "$(TEST_SID="$SID" dx_zsh 'dx_meta_read "$TEST_SID" wt_dir')" \
+  "only the ticket close part of the metadata is kept"
+
 # A runtime whose owner is still running keeps its lease, and dxrm says so.
 # Started outside this shell's job table, so stopping it at the end is quiet.
 LIVE_PID=$(sleep 300 >/dev/null 2>&1 & printf '%s\n' "$!")

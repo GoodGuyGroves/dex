@@ -983,8 +983,8 @@ __dx_stale_run_resolve() {
   local repo_root="$1" session_id="$2" wt_dir="$3" wt_name="$4"
   local phase="" answer=""
   [[ ! -d "$wt_dir" ]] || return 0
-  [[ -e "$(dx_state_file "$session_id")" || -e "$(dx_run_id_file "$session_id")" \
-    || -e "$(dx_session_runtime_file "$session_id")" ]] || return 0
+  [[ -e "$(dx_state_file "$session_id")" || -e "$(dx_run_id_file "$session_id")" ]] \
+    || return 0
   phase=$(dx_lifecycle_phase_state "$session_id" 2>/dev/null) || phase=""
   [[ -n "$phase" ]] || phase=$(head -n 1 "$(dx_state_file "$session_id")" 2>/dev/null) || phase=""
   [[ "$phase" =~ ^[0-7]$ ]] || phase="?"
