@@ -304,15 +304,18 @@ run_sessions "$REPO_A" "$TMP_DIR/partial-show.out" \
 assert_eq "0" "$COMMAND_RESULT" "partial failure catalog visibility"
 assert_contains "Session: $PARTIAL_SID" "$TMP_DIR/partial-show.out"
 
-find "$TMP_DIR" -type f -name '*.out' -exec cat {} + \
-  > "$TMP_DIR/all-command-output"
-while IFS= read -r private_token; do
-  [[ -n "$private_token" ]] || continue
-  assert_not_contains "$private_token" "$TMP_DIR/all-command-output"
-done < "$TMP_DIR/private-runtime-tokens"
-assert_not_contains "$CORRUPT_SECRET" "$TMP_DIR/all-command-output"
-assert_not_contains '"token"' "$TMP_DIR/all-command-output"
-assert_not_contains '.runtime-owners' "$TMP_DIR/all-command-output"
+assert_no_private_output() {
+  find "$TMP_DIR" -type f -name '*.out' -exec cat {} + \
+    > "$TMP_DIR/all-command-output"
+  while IFS= read -r private_token; do
+    [[ -n "$private_token" ]] || continue
+    assert_not_contains "$private_token" "$TMP_DIR/all-command-output"
+  done < "$TMP_DIR/private-runtime-tokens"
+  assert_not_contains "$CORRUPT_SECRET" "$TMP_DIR/all-command-output"
+  assert_not_contains '"token"' "$TMP_DIR/all-command-output"
+  assert_not_contains '.runtime-owners' "$TMP_DIR/all-command-output"
+}
+assert_no_private_output
 
 dx_session_runtime_finish "$LIVE_SID" "$LIVE_TOKEN" paused "$$"
 dx_session_runtime_finish \
@@ -464,5 +467,8 @@ assert_eq "0" "$COMMAND_RESULT" "journal resume result"
 assert_contains "Session $JOURNAL_SID was forgotten." "$TMP_DIR/journal-resume.out"
 assert_no_file "$(dx_session_cleanup_journal_file "$JOURNAL_SID")"
 assert_no_file "$(dx_session_runtime_file "$JOURNAL_SID")"
+
+# The orphan and journal cases above print no runtime token either.
+assert_no_private_output
 
 printf '%s\n' "session forget tests passed"
