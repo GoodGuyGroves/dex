@@ -1341,6 +1341,82 @@ while True:
 ' "$@"
 }
 
+# dx_provider_claude_transcript_exists <launch-dir> <conversation-id> [session-name]
+# Whether Claude Code has a transcript for a conversation: 0 found, 1 missing,
+# 2 unknown. Claude keeps one at <config>/projects/<encoded dir>/<id>.jsonl,
+# where the launch directory is encoded by turning every character that is not
+# a letter or digit into '-' (the rule scripts/attribution.py follows). Both the logical and the physical launch
+# directory are tried. With no ID, a transcript whose custom-title record
+# carries the session name (`claude -n`) counts. Only files are read; nothing
+# asks Claude, whose messages change between releases.
+dx_provider_claude_transcript_exists() {
+  local launch_dir="${1:-}" conversation="${2:-}" session_name="${3:-}" physical_dir=""
+  [[ -n "$launch_dir" ]] || return 2
+  physical_dir=$(cd "$launch_dir" 2>/dev/null && pwd -P) || physical_dir=""
+  python3 - "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "$conversation" "$session_name" \
+    "$launch_dir" "$physical_dir" <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+
+FOUND, MISSING, UNKNOWN = 0, 1, 2
+root, conversation, name = sys.argv[1:4]
+launch_dirs = [d for d in dict.fromkeys(sys.argv[4:]) if d]
+if not os.path.isdir(root):
+    sys.exit(UNKNOWN)
+if conversation and not re.match(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$", conversation):
+    sys.exit(UNKNOWN)
+if not conversation and not name:
+    sys.exit(UNKNOWN)
+projects = os.path.join(root, "projects")
+if not os.path.isdir(projects):
+    sys.exit(MISSING)
+project_dirs = [os.path.join(projects, re.sub(r"[^A-Za-z0-9]", "-", d)) for d in launch_dirs]
+present = [d for d in project_dirs if os.path.isdir(d)]
+
+if conversation:
+    if any(os.path.isfile(os.path.join(d, conversation + ".jsonl")) for d in present):
+        sys.exit(FOUND)
+    # Claude shortens a project name longer than 200 characters and appends a
+    # hash, so match those by their first 200 characters.
+    for d in project_dirs:
+        name_part = os.path.basename(d)
+        if len(name_part) > 200 and glob.glob(os.path.join(
+                glob.escape(projects), glob.escape(name_part[:200]) + "*",
+                glob.escape(conversation) + ".jsonl")):
+            sys.exit(FOUND)
+    sys.exit(MISSING)
+
+unreadable = False
+for directory in present:
+    try:
+        entries = sorted(os.listdir(directory))
+    except OSError:
+        unreadable = True
+        continue
+    for entry in entries:
+        if not entry.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(directory, entry), "rb") as stream:
+                for line in stream:
+                    if b'"custom-title"' not in line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(record, dict) and record.get("type") == "custom-title" \
+                            and record.get("customTitle") == name:
+                        sys.exit(FOUND)
+        except OSError:
+            unreadable = True
+sys.exit(UNKNOWN if unreadable else MISSING)
+PY
+}
+
 # dx_provider_run_session <name> <resuming:0|1> <saved-handle> <provider-args...>
 # A failed lookup has not started a conversation, so a fresh launch can use
 # the same prepared phase context and completion authorization.
@@ -1370,6 +1446,22 @@ dx_provider_run_session() (
     # Older Claude lifecycles have only Dex's stable session name.
     resume_target="$session_name"
     resume_args=(--resume "$session_name")
+  fi
+
+  # A conversation Claude never wrote cannot be resumed, and newer Claude
+  # versions answer that --resume with an interactive picker rather than the
+  # message matched below. A launch that failed before its session started
+  # leaves exactly this, so look for the transcript first. An unknown answer
+  # keeps the resume and its fallback.
+  if [[ "${DX_PROVIDER_ENGINE:-}" != "codex-plugin" ]]; then
+    local transcript_result=0
+    dx_provider_claude_transcript_exists "$PWD" "$saved_handle" "$session_name" \
+      || transcript_result=$?
+    if [[ "$transcript_result" -eq 1 ]]; then
+      dx_warn "The saved Claude conversation could not be found; starting a new conversation at the current Dex phase."
+      __dx_claude -n "$session_name" "$@"
+      return $?
+    fi
   fi
 
   local missing_file launch_result=0
