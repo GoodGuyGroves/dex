@@ -129,7 +129,10 @@ block_has "$block" "Report each one you hit as baseline (<issue-ref>) and do not
 block_has "$block" "    review-loop (base $BASE_SHA, dex#1)"
 block_has "$block" "    ccr-routing (base main, dex#1)"
 block_lacks "$block" "other-branch-only"
-block_lacks "$block" "unknown-base"
+block_lacks "$block" "    unknown-base (base"
+# A base ref that does not resolve is likely a typo, so the block says so.
+block_has "$(cat "$TMP_DIR/failures.err")" "known_failures line for unknown-base: base ref no-such-ref does not resolve"
+block_has "$block" "known_failures line for unknown-base: base ref no-such-ref does not resolve"
 block_has "$block" "skipping malformed known_failures line for too-few-fields"
 
 # A file whose every entry is filtered out leaves nothing to say: no block,
