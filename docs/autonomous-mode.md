@@ -498,6 +498,7 @@ The built-in operational gates are:
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
 | `pr.rebase-attempts` | Times the base may move between Phase 4 and the PR being marked ready before Dex escalates instead of rebasing again; default 2 (see `prompts/base-sync.md`) |
+| `pr.reviewers` | `none` or `config` (default). `none` makes Phase 5 and 6 request, mention, trigger and wait for no reviewer, for example on a fork PR whose tracked `## Reviewers` table names upstream maintainers, without editing `.dex/dex.md`. Override only: `dx control waive pr.reviewers` is refused, because a waiver would end all of Phase 5. Read by `dx_reviewers_mode` and `dx_reviewers_rows_effective` |
 | `complete.reviewer-wait-minutes`, `complete.pending-minutes` | Phase 6 per-reviewer wait and pending-CI cap |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |

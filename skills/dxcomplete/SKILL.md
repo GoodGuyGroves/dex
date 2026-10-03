@@ -49,9 +49,14 @@ dx_clear_watch_pause "$SESSION_ID"
 
 ### 1. Read Reviewer Config
 
-Read the `## Reviewers` rows with `dx_reviewers_rows "$(git rev-parse --show-toplevel)"`.
+Read the `## Reviewers` rows with
+`dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --show-toplevel)"`.
 It prints `handle<TAB>type<TAB>wait<TAB>adapter` per row, drops the `_none_`
-placeholder, and makes every Copilot row a `request` row. Sort them into:
+placeholder, and makes every Copilot row a `request` row. It prints nothing
+when the session has the `pr.reviewers none` override (`dx_reviewers_mode`
+prints `none`): then nobody is requested, mentioned, triggered, re-requested or
+waited for, and the summary says `Reviewers: none (pr.reviewers override)`.
+Sort the rows into:
 - `REQUEST_REVIEWERS` — generic rows where Type is `request`
 - `MENTION_REVIEWERS` — generic rows where Type is `mention`
 - `ADAPTER_REVIEWERS` — rows whose adapter is `greptile` or `copilot`; read
@@ -103,7 +108,7 @@ When setup runs:
 3. **Trigger adapter reviewers** (Copilot by reviewer request, Greptile by comment):
    ```bash
    REPO_DIR=$(git rev-parse --show-toplevel)
-   dx_reviewers_rows "$REPO_DIR" | while IFS=$'\t' read -r handle _ _ adapter; do
+   dx_reviewers_rows_effective "$SESSION_ID" "$REPO_DIR" | while IFS=$'\t' read -r handle _ _ adapter; do
      [[ "$adapter" == "generic" ]] && continue
      dx_reviewer_trigger "$SESSION_ID" "$REPO_DIR" "$PR_NUM" "$handle" "$adapter"
    done
