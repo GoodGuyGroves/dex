@@ -30,7 +30,19 @@ Confirm every quality gate passed:
 - Format: PASS? If not, run the formatter and re-check.
 - Lint: PASS? If not, fix lint errors (don't disable rules).
 - Typecheck: PASS? If not, fix type errors.
-- Tests: ALL passing? No skipped tests, no flaky failures? If any test was skipped or failed intermittently, investigate and fix the root cause.
+- Tests: ALL passing? No skipped tests, no flaky failures? If any test was skipped or failed intermittently, investigate and fix the root cause — unless it is a known baseline failure (below).
+
+When `.dex/dex.md` declares a `## Verification` block, the Phase 4 handoff and
+this audit print its policy (`dx_verification_phase_block`):
+
+- Declared `lanes` are the required Phase 4 gate, run in order in place of the
+  project aggregate gate. Record them under the `full-gate` receipt name, for
+  example `dx run-gate --name full-gate bash -c '<lane 1> && <lane 2>'`.
+- A failing test listed under `known_failures` for a base this branch contains
+  was failing before this unit. Report it as `baseline (<issue-ref>)` and do
+  not fix it here: a fix belongs in its own issue and branch. Rerun it alone
+  first when it may be a timing flake. A failure not on that list is this
+  unit's to fix.
 
 Every required gate needs a passing result for *this* tree, and this is the
 phase that runs the complete suite. Before running it, ask
@@ -100,7 +112,10 @@ ALL of these must be true before you stop:
   any other answer was handled under `$DEX_DIR/prompts/base-sync.md`
 - Every required gate has a passing result for this tree: a reused `dx run-gate`
   receipt with matching checkout, working-tree and base fingerprints, a fresh
-  run, or CI under `full_gate: ci`
+  run, or CI under `full_gate: ci`.
+  With a declared `## Verification` policy, the declared lanes are the required
+  gate, and the summary lists each `known_failures` entry that failed as
+  `baseline (<issue-ref>)` with no fix commit for it on this branch
 - No session-owned background process in flight, per `dx ps`
 - Commits are clean and atomic with conventional messages
 - No unwanted files in the diff

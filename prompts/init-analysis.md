@@ -110,6 +110,22 @@ review_broad_impact_files: 10
 review_scout_min_files: 40
 ```
 
+## Verification
+
+Optional. The Phase 4 gate, when it is narrower than the project's aggregate
+gate, and the tests already failing on the base that Phase 4 reports instead of
+fixing. Omit the section when the aggregate gate in `## Quality Gates` is the
+Phase 4 gate and there are no known baseline failures.
+
+```yaml
+# Run in order as the required Phase 4 gate (receipt name full-gate).
+lanes:
+  - [exact command]
+# Repo-relative file, one `test-id<TAB>base-ref<TAB>issue-ref` line per
+# failure. An entry applies while HEAD contains its base ref.
+known_failures: [path/to/known-failures.tsv]
+```
+
 ## Worktree Hooks
 
 ```yaml
