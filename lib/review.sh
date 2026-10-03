@@ -3571,3 +3571,36 @@ for raw in sys.argv[1:]:
 print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 PY
 }
+
+# dx_review_status <session_id> <text|json|line>
+# Summarise the session's current review loop from its run journal and the
+# Phase 3 busy record (`dx review status`, and the Stop hook's progress line
+# while it holds a review wait). The busy record is parsed here by its
+# validating reader, so the python formatter only sees checked values.
+# DEX_RUN_ID names the caller's own run; another session's run comes from that
+# session's mapping, or a status for one session would read another's journal.
+dx_review_status() {
+  local session_id="$1" format="${2:-text}" run_id="" events_file=""
+  local busy_record="" busy_epoch="" busy_timeout="" busy_label="" busy_rest=""
+  dx_session_id_valid "$session_id" || return 1
+  case "$format" in text|json|line) ;; *) return 1 ;; esac
+  if [[ "$session_id" == "${DEX_SESSION_ID:-}" ]]; then
+    run_id=$(dx_run_read_for_session "$session_id" 2>/dev/null || true)
+  else
+    run_id=$(DEX_RUN_ID="" dx_run_read_for_session "$session_id" 2>/dev/null || true)
+  fi
+  [[ -z "$run_id" ]] || events_file=$(dx_run_events_file "$run_id")
+  busy_record=$(__dx_phase_busy_record "$session_id" 3 2>/dev/null || true)
+  if [[ -n "$busy_record" ]]; then
+    busy_rest="${busy_record#*$'\n'}"
+    busy_epoch="${busy_rest%%$'\n'*}"
+    busy_rest="${busy_rest#*$'\n'}"
+    busy_rest="${busy_rest#*$'\n'}"
+    busy_rest="${busy_rest#*$'\n'}"
+    busy_timeout="${busy_rest%%$'\n'*}"
+    busy_label="${busy_rest#*$'\n'}"
+  fi
+  python3 "$DEX_DIR/scripts/review_status.py" --format "$format" \
+    --events "$events_file" --busy-epoch "$busy_epoch" \
+    --busy-timeout "$busy_timeout" --busy-label "$busy_label"
+}

@@ -2354,7 +2354,7 @@ read-only tool calls issued in a single turn."
     fi
     pass_started=$(date +%s)
     __dx_review_emit_event "$review_run_id" "review.pass.started" "info" "Review pass started" "$review_phase" \
-      pass_id="$pass_nonce" tier="$pass_tier" profile="$pass_profile" iteration_int="$review_iteration" clean_before_int="$clean_passes" required_clean_int="$required_clean" scope_fingerprint="$scope_before" baseline_reused_bool="$baseline_reused" baseline_binding="$baseline_binding" scout_count_int="$scout_count" scout_parallelism_int="$scout_parallelism" capacity_limit_int="$review_capacity_limit" capacity_active_int="$capacity_active" capacity_wait_seconds_int="$capacity_wait_seconds" test_jobs_int="$review_test_jobs"
+      pass_id="$pass_nonce" tier="$pass_tier" profile="$pass_profile" iteration_int="$review_iteration" max_waves_int="$max_waves" clean_before_int="$clean_passes" required_clean_int="$required_clean" scope_fingerprint="$scope_before" baseline_reused_bool="$baseline_reused" baseline_binding="$baseline_binding" scout_count_int="$scout_count" scout_parallelism_int="$scout_parallelism" capacity_limit_int="$review_capacity_limit" capacity_active_int="$capacity_active" capacity_wait_seconds_int="$capacity_wait_seconds" test_jobs_int="$review_test_jobs"
 
     parent_busy_token=""
     if [[ $standalone_review_prompt -eq 0 ]]; then

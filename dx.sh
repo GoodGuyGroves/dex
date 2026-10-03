@@ -39,6 +39,7 @@
 #   dx run-gate <cmd>       Run one heavy command under host-wide admission
 #   dx worktree audit       Compare Dex, git and the project's own worktree resources
 #   dx review stats         Report review-loop history per risk tier
+#   dx review status        Summarise the current review loop and running wave
 #   dx ui-capture           Capture or inspect temporary UI proof
 #   dex                   Alias for dx
 #   dexter                Alias for dx
@@ -199,6 +200,7 @@ __dx_cli() {
       echo "  dx run-gate <cmd>   Run one heavy command under host-wide admission"
       echo "  dx worktree audit   Compare Dex, git and the project's own worktree resources"
       echo "  dx review stats     Review-loop history per risk tier, from telemetry"
+      echo "  dx review status    The current review loop: wave, clean streak, running stage"
       echo "  dx ui-capture       Capture, revise, inspect, or skip temporary UI proof"
       echo "  dx research         Run autonomous research orchestrator"
       echo "                        Defaults: --max-cycles 20; SCENARIO_TIMEOUT 3600s (1h) per scenario"
