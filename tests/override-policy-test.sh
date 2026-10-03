@@ -157,6 +157,10 @@ assert_rejected "$LINENO" dx_override_set "$SESSION" pr.reviewers bogus \
   session - agent "Unknown reviewer mode" 0
 assert_rejected "$LINENO" dx_override_waive "$SESSION" pr.reviewers 5 \
   agent "A reviewer waiver would skip all of Phase 5"
+# Phase 5 and 6 both read it, so a phase-scoped record would lapse between
+# them: it is session-scoped only.
+assert_rejected "$LINENO" dx_override_set "$SESSION" pr.reviewers none phase 5 \
+  agent "Phase-scoped reviewer mode would lapse at Phase 6" 0
 dx_override_clear "$SESSION" pr.reviewers session - agent "Back to the table"
 assert_eq "config" "$(dx_override_effective "$SESSION" pr.reviewers config 5)" \
   "cleared pr.reviewers override"

@@ -650,6 +650,8 @@ assert_eq config "$(dx_reviewers_mode "$NONE_SESSION")" "explicit config"
 dx_override_set "$NONE_SESSION" pr.reviewers none session - agent \
   "Fork PR: do not ping the upstream reviewers" 0
 assert_eq none "$(dx_reviewers_mode "$NONE_SESSION")" "override none"
+assert_eq none "$(DEX_LOOP_PHASE=6 dx_reviewers_mode "$NONE_SESSION")" \
+  "override none holds in Phase 6"
 assert_eq "" "$(dx_reviewers_rows_effective "$NONE_SESSION" "$repo")" "none hides every row"
 assert_eq 3 "$(dx_reviewers_rows "$repo" | wc -l | tr -d ' ')" "raw rows are unchanged"
 reset_gh

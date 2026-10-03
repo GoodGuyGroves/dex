@@ -175,6 +175,9 @@ dx_override_set() {
   else
     [[ "$phase" == "-" ]] || return 2
   fi
+  # Phase 5 and 6 both read pr.reviewers, so a phase-scoped record would lapse
+  # between them; it is session-scoped only.
+  [[ "$gate" != "pr.reviewers" || "$scope" == "session" ]] || return 2
   [[ "$override_source" == "agent" || "$override_source" == "human" ]] \
     || return 2
   dx_override_reason_valid "$reason" || return 2

@@ -51,7 +51,6 @@ dx_reviewer_default_adapter() {
   printf '%s\n' generic
 }
 
-# dx_reviewers_rows <repo_dir>
 # dx_reviewers_mode [session_id] — `none` when the session's pr.reviewers
 # override says so, else `config` (the `## Reviewers` table applies). The
 # override is how a fork PR avoids pinging the reviewers a tracked dex.md was
@@ -59,8 +58,10 @@ dx_reviewer_default_adapter() {
 dx_reviewers_mode() {
   local mode_session="${1:-${DEX_SESSION_ID:-}}" mode="config"
   if dx_session_id_valid "$mode_session" 2>/dev/null; then
-    mode=$(dx_override_effective "$mode_session" pr.reviewers config \
-      "${DEX_LOOP_PHASE:--}" 2>/dev/null) || mode="config"
+    # Session-scoped only (dx_override_set refuses a phase scope), so the
+    # caller's phase does not matter.
+    mode=$(dx_override_effective "$mode_session" pr.reviewers config - \
+      2>/dev/null) || mode="config"
   fi
   [[ "$mode" == "none" ]] || mode="config"
   printf '%s\n' "$mode"
@@ -81,6 +82,7 @@ dx_reviewers_rows_effective() {
   dx_reviewers_rows "$2"
 }
 
+# dx_reviewers_rows <repo_dir>
 # Print one TSV line per usable `## Reviewers` row:
 #   handle<TAB>type<TAB>wait<TAB>adapter
 # Handle and Type are the first two columns, as they always were. Wait and

@@ -47,7 +47,7 @@ Common gates:
   review.clean-passes (1-30), review.max-waves (1-30),
   review.pass-timeout, phase.timeout,
   watch.command-timeout, sync.budget-minutes, pr.rebase-attempts,
-  pr.reviewers (none|config; override only, never waived),
+  pr.reviewers (none|config; session-scoped override only, never waived),
   maintain.budget-minutes, and guard.<guard-name>. A timeout value of 0
   disables that deadline where supported. Unknown gate names are rejected.
 EOF
@@ -81,6 +81,18 @@ resume_recorded_phase() {
   dx_lifecycle_resume_completion_context "$SESSION_ID"
 }
 
+# pr.reviewers is read by Phase 5 and 6 helpers and by the agent's own shell,
+# none of which see a phase-scoped record reliably, so it lives for the
+# session: default its scope to session and refuse an explicit phase scope.
+session_scoped_gate_scope() {
+  [[ "$CONTROL_GATE" == "pr.reviewers" ]] || return 0
+  if [[ "$CONTROL_SCOPE_GIVEN" -eq 1 && "$CONTROL_SCOPE" != "session" ]]; then
+    dx_error "pr.reviewers is session-scoped; use --scope session or omit --scope."
+    return 1
+  fi
+  CONTROL_SCOPE="session"
+}
+
 parse_policy_options() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -104,6 +116,7 @@ parse_policy_options() {
       --scope)
         [[ $# -ge 2 ]] || { dx_error "--scope requires phase or session."; return 1; }
         CONTROL_SCOPE="$2"
+        CONTROL_SCOPE_GIVEN=1
         shift 2
         ;;
       --for-seconds)
@@ -262,6 +275,7 @@ CONTROL_QUOTE=""
 CONTROL_QUOTE_GIVEN=0
 CONTROL_REASON=""
 CONTROL_SCOPE="phase"
+CONTROL_SCOPE_GIVEN=0
 CONTROL_FOR_SECONDS=0
 CONTROL_GATE=""
 CONTROL_VALUE=""
@@ -322,6 +336,7 @@ case "$COMMAND" in
     CONTROL_ORIGIN="agent"
     parse_policy_options "$@" || exit 1
     [[ -n "$CONTROL_REASON" ]] || { dx_error "--reason is required for an override."; exit 1; }
+    session_scoped_gate_scope || exit 1
     ;;
   clear-override)
     [[ $# -ge 1 ]] || { dx_error "Usage: dx control clear-override GATE --reason TEXT"; exit 1; }
@@ -330,6 +345,7 @@ case "$COMMAND" in
     CONTROL_ORIGIN="agent"
     parse_policy_options "$@" || exit 1
     [[ -n "$CONTROL_REASON" ]] || { dx_error "--reason is required for an override."; exit 1; }
+    session_scoped_gate_scope || exit 1
     ;;
   waive)
     [[ $# -ge 1 ]] || { dx_error "Usage: dx control waive GATE --reason TEXT"; exit 1; }
