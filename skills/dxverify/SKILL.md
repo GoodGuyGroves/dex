@@ -40,7 +40,10 @@ its `## Quality Gates` section as authoritative:
 - A `## Verification` block (`dx_verification_phase_block "$(git rev-parse --show-toplevel)"`
   prints it) narrows Phase 4 on purpose: its `lanes` are the required gate,
   every one run in order, even after one fails, under the `full-gate` receipt
-  name, and its `known_failures` entries are baseline failures to report as
+  name. Run them all in one
+  `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`
+  call: a gate keeps one receipt per name, so a call per lane would keep only
+  the last lane's result. Its `known_failures` entries are baseline failures to report as
   `baseline (<issue-ref>)`, never fix in this unit.
 - Treat a missing command, stale instruction, or un-runnable gate as a failure
   to resolve or report, not permission to skip it.

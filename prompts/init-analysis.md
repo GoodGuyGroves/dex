@@ -118,7 +118,8 @@ fixing. Omit the section when the aggregate gate in `## Quality Gates` is the
 Phase 4 gate and there are no known baseline failures.
 
 ```yaml
-# Run in order as the required Phase 4 gate (receipt name full-gate).
+# Run in order, in one dx run-gate call, as the required Phase 4 gate
+# (receipt name full-gate).
 lanes:
   - [exact command]
 # Repo-relative file, one `test-id<TAB>base-ref<TAB>issue-ref` line per

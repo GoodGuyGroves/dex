@@ -37,8 +37,9 @@ this audit print its policy (`dx_verification_phase_block`):
 
 - Declared `lanes` are the required Phase 4 gate, run in order in place of the
   project aggregate gate. Run every lane even when an earlier one fails, so a
-  baseline failure cannot hide a later lane, and record them under the
-  `full-gate` receipt name, for example
+  baseline failure cannot hide a later lane, and record them all in one call
+  under the `full-gate` receipt name (a gate keeps one receipt per name, so a
+  call per lane would keep only the last lane's result):
   `dx run-gate --name full-gate bash -c 'rc=0; <lane 1> || rc=1; <lane 2> || rc=1; exit $rc'`.
 - A failing test listed under `known_failures` for a base this branch contains
   was failing before this unit. Report it as `baseline (<issue-ref>)` and do
@@ -59,10 +60,11 @@ base is the evidence, so reuse it and say so; a receipt for any other gate is
 not. A resume is no exception: never waive or pass this phase on a receipt or
 gate log that `gate-receipt.sh` does not accept for the current HEAD and base,
 such as one recorded before the base moved.
-Otherwise run `dx run-gate --name full-gate <project aggregate gate, or the
-declared ## Verification lanes>` now, which records the receipt; one that
-failed on this tree is a gate to fix, not to re-run, unless every failure in it
-is a listed baseline failure (above). When `.dex/dex.md` § Resources declares `full_gate: ci`, run the fast
+Otherwise run `dx run-gate --name full-gate <project aggregate gate>`, or the
+declared `## Verification` lanes in the one-call form above, now, which records
+the receipt; one that failed on this tree is a gate to fix, not to re-run,
+unless every failure in it is a listed baseline failure (above). When
+`.dex/dex.md` § Resources declares `full_gate: ci`, run the fast
 gates and focused tests here, leave the complete suite to CI, keep the PR a
 draft, and let Phase 6 treat CI as the final gate — unless this ticket
 changed the gates, CI, or test infrastructure, which runs locally regardless.
