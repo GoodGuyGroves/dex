@@ -616,8 +616,8 @@ dx_compact_repeat_audit_prompt() {
       printf '%s\n' ""
       printf '%s\n' "Before completing Phase 2, all of these must be true:"
       printf '%s\n' "- Every task from the approved plan is implemented."
-      printf '%s\n' "- Every acceptance criterion and verification gate has status MET with specific implementation and test locations."
-      printf '%s\n' "- No evidence-table status is DEFERRED, SKIPPED, NOT MET, NOT FOUND, BLOCKED, N/A, or equivalent unless the user explicitly approved a plan change."
+      printf '%s\n' "- Every acceptance criterion and verification gate has status MET with specific implementation and test locations, or DEFERRED (sealed) when the sealed criteria file lists it under deferred_criteria."
+      printf '%s\n' "- No evidence-table status is DEFERRED, SKIPPED, NOT MET, NOT FOUND, BLOCKED, N/A, or equivalent unless the user explicitly approved a plan change, apart from the items the sealed deferred_criteria list names."
       printf '%s\n' "- The final verification commands have passed."
       printf '%s\n' "- Port conflicts or unavailable local services have been resolved or worked around locally; future CI is not a substitute for required Phase 2 verification."
       printf '%s\n' "- No TODO/FIXME/HACK, debug output, commented-out code blocks, missing imports, or obvious runtime errors remain."
@@ -1864,7 +1864,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       printf '\n%s\n\n' "--- Dex Phase 2 Gate: implementation readiness marker missing ---" >&2
       printf '%s\n' "Completion receipt rejected; Phase 2 did not advance." >&2
       printf '%s\n' "" >&2
-      printf '%s\n' "Before writing the Phase 2 ready marker, confirm every approved task and acceptance criterion is exactly MET, with no DEFERRED/SKIPPED/N/A entries unless the user explicitly approved a plan change." >&2
+      printf '%s\n' "Before writing the Phase 2 ready marker, confirm every approved task and acceptance criterion is exactly MET, with no DEFERRED/SKIPPED/N/A entries unless the user explicitly approved a plan change. The one exception is an item the sealed deferred_criteria list names, marked DEFERRED (sealed)." >&2
       printf '%s\n' "All required verification, flake gates, and UI capture evidence must be complete locally. Do not rely on future CI as a substitute for a required Phase 2 check." >&2
       printf '%s\n' "No Phase 2 background processes or long-running verification commands may still be in flight." >&2
       printf '%s\n' "" >&2
