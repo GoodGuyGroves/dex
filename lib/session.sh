@@ -148,7 +148,7 @@ dx_scoped_session_id() {
 # the repository that owns the common Git directory.
 __dx_session_dex_worktree_name() {
   local worktree_root="$1" common_dir="$2" parent_dir candidate_root candidate_common
-  parent_dir=$(dirname "$worktree_root")
+  parent_dir=${worktree_root%/*}
   case "$parent_dir" in
     */.dex/worktrees) ;;
     *) return 1 ;;
