@@ -46,6 +46,28 @@ print(json.dumps(payload, separators=(",", ":")))
 ' "$reason" "$system_message"
 }
 
+# dx_review_progress_message <running|finished> [wave]
+# The systemMessage a Phase 3 hold release shows the person watching the pane:
+# the review loop's one-line status from dx_review_status. A wave that just
+# finished is journalled shortly after its busy record clears, so wait briefly
+# for that wave's result. The fallback is the bare text Dex printed before, and
+# nothing here can fail the gate.
+dx_review_progress_message() {
+  local state="$1" wave="${2:-}" line="" attempt=0
+  while :; do
+    line=$(dx_review_status "$SESSION_ID" line "$wave" 2>/dev/null) || line=""
+    line="${line%%$'\n'*}"
+    [[ -z "$line" && "$state" == finished && -n "$wave" && "$attempt" -lt 7 ]] || break
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  if [[ -n "$line" ]]; then
+    printf 'Dex · %s\n' "$line"
+  elif [[ "$state" == finished ]]; then
+    printf '%s\n' "Dex · Review wave finished"
+  fi
+}
+
 SESSION_ID="${DEX_SESSION_ID:-$(dx_session_id)}"
 if ! dx_session_id_valid "$SESSION_ID"; then
   printf '%s\n' "Dex: refusing unsafe session id." >&2
@@ -606,18 +628,30 @@ mkdir -p "$DX_LOOP_DIR"
 # below — dx session ids are path-derived, so multiple sessions in the same
 # checkout resolve the same SESSION_ID. Parsed only after the activation check
 # above so stops in non-Dex sessions never pay the python3 spawn.
+#
+# background_tasks_running is Claude Code's word that a background command or
+# subagent is still executing and will wake the session when it ends. Only an
+# explicit JSON true counts; anything else, including its absence, is false.
 HOOK_INPUT=$(cat 2>/dev/null || true)
 HOOK_PROVIDER_SESSION_ID=""
+HOOK_BACKGROUND_TASKS_RUNNING=0
 if [[ -n "$HOOK_INPUT" ]]; then
-  HOOK_PROVIDER_SESSION_ID=$(printf '%s' "$HOOK_INPUT" | python3 -c '
+  HOOK_INPUT_FIELDS=$(printf '%s' "$HOOK_INPUT" | python3 -c '
 import json, sys
 try:
-    value = json.load(sys.stdin).get("session_id", "")
+    payload = json.load(sys.stdin)
 except Exception:
-    value = ""
+    payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+value = payload.get("session_id", "")
+print("1" if payload.get("background_tasks_running") is True else "0")
 if isinstance(value, str):
     print(value)
 ' 2>/dev/null || true)
+  [[ "${HOOK_INPUT_FIELDS%%$'\n'*}" != 1 ]] || HOOK_BACKGROUND_TASKS_RUNNING=1
+  [[ "$HOOK_INPUT_FIELDS" != *$'\n'* ]] \
+    || HOOK_PROVIDER_SESSION_ID="${HOOK_INPUT_FIELDS#*$'\n'}"
 fi
 
 HANDOFF_MODE="${DEX_PHASE_HANDOFF:-}"
@@ -1452,6 +1486,21 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "1" ]]; then
       printf '%s\n' "" >&2
       printf '%s\n' "Mandatory next step: invoke the dxplan skill now (Skill tool with skill: \"$(dx_skill_ref dxplan)\", or /dxplan if slash skills are the available interface)." >&2
       printf '%s\n' "Do not manually fetch the ticket, rename branches, update tracker status, explore code, or draft the plan outside that skill unless the skill explicitly instructs you to." >&2
+    elif [[ "$REJECTED_RECEIPT_ROTATED" -ne 1 ]]; then
+      # Planning is under way and nothing is wrong, so this is not reported
+      # as a hook error (#30). While a background subagent or command runs,
+      # the stop is allowed: the session idles, Claude Code wakes it with the
+      # task notification, and no phase can advance without the ready marker.
+      # Blocking instead woke the model every few seconds just to stop again.
+      [[ "$HOOK_BACKGROUND_TASKS_RUNNING" -ne 1 ]] || exit 0
+      PHASE_1_NOTICE_FILE=$(dx_phase_busy_notice_file "$SESSION_ID" 1)
+      if [[ -e "$PHASE_1_NOTICE_FILE" ]]; then
+        dx_stop_json_block "Dex Phase 1: dxplan is still in progress. Continue it until the user approves the plan; end your turn while waiting on subagents."
+      else
+        date +%s > "$PHASE_1_NOTICE_FILE" 2>/dev/null || true
+        dx_stop_json_block "Dex Phase 1: dxplan is still in progress. No audit iteration was counted. Continue dxplan until ExitPlanMode has presented the plan and the user has approved it. While subagents run, end your turn and act on their completion notifications; do not sleep, poll or read their transcripts. After approval only, complete the freeform tracker intake gate when it applies, write the ready marker from dxplan Step 9, then stop once for the audit handoff."
+      fi
+      exit 0
     else
       printf '\n%s\n\n' "--- Dex Phase 1 Gate: dxplan still in progress ---" >&2
       printf '%s\n' "No audit iteration was counted. Continue dxplan until ExitPlanMode has presented the plan and the user has approved it." >&2
@@ -1517,6 +1566,11 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     BUSY_OWNER_PID="${BUSY_RECORD_REST%%$'\n'*}"
     BUSY_RECORD_REST="${BUSY_RECORD_REST#*$'\n'}"
     BUSY_TIMEOUT_RAW="${BUSY_RECORD_REST%%$'\n'*}"
+    BUSY_LABEL="${BUSY_RECORD_REST#*$'\n'}"
+    # The wave this hold is for, so the release reports that wave's result and
+    # not the one before it (see dx_review_progress_message).
+    BUSY_WAVE=""
+    [[ ! "$BUSY_LABEL" =~ ^Wave\ ([0-9]+)\  ]] || BUSY_WAVE="${BASH_REMATCH[1]}"
     PHASE_BUSY_NOTICE_FILE=$(dx_phase_busy_notice_file "$SESSION_ID" 3)
     if dx_phase_busy_quiesced "$SESSION_ID" 3; then
       dx_phase_busy_finish "$SESSION_ID" 3 "$BUSY_TOKEN_FIELD" \
@@ -1613,7 +1667,7 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
       rm -f "$PHASE_BUSY_NOTICE_FILE"
       dx_stop_json_block \
         "The review wave finished. Read the review loop's latest output and act on its result. If the loop has started another wave, end your turn again: Dex holds the wait." \
-        "Dex · Review wave finished"
+        "$(dx_review_progress_message finished "$BUSY_WAVE")"
       exit 0
     fi
 
@@ -1627,7 +1681,9 @@ if [[ "$HANDOFF_MODE" == "inline" && "${DEX_LOOP_PHASE:-}" == "3" ]]; then
     # the model awake past the prompt cache and resends the conversation
     # uncached, so the instruction is to end the turn at once.
     BUSY_WAIT_REASON="Review wave still running (${BUSY_WAIT_TEXT}). Dex holds this wait and wakes you when the wave finishes. End your turn again now with a one-line status: do not run commands, sleep or poll."
-    dx_stop_json_block "$BUSY_WAIT_REASON"
+    # The person watching the pane sees one progress line per release; the
+    # wake count and the hold length are unchanged.
+    dx_stop_json_block "$BUSY_WAIT_REASON" "$(dx_review_progress_message running)"
     exit 0
   fi
 fi

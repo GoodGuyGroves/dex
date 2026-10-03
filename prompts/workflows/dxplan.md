@@ -42,6 +42,13 @@ the existing open PR before approval. End the phase handoff with the exact
 Follow § Resource Discipline in `$DEX_DIR/prompts/guardrails.md`: heavy work queues through `dx run-gate`; own what you start.
 Planning is CPU-light work — it is what to do while a gate is queued.
 
+Wait on exploration and design subagents the way `$DEX_DIR/prompts/guardrails.md`
+§ Resource Discipline says to wait on anything: launch them with the Agent
+tool, end your turn while they run, and act on each completion notification
+when it arrives. Never sleep, poll, stat or read their transcripts under
+`~/.claude/projects`. While a subagent runs, the Phase 1 Stop hook lets the
+turn end quietly, and Claude Code wakes the session when the subagent finishes.
+
 ### 1. Gather Context
 
 Use the integrations configured in dex.md § Integrations. Skip any that are "not configured".
