@@ -84,6 +84,13 @@ Path(os.environ['TEST_LOG']).write_text(json.dumps({
     'env': {key: os.environ.get(key) for key in ('DEX_SESSION_ID', 'DEX_SESSION_ONLY',
         'DEX_LOOP_ACTIVE', 'DEX_LOOP_PHASE', 'DEX_PHASE_HANDOFF', 'DEX_RUN_ID', 'DX_ROUTER_SESSION_ID')}
 }))
+if os.environ.get('TEST_SIGNAL'):
+    # A terminal signal reaches the whole foreground job: every Dex subshell
+    # between this provider and the shell that ran the command.
+    ancestor = os.getppid()
+    while ancestor > 1 and str(ancestor) != os.environ['TEST_TOP_PID']:
+        os.kill(ancestor, getattr(__import__('signal'), 'SIG' + os.environ['TEST_SIGNAL']))
+        ancestor = int(subprocess.check_output(['ps', '-o', 'ppid=', '-p', str(ancestor)]).strip())
 sys.exit(int(os.environ.get('TEST_EXIT_CODE', '0')))
 '''
     for name in ('claude', 'codex', 'node'):
@@ -140,6 +147,23 @@ __dx_setup_in_place() { print -r -- "IN_PLACE:$1"; return 71; }
         assert result.returncode == 0, result.stderr
         assert json.loads((base / 'launch.json').read_text())['args'][-1] == text
     assert invoke(['--session', 'plain prompt'], {'DX_PROVIDER_PROFILE': 'claude-subscription', 'TEST_EXIT_CODE': '23'}).returncode == 23
+    # Claude absorbs a Ctrl-C and the session goes on, so dx --session returns
+    # Claude's own status, not 130. A TERM aimed at Dex still ends it as 143.
+    # Session cleanup runs either way, in both shells.
+    def session_state():
+        return sorted(p.name for directory in ('state', 'loops')
+                      for p in (base / directory).iterdir() if p.name.startswith('prompt-'))
+    for signal_name, expected in (('INT', 0), ('INT', 7), ('TERM', 143)):
+        extra = {'DX_PROVIDER_PROFILE': 'claude-subscription', 'TEST_SIGNAL': signal_name,
+                 'TEST_EXIT_CODE': str(expected if signal_name == 'INT' else 0)}
+        zsh_run = subprocess.run(['zsh', '-fc', 'export TEST_TOP_PID=$$\n' + shell + 'dx --session "plain prompt"'],
+            env=dict(env, **extra), cwd=repo / 'subdir', text=True, capture_output=True)
+        bash_run = subprocess.run(['bash', '-c', 'export TEST_TOP_PID=$$\nsource "$DEX_DIR/lib/common.sh"\n'
+                                   'dx_provider_session "plain prompt"'],
+            env=dict(env, **extra), cwd=repo / 'subdir', text=True, capture_output=True)
+        for shell_name, run in (('zsh', zsh_run), ('bash', bash_run)):
+            assert run.returncode == expected, (shell_name, signal_name, run.returncode, run.stderr)
+            assert not session_state(), (shell_name, signal_name, session_state())
     # Claude left no transcript (a declined folder-trust dialog exits 0): say
     # so and fail. A session that started is reported as before.
     store = base / 'claude-config'

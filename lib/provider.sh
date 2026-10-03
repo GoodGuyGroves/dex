@@ -1026,7 +1026,10 @@ dx_provider_claude() {
   # returns 0. A TERM is meant for Dex, so it ends the launch as 143. The sweep
   # collects what a SIGKILL leaves.
   (
-    trap 'rm -f "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"}' EXIT
+    # An `exit` from the TERM trap unwinds this function's locals before
+    # bash runs the EXIT trap, so the trap carries the paths themselves.
+    # shellcheck disable=SC2064  # expanded now on purpose
+    trap "rm -f $(printf '%q ' "$_dx_launch_file" ${_dx_launch_mcp_file:+"$_dx_launch_mcp_file"} ${_dx_phase_mcp_file:+"$_dx_phase_mcp_file"})" EXIT
     trap ':' INT
     trap 'exit 143' TERM
     __dx_provider_claude_exec "${_dx_launch_args[@]}"
@@ -2228,8 +2231,13 @@ dx_provider_session() (
   __dx_refresh_provider || return 1
   __dx_require_resolved_provider_cli || return 1
   provider_agent=$(__dx_resolved_provider_agent) || return 1
-  trap 'dx_provider_session_cleanup "$session_id"' EXIT
-  trap 'exit 130' INT
+  # The provider takes Ctrl-C for itself, so an INT keeps this subshell alive
+  # and the session returns the provider's own status. A TERM is meant for Dex and
+  # still ends it as 143. The EXIT trap is expanded now because an `exit` from
+  # the TERM trap unwinds the locals before bash runs it.
+  # shellcheck disable=SC2064
+  trap "dx_provider_session_cleanup $(printf '%q' "$session_id")" EXIT
+  trap ':' INT
   trap 'exit 143' TERM
   dx_info "Session only: $DX_PROVIDER_PROFILE_RESOLVED (current checkout)"
   if [[ "$provider_agent" == codex ]]; then
