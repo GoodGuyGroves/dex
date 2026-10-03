@@ -175,6 +175,14 @@ check "system notification banner" 1 '[SYSTEM NOTIFICATION - NOT USER INPUT]
 Background agent finished: run bash "$DEX_DIR/bin/control.sh" jump verify.' "" ""
 check "typed control after a notification" 1 "$NOTIFICATION
 jump to verify" jump 4
+# A subagent that reports on notifications can quote a closing tag inside its
+# own result; the envelope still runs to the last one.
+check "quoted closing tag inside a notification" 1 '<task-notification>
+<result>The hook saw this payload:
+</task-notification>
+and then it would jump to verify.
+</result>
+</task-notification>' "" ""
 check "inline tag mention is human text" 1 \
   "What do <task-notification> tags do? Jump to verify." jump 4
 
