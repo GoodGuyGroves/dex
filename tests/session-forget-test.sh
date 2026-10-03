@@ -304,15 +304,18 @@ run_sessions "$REPO_A" "$TMP_DIR/partial-show.out" \
 assert_eq "0" "$COMMAND_RESULT" "partial failure catalog visibility"
 assert_contains "Session: $PARTIAL_SID" "$TMP_DIR/partial-show.out"
 
-find "$TMP_DIR" -type f -name '*.out' -exec cat {} + \
-  > "$TMP_DIR/all-command-output"
-while IFS= read -r private_token; do
-  [[ -n "$private_token" ]] || continue
-  assert_not_contains "$private_token" "$TMP_DIR/all-command-output"
-done < "$TMP_DIR/private-runtime-tokens"
-assert_not_contains "$CORRUPT_SECRET" "$TMP_DIR/all-command-output"
-assert_not_contains '"token"' "$TMP_DIR/all-command-output"
-assert_not_contains '.runtime-owners' "$TMP_DIR/all-command-output"
+assert_no_private_output() {
+  find "$TMP_DIR" -type f -name '*.out' -exec cat {} + \
+    > "$TMP_DIR/all-command-output"
+  while IFS= read -r private_token; do
+    [[ -n "$private_token" ]] || continue
+    assert_not_contains "$private_token" "$TMP_DIR/all-command-output"
+  done < "$TMP_DIR/private-runtime-tokens"
+  assert_not_contains "$CORRUPT_SECRET" "$TMP_DIR/all-command-output"
+  assert_not_contains '"token"' "$TMP_DIR/all-command-output"
+  assert_not_contains '.runtime-owners' "$TMP_DIR/all-command-output"
+}
+assert_no_private_output
 
 dx_session_runtime_finish "$LIVE_SID" "$LIVE_TOKEN" paused "$$"
 dx_session_runtime_finish \
@@ -353,5 +356,119 @@ run_sessions "$REPO_A" "$TMP_DIR/link-meta.out" forget "session:$LINK_META_SID"
 [[ -L "$(dx_meta_file "$LINK_META_SID")" ]] || assert_at $LINENO
 assert_eq "644" "$(file_mode "$TMP_DIR/link-meta-target")" "a symlinked .meta target is not narrowed"
 rm -f "$(dx_meta_file "$LINK_META_SID")"
+
+# An orphaned .runtime (#88): teardown before #86 deleted .meta and left
+# .runtime, .runtime-lock and .run-id. Forget removes a dead one whose status
+# is completed, failed, stopped or abandoned, and keeps .runtime-lock. A live,
+# running, paused or blocked runtime, or any other leftover beside it, is kept.
+make_orphan_runtime() { # <sid> <status|running> [owner-pid]
+  local session_id="$1" runtime_status="$2" owner_pid="${3:-$$}" runtime_token
+  runtime_token=$(dx_session_runtime_start \
+    "$session_id" codex "$REPO_A" "$owner_pid")
+  printf '%s\n' "$runtime_token" >> "$TMP_DIR/private-runtime-tokens"
+  if [[ "$runtime_status" != "running" ]]; then
+    dx_session_runtime_finish \
+      "$session_id" "$runtime_token" "$runtime_status" "$owner_pid"
+  fi
+  printf 'run_orphan\n' > "$(dx_run_id_file "$session_id")"
+}
+
+assert_orphan_forgotten() { # <sid> <label>
+  local session_id="$1" label="$2"
+  run_sessions "$REPO_A" "$TMP_DIR/${label}.out" forget "session:$session_id"
+  assert_eq "0" "$COMMAND_RESULT" "$label result"
+  assert_contains "Session $session_id was forgotten." "$TMP_DIR/${label}.out"
+  find "$DX_STATE_DIR" "$DX_LOOP_DIR" -maxdepth 1 \
+    -name "${session_id}.*" -print > "$TMP_DIR/${label}-residue.actual"
+  printf '%s\n' "$(dx_session_runtime_file "$session_id")-lock" \
+    > "$TMP_DIR/${label}-residue.expected"
+  cmp -s "$TMP_DIR/${label}-residue.expected" "$TMP_DIR/${label}-residue.actual" \
+    || fail "$label left more than .runtime-lock behind"
+  run_sessions "$REPO_A" "$TMP_DIR/${label}-again.out" forget "session:$session_id"
+  assert_eq "1" "$COMMAND_RESULT" "$label second forget result"
+  assert_contains "No session matches 'session:$session_id'" \
+    "$TMP_DIR/${label}-again.out"
+}
+
+assert_orphan_kept() { # <sid> <label>
+  local session_id="$1" label="$2" runtime_file
+  runtime_file=$(dx_session_runtime_file "$session_id")
+  cp "$runtime_file" "$TMP_DIR/${label}.runtime-before"
+  run_sessions "$REPO_A" "$TMP_DIR/${label}.out" forget "session:$session_id"
+  assert_eq "1" "$COMMAND_RESULT" "$label result"
+  assert_contains "Session '$session_id' was not forgotten." "$TMP_DIR/${label}.out"
+  cmp -s "$TMP_DIR/${label}.runtime-before" "$runtime_file" \
+    || fail "$label changed the kept .runtime"
+  assert_file "$(dx_run_id_file "$session_id")"
+  assert_no_file "$(dx_meta_file "$session_id")"
+}
+
+ORPHAN_FAILED_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-orphan-failed)"
+make_orphan_runtime "$ORPHAN_FAILED_SID" failed
+assert_no_file "$(dx_meta_file "$ORPHAN_FAILED_SID")"
+assert_orphan_forgotten "$ORPHAN_FAILED_SID" orphan-failed
+
+ORPHAN_COMPLETED_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-orphan-completed)"
+make_orphan_runtime "$ORPHAN_COMPLETED_SID" completed
+assert_orphan_forgotten "$ORPHAN_COMPLETED_SID" orphan-completed
+
+ORPHAN_LIVE_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-orphan-live)"
+make_orphan_runtime "$ORPHAN_LIVE_SID" running
+assert_orphan_kept "$ORPHAN_LIVE_SID" orphan-live
+
+sleep 300 &
+ORPHAN_OWNER_PID=$!
+ORPHAN_RUNNING_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-orphan-running)"
+make_orphan_runtime "$ORPHAN_RUNNING_SID" running "$ORPHAN_OWNER_PID"
+kill "$ORPHAN_OWNER_PID" 2>/dev/null || true
+wait "$ORPHAN_OWNER_PID" 2>/dev/null || true
+assert_orphan_kept "$ORPHAN_RUNNING_SID" orphan-running-dead-owner
+
+for orphan_status in paused blocked; do
+  ORPHAN_HELD_SID="$(cd "$REPO_A" && dx_scoped_session_id "forget-orphan-${orphan_status}")"
+  make_orphan_runtime "$ORPHAN_HELD_SID" "$orphan_status"
+  assert_orphan_kept "$ORPHAN_HELD_SID" "orphan-${orphan_status}"
+done
+
+ORPHAN_EXTRA_SID="$(cd "$REPO_A" && dx_scoped_session_id forget-orphan-extra)"
+make_orphan_runtime "$ORPHAN_EXTRA_SID" completed
+dx_lifecycle_atomic_write "$(dx_state_file "$ORPHAN_EXTRA_SID")" 7
+assert_orphan_kept "$ORPHAN_EXTRA_SID" orphan-extra-phase
+assert_file "$(dx_state_file "$ORPHAN_EXTRA_SID")"
+
+# An exact cleanup that stopped after removing .meta keeps its journal. Forget
+# resumes that journal through the exact cleanup, not the orphan path.
+# Its own repo keeps the orphan fixtures above out of its cleanup plan.
+REPO_C="$TMP_DIR/repos/charlie"
+new_repo "$REPO_C"
+JOURNAL_SID="$(cd "$REPO_C" && dx_scoped_session_id forget-journal-resume)"
+make_terminal_session "$REPO_C" "$JOURNAL_SID" 88 journal-resume
+# A separate bash runs the fault seam, away from this suite's ERR trap.
+if JOURNAL_SID="$JOURNAL_SID" REPO_C="$REPO_C" bash -c '
+  source "$DEX_DIR/lib/common.sh"
+  source "$DEX_DIR/lib/session-management.sh"
+  eval "$(declare -f __dx_session_management_artifacts | \
+    sed "1s/^__dx_session_management_artifacts /__journal_artifacts_original /")"
+  __dx_session_management_artifacts() {
+    if [[ "$1" == "remove-payload" && "$2" == "$JOURNAL_SID" ]]; then
+      command rm -f "$(dx_meta_file "$2")"
+      return 1
+    fi
+    __journal_artifacts_original "$@"
+  }
+  __dx_session_management_cleanup_exact "$REPO_C" "$JOURNAL_SID"
+' > "$TMP_DIR/journal-partial.out" 2>&1; then
+  fail "the partial cleanup fixture did not fail"
+fi
+assert_no_file "$(dx_meta_file "$JOURNAL_SID")"
+assert_file "$(dx_session_cleanup_journal_file "$JOURNAL_SID")"
+run_sessions "$REPO_C" "$TMP_DIR/journal-resume.out" forget "session:$JOURNAL_SID"
+assert_eq "0" "$COMMAND_RESULT" "journal resume result"
+assert_contains "Session $JOURNAL_SID was forgotten." "$TMP_DIR/journal-resume.out"
+assert_no_file "$(dx_session_cleanup_journal_file "$JOURNAL_SID")"
+assert_no_file "$(dx_session_runtime_file "$JOURNAL_SID")"
+
+# The orphan and journal cases above print no runtime token either.
+assert_no_private_output
 
 printf '%s\n' "session forget tests passed"
