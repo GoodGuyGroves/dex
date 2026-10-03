@@ -902,6 +902,15 @@ assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required with a posted commen
 assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required posts one comment"
 dx_cleanup_session "$WC_SESSION"
 
+# required, under pr.reviewers none: the waiver comment asks no reviewer for
+# anything, so it still posts rather than claiming a comment that never went up.
+dx_override_set "$WC_SESSION" pr.reviewers none session - agent "Fork PR" 0
+FAKE_GH_PR=42 run_waiver "$WC_SESSION" "$TMP_DIR/wc-required-reviewers-none.out" \
+  --reason "Only the dex#1 baseline fails"
+assert_eq "1" "$(waiver_row_count "$WC_SESSION")" "required under pr.reviewers none records the waiver"
+assert_eq "1" "$(grep -c '^PR 42$' "$FAKE_GH_COMMENTS")" "required under pr.reviewers none still posts"
+dx_cleanup_session "$WC_SESSION"
+
 # required, for a gate that cannot be waived: refused before any comment, so
 # the PR never claims a waiver that was not recorded.
 setup_attribution_lifecycle "$WC_SESSION"
