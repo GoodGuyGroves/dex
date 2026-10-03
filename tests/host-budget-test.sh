@@ -213,6 +213,22 @@ assert_eq "1.75" "$(DX_HOST_LOAD1_OVERRIDE=1.75 dx_host_load1)" \
   "DX_HOST_LOAD1_OVERRIDE replaces the probe"
 assert_eq "3.00" "$(DX_HOST_LOAD1_OVERRIDE=3 dx_host_load1)" \
   "a whole-number load average is normalised to two decimals"
+# A decimal-comma locale must not leak into the number (bash 3.2 ignores a
+# temporary LC_ALL= on a builtin, so printf parsed "1.75" as invalid).
+comma_locale=$(locale -a 2>/dev/null | grep -E '^(de_DE|en_ZA|fr_FR|nl_NL)\.(UTF-8|utf8)$' | head -1 || true)
+if [[ -n "$comma_locale" ]]; then
+  for test_shell in bash zsh; do
+    comma_load=$(env -u LC_ALL LANG="$comma_locale" LC_NUMERIC="$comma_locale" \
+      DX_HOST_LOAD1_OVERRIDE=1.75 "$test_shell" -c \
+      'source "$DEX_DIR/lib/common.sh"; dx_host_load1' 2>&1) || true
+    assert_eq "1.75" "$comma_load" "load override under $comma_locale ($test_shell)"
+    comma_load=$(env -u LC_ALL -u DX_HOST_LOAD1_OVERRIDE LANG="$comma_locale" \
+      LC_NUMERIC="$comma_locale" "$test_shell" -c \
+      'source "$DEX_DIR/lib/common.sh"; dx_host_load1' 2>&1) || true
+    [[ "$comma_load" =~ ^[0-9]+\.[0-9]{2}$ ]] \
+      || fail "probed load under $comma_locale ($test_shell): $comma_load"
+  done
+fi
 if DX_HOST_MEM_GB_OVERRIDE=plenty dx_host_memory_total_gb >/dev/null 2>&1; then
   fail "a malformed memory override was accepted"
 fi
