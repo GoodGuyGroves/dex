@@ -366,6 +366,26 @@ the independent Phase 3 reviewers. Write a version 1 JSON object to
 }
 ```
 
+Before writing it, check every verification requirement that names a command,
+script, or test file: the target must exist on this lifecycle branch
+(`git ls-files`, `test -e`). A target that exists only elsewhere (another
+branch, post-merge integration, CI only) makes the criterion unsatisfiable
+here. Either add a task that creates it, or, with the user's agreement at plan
+approval, record it in the optional `deferred_criteria` list:
+
+```json
+"deferred_criteria": [
+  {"criterion": "<exact acceptance_criteria or verification_requirements string>",
+   "until": "post-merge", "owner": "human", "reason": "<why this branch cannot satisfy it>"}
+]
+```
+
+`owner` is `human` or `lead`; `reason` is one line of 12–500 characters.
+Objectives cannot be deferred. Review waves report a listed item as `deferred`
+instead of blocking on it. Deferrals are fixed when Phase 1 seals the criteria:
+a later reapproval may drop one but never add or change one. Omit the key when
+nothing is deferred.
+
 Use `"headless-run-spec"` as `source` only when a headless run spec authorized
 the plan without interactive approval. Keep each array non-empty. Copy the
 approved plan faithfully: do not add requirements, omit edge cases, use

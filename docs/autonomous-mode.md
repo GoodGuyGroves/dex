@@ -243,6 +243,16 @@ Missing, changed, stale, or partially covered criteria pause review without
 clean credit. Standalone review has no criteria artifact and uses a
 `standalone` binding with empty criteria-evidence arrays.
 
+A criterion the lifecycle branch cannot satisfy, such as a check that exists
+only on the integration branch, goes in the artifact's optional
+`deferred_criteria` list: `{criterion, until: "post-merge", owner: "human" |
+"lead", reason}`, where `criterion` is the exact acceptance-criterion or
+verification-requirement string. A wave reports a listed item as `deferred`
+with evidence and can still be `CLEAN`; the evidence gate rejects `deferred`
+for any item the list does not name. The Phase 1 seal snapshots the list. A
+reapproved replacement may drop a deferral but is refused if it adds one or
+changes any field of one, so deferrals are fixed at plan approval.
+
 Only a wave with zero verified findings and zero fixes writes `CLEAN`. A wave
 that fixes anything writes `FINDINGS_FIXED:N`, resets the counter, and forces a
 fresh review of the updated scope. A valid upward escalation also resets the

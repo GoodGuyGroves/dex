@@ -40,7 +40,10 @@ array must contain one entry per supplied criterion in its original order:
 }
 ```
 
-Outcomes: `met`, `not_met`, `blocked`, `not_applicable`. Each item needs one to
+Outcomes: `met`, `not_met`, `blocked`, `not_applicable`, `deferred`. Use
+`deferred` only for an item the approved criteria file lists under
+`deferred_criteria` (sealed at plan approval as unsatisfiable on this branch,
+with an owner and a reason); any other `deferred` invalidates the report. Each item needs one to
 eight evidence entries. Kinds: `analysis`, `command`, `file`, `test`. Details
 are concrete observations of 12–500 characters on one line, without `|`.
 Do not insert your own `Evidence-Ref:` markers; the publisher generates them.
@@ -58,7 +61,8 @@ actually reviewed. Record justified N/A surfaces in the coverage notes.
 
 Allowed results remain those in `$DEX_DIR/prompts/review-wave.md`. Counts must agree.
 `CLEAN`, `NOTES:N`, `MECHANICAL:N` and `FINDINGS_FIXED:N` require passing checks
-and verifier, full required coverage, and every supplied criterion `met`.
+and verifier, full required coverage, and every supplied criterion `met`, or
+`deferred` where `deferred_criteria` lists it.
 `NOTES:N` and `MECHANICAL:N` leave `findings` empty and `fixes_applied` at zero
 — their N items are notes below the finding bar and deterministic autofixes
 respectively, and belong in the findings ledger. Lifecycle `FINDINGS:N` needs at
