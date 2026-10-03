@@ -38,6 +38,13 @@ master_repo=$(new_repo master-repo master)
 [[ "$(dx_default_branch "$master_repo")" == "master" ]] || assert_at $LINENO
 [[ "$(dx_default_branch_base_ref "$master_repo" "" no-fetch)" == "master" ]] || assert_at $LINENO
 
+# No local default branch: the upstream lookup is skipped, and the later read
+# of upstream_ref must not trip set -u (bash 4+ treats an unset local as unbound).
+remote_only_repo=$(new_repo remote-only-repo work)
+git -C "$remote_only_repo" update-ref refs/remotes/origin/main HEAD
+remote_only_ref=$(set -u; dx_default_branch_base_ref "$remote_only_repo" main no-fetch)
+[[ "$remote_only_ref" == "origin/main" ]] || assert_at $LINENO
+
 trunk_repo=$(new_repo trunk-repo trunk)
 [[ "$(dx_default_branch "$trunk_repo")" == "trunk" ]] || assert_at $LINENO
 git -C "$trunk_repo" switch -q -c feature/local
