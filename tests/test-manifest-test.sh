@@ -225,6 +225,45 @@ assert_contains "warning: manifest entries without test files, already on base: 
 assert_contains "PASS new-test.sh" "$TMP_DIR/base-drift.out"
 assert_contains "PASS ok-test.sh" "$TMP_DIR/base-drift.out"
 
+# A DX_TEST_MANIFEST outside the suite's repo has no base in that history.
+# Decoys at the paths a wrong lookup would read both carry the same extra row,
+# so a lookup in the suite's repo would excuse it as base drift.
+loc_repo="$TMP_DIR/loc-repo"
+mkdir -p "$loc_repo/tests"
+loc_git() { git -C "$loc_repo" -c user.email=dex@example.test -c user.name="Dex Test" "$@"; }
+loc_git init -q
+printf '#!/usr/bin/env bash\ntrue\n' > "$loc_repo/tests/ok-test.sh"
+printf '%s\n' \
+  $'ghost-test.sh\tfast\tall\t10\thermetic' \
+  $'ok-test.sh\tfast\tall\t10\thermetic' > "$TMP_DIR/ghost-manifest.tsv"
+cp "$TMP_DIR/ghost-manifest.tsv" "$loc_repo/manifest.tsv"
+cp "$TMP_DIR/ghost-manifest.tsv" "$loc_repo/tests/manifest.tsv"
+loc_git add -A
+loc_git commit -q -m base
+loc_git branch -M base
+
+mkdir -p "$TMP_DIR/outside"
+cp "$TMP_DIR/ghost-manifest.tsv" "$TMP_DIR/outside/manifest.tsv"
+if DX_TEST_SUITE_DIR="$loc_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_MANIFEST="$TMP_DIR/outside/manifest.tsv" DX_TEST_LOG_DIR="$TMP_DIR/outside-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/outside.out" 2>&1; then
+  fail "drift in a manifest outside git was excused as base drift"
+fi
+assert_contains "manifest entries without test files: ghost-test.sh" "$TMP_DIR/outside.out"
+assert_not_contains "already on base" "$TMP_DIR/outside.out"
+
+other_repo="$TMP_DIR/other-repo"
+mkdir -p "$other_repo/tests"
+git -C "$other_repo" init -q
+cp "$TMP_DIR/ghost-manifest.tsv" "$other_repo/tests/manifest.tsv"
+if DX_TEST_SUITE_DIR="$loc_repo/tests" DX_TEST_BASE_REF=base \
+  DX_TEST_MANIFEST="$other_repo/tests/manifest.tsv" DX_TEST_LOG_DIR="$TMP_DIR/other-repo-logs" \
+  bash "$ROOT/tests/run-all.sh" > "$TMP_DIR/other-repo.out" 2>&1; then
+  fail "drift in a manifest from another repo was excused as base drift"
+fi
+assert_contains "manifest entries without test files: ghost-test.sh" "$TMP_DIR/other-repo.out"
+assert_not_contains "already on base" "$TMP_DIR/other-repo.out"
+
 printf '%s\n' \
   "$(cat "$fixture_manifest")" \
   $'a-hermetic-test.sh\tfast\tall\t10\thermetic' > "$TMP_DIR/duplicate.tsv"
