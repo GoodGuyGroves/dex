@@ -81,7 +81,9 @@ REVIEWER_ROWS=$(dx_reviewers_rows_effective "$SESSION_ID" "$(git rev-parse --sho
 `dx_reviewers_rows_effective` prints nothing when the session has the
 `pr.reviewers none` override (`dx_reviewers_mode` prints `none`). Then no
 reviewer is requested, mentioned, triggered, re-requested or waited for in
-this phase, and the summary says `Reviewers: none (pr.reviewers override)`.
+this phase, and the summary carries the exact line `dx_reviewers_summary_line`
+prints, which names who set the override (`set by agent` or `set by human`). A
+summary that drops the source does not meet this criterion.
 
 Rows whose adapter is `generic` are today's `request` and `mention` rows. Rows
 with adapter `greptile` or `copilot` are adapter rows: read

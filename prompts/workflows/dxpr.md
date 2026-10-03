@@ -229,7 +229,8 @@ Phase 5.
 
 If `dx_reviewers_mode` prints `none`, the session's `pr.reviewers none`
 override is in force: attach, mention and trigger nobody, skip this step, and
-report `Reviewers: none (pr.reviewers override)`. Set it with
+report the line `dx_reviewers_summary_line` prints, which names who set the
+override. Set it with
 `bash "$DEX_DIR/bin/control.sh" override pr.reviewers none --scope session --reason "<why>"`
 when the tracked table must not be used, for example on a fork PR.
 
@@ -316,7 +317,7 @@ Print a summary of the PR for the user:
 - PR link
 - PR description preview (title + summary section)
 - The `PR template:` line, and the `Labels:` line when label rules are declared
-- List of `request` reviewers attached, or `Reviewers: none (pr.reviewers override)`
+- List of `request` reviewers attached, or the line `dx_reviewers_summary_line` prints
 - Implementation summary
 - UI proof status and reason, plus MP4/poster/manifest paths when READY
 
