@@ -98,6 +98,10 @@ for declared in "/etc/hosts" "../outside.tsv" "missing.tsv" ".dex"; do
   dx_verification_known_failures "$REPO" > /dev/null 2> "$TMP_DIR/path.err" || rc=$?
   assert_eq 2 "$rc" "known_failures path rejected: $declared"
   [[ -s "$TMP_DIR/path.err" ]] || fail "no reason given for $declared"
+  # The Phase 4 block carries the reason too, so a typo is visible there.
+  block=$(dx_verification_phase_block "$REPO")
+  block_has "$block" "could not be read"
+  block_has "$block" "$(head -n 1 "$TMP_DIR/path.err")"
 done
 printf 'x\tmain\t#1\n' > "$TMP_DIR/outside.tsv"
 ln -s "$TMP_DIR/outside.tsv" "$REPO/.dex/linked-failures.tsv"
@@ -126,6 +130,13 @@ block_has "$block" "    review-loop (base $BASE_SHA, dex#1)"
 block_has "$block" "    ccr-routing (base main, dex#1)"
 block_lacks "$block" "other-branch-only"
 block_lacks "$block" "unknown-base"
+block_has "$block" "skipping malformed known_failures line for too-few-fields"
+
+# A file whose every entry is filtered out leaves nothing to say: no block,
+# not a bare header.
+printf 'other-branch-only\t%s\tdex#9\n' "$OTHER_SHA" > "$REPO/.dex/no-applicable.tsv"
+write_contract "known_failures: .dex/no-applicable.tsv"
+assert_eq "" "$(dx_verification_phase_block "$REPO")" "no applicable entry: no Phase 4 block"
 
 # Known failures alone still make a block; lanes stay the default gate.
 write_contract "known_failures: .dex/known-failures.tsv"

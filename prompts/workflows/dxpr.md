@@ -267,7 +267,7 @@ bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready || SYNC_RC=$?
 
 - `0`: continue to `gh pr ready`.
 - `1`: the branch was rebased and pushed. Run
-  `dx run-gate --name full-gate <project aggregate gate>` on the new tree,
+  `dx run-gate --name full-gate <project aggregate gate, or the declared ## Verification lanes>` on the new tree,
   commit and push any repair, then run the sync again. Mark the PR ready only
   after a sync answers `0`.
 - `4`: record the `behind=` count in the PR handoff, then continue.
