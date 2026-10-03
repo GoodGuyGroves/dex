@@ -231,7 +231,10 @@ For each acceptance criterion:
 |-----------|------------|--------|
 | _criterion text_ | `file:line` or **NOT FOUND** | `test-file:line` or **NOT FOUND** |
 
-Flag **NOT FOUND** entries as high-severity findings.
+Flag **NOT FOUND** entries as high-severity findings. An item the approved
+criteria file lists under `deferred_criteria` was sealed at plan approval as
+unsatisfiable on this branch: report it as `deferred` with evidence, not NOT
+FOUND, and never as a finding.
 
 Reject prose-only criteria ("works correctly", "is performant") — they should have been rewritten as testable assertions in `/dxplan` Step 2.5. If they slipped through, flag the criterion as un-verifiable.
 

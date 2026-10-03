@@ -1008,7 +1008,8 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.phase-0.ready` — Phase 0 marker written after ticket setup; the Stop hook blocks the Phase 0 stop without it
 - `.phase-1.started` / `.phase-1.ready` — Phase 1 markers written by `dxplan`; the Stop hook does not count plan audit iterations until the approval marker exists
 - `.phase-2.ready` — Phase 2 marker written by `dximplement` only after every
-  acceptance criterion and verification gate is complete and a valid
+  acceptance criterion and verification gate is complete (or sealed-deferred
+  under `deferred_criteria`) and a valid
   current-scope, policy-bound review-risk selection exists; the Stop hook
   ignores `PHASE_2_COMPLETE` without it
 - `.phase-3.busy` — Phase 3 marker written by `dxreviewloop` while a review wave is running; the Stop hook does not count audit iterations while waiting, detects a dead recorded owner, and directs the agent to attributed recovery rather than manual deletion
