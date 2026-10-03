@@ -434,6 +434,7 @@ pass that would be declared clean still reviews the whole diff. The loop writes
 Per-lens clean status deliberately does not exist — a fix moves the tree, so the streak resets
 as a whole, and the ledger's lens and file columns are what make the next pass cheap instead.
 `dx review stats` reports what the loop has actually cost, per tier, from the run journals.
+`dx review status` summarises the current loop: wave N of the budget, the clean streak, the running wave's stage and elapsed time, and each finished wave's verdict.
 
 - Every assessor and wave gets a temporary pass-scoped copy of the approved criteria.
 - The sealed criteria hash and global policy bind to resumable state, the risk selection,

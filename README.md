@@ -251,6 +251,7 @@ dx ps --reap-orphans       # Stop the orphaned ones and print what was stopped
 dx doctor                  # One read-only screen: sessions, pools, orphans, load, trees
 dx run-gate bin/verify     # Run one heavy command under host-wide admission
 dx review stats            # Review-loop history per risk tier, from telemetry
+dx review status           # This session's review loop: wave, clean streak, running stage
 dx worktree audit          # Compare Dex, git and this project's own worktree resources
 dx test                    # Test Dex here, or verify another initialized project
 dx log                     # Show recent run events and summaries
