@@ -629,4 +629,47 @@ rc=0
 dx_complete_record_cycle "$SESSION" bored >/dev/null || rc=$?
 assert_eq 2 "$rc" "unknown outcome rejected"
 
+# --- pr.reviewers override: no reviewer is requested, mentioned or waited for -----
+# A fork PR must not ping the reviewers a tracked dex.md was written for. The
+# session override `pr.reviewers none` turns every reviewer path into a no-op
+# without editing .dex/dex.md; no override, or `config`, keeps the table.
+write_reviewers <<'EOF'
+| Handle | Type | Wait | Adapter |
+|---|---|---|---|
+| @octocat | request | no | generic |
+| Copilot | request | yes | copilot |
+| greptileai | mention | yes | greptile |
+EOF
+NONE_SESSION="repo-reviewers-none-test"
+assert_eq config "$(dx_reviewers_mode "$NONE_SESSION")" "no override reads the table"
+assert_eq 3 "$(dx_reviewers_rows_effective "$NONE_SESSION" "$repo" | wc -l | tr -d ' ')" \
+  "config mode keeps every row"
+dx_override_set "$NONE_SESSION" pr.reviewers config session - agent \
+  "Use the tracked reviewer table" 0
+assert_eq config "$(dx_reviewers_mode "$NONE_SESSION")" "explicit config"
+dx_override_set "$NONE_SESSION" pr.reviewers none session - agent \
+  "Fork PR: do not ping the upstream reviewers" 0
+assert_eq none "$(dx_reviewers_mode "$NONE_SESSION")" "override none"
+assert_eq none "$(DEX_LOOP_PHASE=6 dx_reviewers_mode "$NONE_SESSION")" \
+  "override none holds in Phase 6"
+assert_eq "" "$(dx_reviewers_rows_effective "$NONE_SESSION" "$repo")" "none hides every row"
+assert_eq 3 "$(dx_reviewers_rows "$repo" | wc -l | tr -d ' ')" "raw rows are unchanged"
+reset_gh
+out=$(dx_reviewer_gate "$NONE_SESSION" "$repo" 7)
+assert_eq "" "$out" "gate waits for nobody under none"
+dx_reviewer_trigger "$NONE_SESSION" "$repo" 7 Copilot copilot 2>/dev/null \
+  || fail "trigger under none did not return 0"
+dx_reviewer_trigger "$NONE_SESSION" "$repo" 7 greptileai greptile 2>/dev/null \
+  || fail "greptile trigger under none did not return 0"
+dx_reviewer_comment "$NONE_SESSION" 7 "@greptileai review" 2>/dev/null \
+  || fail "comment under none did not return 0"
+DEX_SESSION_ID="$NONE_SESSION" dx_maintenance_request_reviewer 7 octocat 2>/dev/null \
+  || fail "request under none did not return 0"
+[[ ! -s "$GH_FAKE_CALLS" ]] || fail "gh ran under pr.reviewers none: $(cat "$GH_FAKE_CALLS")"
+[[ ! -e "$GH_FAKE_DIR/comments-posted" ]] || assert_at $LINENO
+# Without the override the same request still reaches gh.
+reset_gh
+dx_maintenance_request_reviewer 7 octocat >/dev/null 2>&1 || true
+text_has "$(cat "$GH_FAKE_CALLS")" "pr edit 7 --add-reviewer octocat"
+
 printf 'reviewers tests passed\n'

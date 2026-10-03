@@ -25,7 +25,9 @@ dx_review_approve_criteria "$SESSION_ID" reapproved "$PREVIOUS_CRITERIA_HASH" "$
 ```
 
 Rotation clears earlier risk selection, clean credit, and receipts. Re-run the
-Phase 3 risk selection against the final scope afterward.
+Phase 3 risk selection against the final scope afterward. A rotation may drop a
+`deferred_criteria` entry but never add one or change one: deferrals are fixed
+at the Phase 1 seal, and the approval is refused with a message saying so.
 
 Read `$DEX_DIR/prompts/issue-hygiene.md`. Apply it whenever implementation produces
 material evidence beyond the current issue or PR description. Keep accepted,

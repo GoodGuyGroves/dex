@@ -101,6 +101,7 @@ review-child-stop-test.sh	fast	all	600	hermetic
 review-control-decision-test.sh	fast	all	600	hermetic
 review-controller-integration-test.sh	fast	all	600	hermetic
 review-controller-test.sh	fast	all	600	hermetic
+review-deferred-criteria-test.sh	fast	all	600	hermetic
 review-diagnostics-test.sh	fast	all	600	hermetic
 review-evaluation-harness-test.sh	serial	all	1200	hermetic
 review-evidence-v3-test.sh	slow	all	1200	hermetic
@@ -143,6 +144,7 @@ sync-bootstrap-test.sh	fast	all	600	hermetic
 test-command-cli-test.sh	fast	all	600	hermetic
 test-command-dex-test.sh	fast	all	600	hermetic
 test-command-project-test.sh	fast	all	600	hermetic
+test-env-scrub-test.sh	fast	all	600	hermetic
 test-infrastructure-test.sh	fast	all	600	hermetic
 test-manifest-test.sh	fast	all	600	hermetic
 test-timeout-test.sh	fast	all	600	hermetic
@@ -158,6 +160,7 @@ triage-command-test.sh	fast	all	600	hermetic
 triage-hooks-test.sh	fast	all	600	hermetic
 ui-capture-test.sh	fast	all	600	hermetic
 untrusted-input-contract-test.sh	fast	all	600	hermetic
+verification-contract-test.sh	fast	all	600	hermetic
 watch-lease-test.sh	fast	all	600	hermetic
 worktree-hooks-test.sh	fast	all	300	hermetic
 worktree-integrity-test.sh	slow	all	1200	hermetic

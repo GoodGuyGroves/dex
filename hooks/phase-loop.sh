@@ -496,14 +496,6 @@ dx_sync_inline_phase_from_state() {
   fi
 }
 
-# Where Phase 2 finds the approved plan: the run's copy, not Claude's own file.
-dx_plan_copy_note() {
-  local plan_file
-  plan_file=$(dx_run_plan_file "$SESSION_ID" 2>/dev/null) || return 0
-  [[ -f "$plan_file" ]] || return 0
-  printf '\nThe approved plan is saved at %s. Re-read that copy whenever you need the plan again; files under .dex/plans are scratch.\n' "$plan_file"
-}
-
 dx_inline_phase_message() {
   dx_skill_refs_render "$(__dx_inline_phase_text "$1")"
 }
@@ -526,7 +518,7 @@ EOF
       cat <<EOF
 The plan is approved. Invoke the Skill tool with skill: "dximplement" to begin implementation. Phase focus: implementation, testing, and UI capture evidence. For UI-affecting changes, invoke dxuicapture before UI edits for baseline evidence, then capture after evidence and link the visual manifest/screenshots/videos/traces before stopping. Follow ${DEX_DIR}/prompts/commit-format.md. Commit small coherent checkpoints early and often, and push immediately after every commit. Do not wait for full verification, task completion, or phase completion; keep failed and pending checks explicit and continue toward a verified branch. Use natural history boundaries rather than arbitrary splits. For a new local branch, establish upstream tracking only after the first real branch-specific commit; never push an empty branch or create an empty bootstrap commit. If approved work produces no branch-specific commit, pause for user direction instead of advancing toward a PR; the user may stop the lifecycle as no-change or choose an explicit lifecycle control action. Phase 4 is the final PR gate. When implementation is complete and the audit criteria are met, stop so the Stop hook can advance the lifecycle.
 EOF
-      dx_plan_copy_note
+      dx_run_plan_note "${SESSION_ID:-}"
       ;;
     3)
       cat <<'EOF'
@@ -540,12 +532,12 @@ EOF
       ;;
     5)
       cat <<'EOF'
-Begin Phase 5: PR. Invoke the Skill tool with skill: "dxpr" to generate the PR description, create or update the PR, attach current UI proof media when GitHub CLI supports it, attach configured request reviewers, run the pre-ready base sync (bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready, per $DEX_DIR/prompts/base-sync.md), and mark the PR ready for review. Use a warned local handoff when automatic attachment is unavailable or incomplete. Do not stop while the PR is still a draft, unless .dex/dex.md § Resources declares full_gate: ci, which leaves it a draft for Phase 6 to mark ready once CI is green. @mention comments, implementation changes, commits, and pushes remain available when useful; Phase 6 still performs the normal completion workflow. When done, stop so the Stop hook can audit and advance.
+Begin Phase 5: PR. Invoke the Skill tool with skill: "dxpr" to generate the PR description, create or update the PR, attach current UI proof media when GitHub CLI supports it, attach configured request reviewers (none when dx_reviewers_mode prints none), run the pre-ready base sync (bash "$DEX_DIR/bin/branch-sync.sh" sync --before-ready, per $DEX_DIR/prompts/base-sync.md), and mark the PR ready for review. Use a warned local handoff when automatic attachment is unavailable or incomplete. Do not stop while the PR is still a draft, unless .dex/dex.md § Resources declares full_gate: ci, which leaves it a draft for Phase 6 to mark ready once CI is green. @mention comments, implementation changes, commits, and pushes remain available when useful; Phase 6 still performs the normal completion workflow. When done, stop so the Stop hook can audit and advance.
 EOF
       ;;
     6)
       cat <<'EOF'
-Begin Phase 6: Complete. Invoke the Skill tool with skill: "dxcomplete". Verify the PR is ready and repair any remaining draft state, request reviewers, post configured @mention comments, monitor CI/reviews through /dxwatchpr, address failures, and settle the ticket per ticket_close (mark it Done under on_complete; under on_merge or never post the summary and leave its status) when CI is green and actionable review feedback is resolved. A missing review, pending request, or absent approval does not block Phase 6; report merge-review state for the maintainer. Do not merge the PR. Continue unattended until completion, the bounded watch window expires, or a real escalation condition is hit.
+Begin Phase 6: Complete. Invoke the Skill tool with skill: "dxcomplete". Verify the PR is ready and repair any remaining draft state, request reviewers, post configured @mention comments (neither when dx_reviewers_mode prints none), monitor CI/reviews through /dxwatchpr, address failures, and settle the ticket per ticket_close (mark it Done under on_complete; under on_merge or never post the summary and leave its status) when CI is green and actionable review feedback is resolved. A missing review, pending request, or absent approval does not block Phase 6; report merge-review state for the maintainer. Do not merge the PR. Continue unattended until completion, the bounded watch window expires, or a real escalation condition is hit.
 EOF
       ;;
   esac
@@ -1184,6 +1176,9 @@ if [[ "$CONTROL_VALID" -eq 1 ]]; then
             exit 2
           fi
           CONTROL_RECALL=$(dx_context_provider_block phase_handoff "$CONTROL_TARGET" "$SESSION_ID")
+          CONTROL_VERIFY_POLICY=""
+          [[ "$CONTROL_TARGET" != 4 ]] \
+            || CONTROL_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || CONTROL_VERIFY_POLICY=""
           {
             printf '\n--- Dex phase changed by %s ---\n\n' "$CONTROL_ACTOR"
             printf 'Continue at Phase %s (%s). Earlier gates carry explicit override outcomes in the lifecycle ledger.\n\n' \
@@ -1191,6 +1186,7 @@ if [[ "$CONTROL_VALID" -eq 1 ]]; then
             printf '%s\n\n' "$(dx_host_handoff_line)"
             dx_inline_phase_message "$CONTROL_TARGET"
             [[ -z "$CONTROL_RECALL" ]] || printf '\n%s\n' "$CONTROL_RECALL"
+            [[ -z "$CONTROL_VERIFY_POLICY" ]] || printf '\n%s\n' "$CONTROL_VERIFY_POLICY"
           } >&2
           exit 2
         fi
@@ -1988,6 +1984,11 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
     # The project's own recall for the phase it is handing to, labelled
     # unverified. Empty when .dex/dex.md declares no phase_handoff provider.
     HANDOFF_RECALL=$(dx_context_provider_block phase_handoff "$NEXT_PHASE" "$SESSION_ID")
+    # Phase 4's lanes and known baseline failures, when .dex/dex.md declares
+    # them under ## Verification. Empty otherwise.
+    HANDOFF_VERIFY_POLICY=""
+    [[ "$NEXT_PHASE" != 4 ]] \
+      || HANDOFF_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || HANDOFF_VERIFY_POLICY=""
     HANDOFF_REASON=$(
       printf '%s\n\n' "Dex Phase Handoff: Phase ${CURRENT_PHASE} complete → Phase ${NEXT_PHASE} ($(dx_phase_name "$NEXT_PHASE"))"
       printf '%s\n\n' "Continue in this same agent session. Do not ask the user whether to proceed."
@@ -1996,6 +1997,7 @@ if [[ "$COMPLETION_SIGNAL_READY" -eq 1 ]]; then
       printf '%s\n\n' "$(dx_host_handoff_line)"
       dx_inline_phase_message "$NEXT_PHASE"
       [[ -z "$HANDOFF_RECALL" ]] || printf '\n%s\n' "$HANDOFF_RECALL"
+      [[ -z "$HANDOFF_VERIFY_POLICY" ]] || printf '\n%s\n' "$HANDOFF_VERIFY_POLICY"
       printf '\n%s\n' "When Phase ${NEXT_PHASE} is genuinely complete, stop so the Stop hook can audit it."
     )
     dx_stop_json_block "$HANDOFF_REASON" \
@@ -2371,6 +2373,13 @@ if [[ $ITERATION -gt 1 ]] && dx_compact_repeat_audit_prompt "${DEX_LOOP_PHASE:-}
   :
 else
   printf '%s\n' "$AUDIT_PROMPT" >&2
+fi
+# Outside the compaction branch, so every Phase 4 audit iteration repeats the
+# project's declared lanes and baseline failures.
+if [[ "${DEX_LOOP_PHASE:-}" == 4 ]]; then
+  AUDIT_VERIFY_POLICY=$(dx_verification_phase_block "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) \
+    || AUDIT_VERIFY_POLICY=""
+  [[ -z "$AUDIT_VERIFY_POLICY" ]] || printf '\n%s\n' "$AUDIT_VERIFY_POLICY" >&2
 fi
 echo "" >&2
 

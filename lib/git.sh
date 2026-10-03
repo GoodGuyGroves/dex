@@ -50,7 +50,7 @@ dx_default_branch() {
 # upstream/<default>, and only then a local default branch.
 dx_default_branch_base_ref() {
   local git_dir="${1:-}" default_branch="${2:-}" fetch_mode="${3:-fetch}"
-  local git_args=() upstream_ref upstream_remote upstream_branch
+  local git_args=() upstream_ref="" upstream_remote="" upstream_branch=""
 
   [[ -n "$git_dir" ]] && git_args=(-C "$git_dir")
   [[ -n "$default_branch" ]] || default_branch=$(dx_default_branch "$git_dir")

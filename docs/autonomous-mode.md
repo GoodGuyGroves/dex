@@ -243,6 +243,16 @@ Missing, changed, stale, or partially covered criteria pause review without
 clean credit. Standalone review has no criteria artifact and uses a
 `standalone` binding with empty criteria-evidence arrays.
 
+A criterion the lifecycle branch cannot satisfy, such as a check that exists
+only on the integration branch, goes in the artifact's optional
+`deferred_criteria` list: `{criterion, until: "post-merge", owner: "human" |
+"lead", reason}`, where `criterion` is the exact acceptance-criterion or
+verification-requirement string. A wave reports a listed item as `deferred`
+with evidence and can still be `CLEAN`; the evidence gate rejects `deferred`
+for any item the list does not name. The Phase 1 seal snapshots the list. A
+reapproved replacement may drop a deferral but is refused if it adds one or
+changes any field of one, so deferrals are fixed at plan approval.
+
 Only a wave with zero verified findings and zero fixes writes `CLEAN`. A wave
 that fixes anything writes `FINDINGS_FIXED:N`, resets the counter, and forces a
 fresh review of the updated scope. A valid upward escalation also resets the
@@ -488,6 +498,7 @@ The built-in operational gates are:
 | `watch.pause-ttl`, `watch.cycle-timeout`, `watch.command-timeout` | Phase 6 watcher pause, lease, and command budgets |
 | `complete.max-cycles`, `complete.wait-minutes` | Phase 6 idle-cycle and wait defaults |
 | `pr.rebase-attempts` | Times the base may move between Phase 4 and the PR being marked ready before Dex escalates instead of rebasing again; default 2 (see `prompts/base-sync.md`) |
+| `pr.reviewers` | `none` or `config` (default). `none` makes Phase 5 and 6 request, mention, trigger and wait for no reviewer, for example on a fork PR whose tracked `## Reviewers` table names upstream maintainers, without editing `.dex/dex.md`. Session-scoped override only: `dx control override` records it for the session (an explicit `--scope phase` is refused, since Phase 5 and 6 both read it), and `dx control waive pr.reviewers` is refused, because a waiver would end all of Phase 5. Read by `dx_reviewers_mode` and `dx_reviewers_rows_effective` |
 | `complete.reviewer-wait-minutes`, `complete.pending-minutes` | Phase 6 per-reviewer wait and pending-CI cap |
 | `failure.attempts-per-strategy`, `failure.max-strategies`, `complete.ci-fix-attempts` | Recovery and repeated-CI-failure escalation defaults |
 | `sync.budget-minutes` | `dx sync` provider budget |
@@ -947,6 +958,9 @@ Loop state is stored in `~/.claude/.dex-loops/`:
 - `.review-criteria-approval` — versioned approval seal containing the canonical
   criteria hash; replacements require explicit reapproval and invalidate prior
   review authorization
+- `.review-criteria-deferrals` — the `deferred_criteria` held by the seal, as
+  canonical JSON; a reapproval may only narrow it, and the narrowed set
+  replaces it
 - `.review-selection` — risk tier, selection source, bounded reason codes,
   scope fingerprint, criteria binding, and trusted policy binding recorded
   before the first wave and rebound after review fixes

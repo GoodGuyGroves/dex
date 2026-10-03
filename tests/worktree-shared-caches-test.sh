@@ -9,16 +9,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+export GIT_AUTHOR_NAME=dex GIT_AUTHOR_EMAIL=dex@example.com
+export GIT_COMMITTER_NAME=dex GIT_COMMITTER_EMAIL=dex@example.com
+# shellcheck disable=SC1091
+source "$ROOT/tests/helpers.sh"
 export DEX_DIR="$ROOT"
 export DX_STATE_DIR="$TMP_DIR/state"
 export DX_LOOP_DIR="$TMP_DIR/loops"
 export DX_ARTIFACT_DIR="$TMP_DIR/artifacts"
 export DX_TOOL_DIR="$TMP_DIR/tools"
 export DX_RUN_ROOT="$TMP_DIR/runs"
-export GIT_AUTHOR_NAME=dex GIT_AUTHOR_EMAIL=dex@example.com
-export GIT_COMMITTER_NAME=dex GIT_COMMITTER_EMAIL=dex@example.com
-# shellcheck disable=SC1091
-source "$ROOT/tests/helpers.sh"
 # shellcheck disable=SC1091
 source "$ROOT/lib/common.sh"
 

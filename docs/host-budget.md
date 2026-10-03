@@ -290,6 +290,29 @@ labels_when:
   creates a label the repository lacks; that only warns. One malformed rule
   applies none of them.
 
+`## Verification` declares the Phase 4 gate, and is optional too:
+
+```yaml
+lanes:
+  - bash tests/check.sh
+  - DX_TEST_LANES=fast bash tests/run-all.sh
+known_failures: .dex/known-failures.tsv
+```
+
+- `lanes` are the commands that make up the required Phase 4 gate, all run in
+  order, even after one fails, under the `full-gate` receipt name instead of
+  the project's aggregate gate. Use it when the full suite is too slow for every unit and its heavier
+  lanes run elsewhere, for example after merge.
+- `known_failures` names a repository-relative file with one
+  `test-id<TAB>base-ref<TAB>issue-ref` line per test already failing on the
+  base, plus `#` comments. An entry applies while HEAD contains its base ref.
+  Phase 4 reports a listed failure as `baseline (<issue-ref>)` and does not
+  fix it in the unit. An absolute path, a path outside the repository, or a
+  missing file is reported and ignored; a malformed line, or one whose base
+  ref does not resolve, is skipped with a warning.
+- The Phase 4 handoff and every Phase 4 audit print the policy
+  (`dx_verification_phase_block`). With no block, Phase 4 is unchanged.
+
 ## Recommended settings for a shared host
 
 Put these in the shell that launches `dx` on a machine that runs several

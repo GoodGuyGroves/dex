@@ -218,7 +218,10 @@ required_keys = {
     "acceptance_criteria",
     "verification_requirements",
 }
-if not isinstance(payload, dict) or set(payload) != required_keys:
+# deferred_criteria is optional, so a file without it keeps the hash it had
+# before the key existed.
+optional_keys = {"deferred_criteria"}
+if not isinstance(payload, dict) or not required_keys <= set(payload) <= required_keys | optional_keys:
     raise SystemExit(1)
 if isinstance(payload["version"], bool) or payload["version"] != 1:
     raise SystemExit(1)
@@ -247,6 +250,76 @@ for key, limit in limits.items():
             raise SystemExit(1)
         if re.fullmatch(r"<[^<>]+>", value):
             raise SystemExit(1)
+
+# A deferral names an acceptance criterion or verification requirement the
+# lifecycle branch cannot satisfy, who owns it after merge, and why. Objectives
+# are outcomes, never deferred.
+if "deferred_criteria" in payload:
+    deferred = payload["deferred_criteria"]
+    if not isinstance(deferred, list) or not 1 <= len(deferred) <= 64:
+        raise SystemExit(1)
+    deferrable = set(payload["acceptance_criteria"]) | set(payload["verification_requirements"])
+    seen = set()
+    for entry in deferred:
+        if not isinstance(entry, dict) or set(entry) != {"criterion", "until", "owner", "reason"}:
+            raise SystemExit(1)
+        criterion = entry["criterion"]
+        if not isinstance(criterion, str) or criterion not in deferrable or criterion in seen:
+            raise SystemExit(1)
+        seen.add(criterion)
+        if entry["until"] != "post-merge" or not isinstance(entry["owner"], str) \
+                or entry["owner"] not in {"human", "lead"}:
+            raise SystemExit(1)
+        reason = entry["reason"]
+        if not isinstance(reason, str) or not 12 <= len(reason) <= 500:
+            raise SystemExit(1)
+        # One line: no C0/C1 controls, and nothing splitlines() breaks on
+        # (U+2028, U+2029 and the like).
+        if reason != reason.strip() or len(reason.splitlines()) != 1 or any(
+            ord(char) < 32 or 127 <= ord(char) <= 159 for char in reason
+        ):
+            raise SystemExit(1)
+        # The length floor alone lets "TODO TODO TODO" through: refuse a reason
+        # made only of placeholder words.
+        filler = {"n/a", "na", "tbd", "todo", "placeholder", "reason", "fixme", "xxx"}
+        words = re.findall(r"[^\s.,;:!?()-]+", reason.casefold())
+        if not words or all(word in filler for word in words) or re.fullmatch(r"<[^<>]+>", reason):
+            raise SystemExit(1)
+PY
+}
+
+# __dx_review_criteria_deferrals <criteria-file> — the sealed deferrals as one
+# canonical JSON list ([] when there are none).
+__dx_review_criteria_deferrals() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+deferred = sorted(payload.get("deferred_criteria", []), key=lambda entry: entry["criterion"])
+print(json.dumps(deferred, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+PY
+}
+
+# __dx_review_deferrals_within <candidate-json> <sealed-json> — every candidate
+# deferral is one the seal already holds, unchanged. Removing one narrows the
+# deferrals; adding one or changing any field widens them.
+__dx_review_deferrals_within() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+try:
+    candidate = json.loads(sys.argv[1])
+    sealed = json.loads(sys.argv[2])
+except json.JSONDecodeError:
+    raise SystemExit(1)
+if not isinstance(candidate, list) or not isinstance(sealed, list):
+    raise SystemExit(1)
+sealed_entries = {json.dumps(entry, sort_keys=True) for entry in sealed}
+if any(json.dumps(entry, sort_keys=True) not in sealed_entries for entry in candidate):
+    raise SystemExit(1)
 PY
 }
 
@@ -284,6 +357,7 @@ __dx_review_invalidate_criteria_authorization() {
 dx_review_approve_criteria() {
   local session_id="$1" approval_mode="${2:-}" expected_previous="" expected_hash=""
   local criteria_file approval_file current_hash raw version revision approved_hash extra next_revision tmp_file
+  local deferrals_file current_deferrals sealed_deferrals
   [[ "$approval_mode" == "initial" || "$approval_mode" == "reapproved" ]] || return 1
   case "$approval_mode" in
     initial)
@@ -302,6 +376,8 @@ dx_review_approve_criteria() {
   approval_file=$(dx_review_criteria_approval_file "$session_id") || return 1
   current_hash=$(dx_review_criteria_hash "$criteria_file") || return 1
   [[ "$expected_hash" == "$current_hash" ]] || return 1
+  deferrals_file=$(dx_review_criteria_deferrals_file "$session_id") || return 1
+  current_deferrals=$(__dx_review_criteria_deferrals "$criteria_file") || return 1
 
   next_revision=1
   if [[ -e "$approval_file" ]]; then
@@ -324,6 +400,18 @@ EOF
       return 0
     fi
     [[ "$approval_mode" == "reapproved" ]] || return 1
+    # Deferrals are fixed when Phase 1 seals the criteria. A rotation may drop
+    # one but never add one or change its criterion, owner, until or reason.
+    # A seal from before deferrals existed holds none.
+    sealed_deferrals='[]'
+    if [[ -e "$deferrals_file" ]]; then
+      [[ -f "$deferrals_file" && ! -L "$deferrals_file" ]] || return 1
+      sealed_deferrals=$(cat "$deferrals_file" 2>/dev/null) || return 1
+    fi
+    if ! __dx_review_deferrals_within "$current_deferrals" "$sealed_deferrals"; then
+      printf '%s\n' "dex: reapproval refused: deferred_criteria may only shrink after the Phase 1 seal; drop the added or changed deferral, or reword the criterion with the user" >&2
+      return 1
+    fi
     next_revision=$((10#$revision + 1))
     dx_review_is_positive_integer "$next_revision" || return 1
   elif [[ "$approval_mode" != "initial" ]]; then
@@ -332,6 +420,14 @@ EOF
 
   __dx_review_invalidate_criteria_authorization "$session_id" "$approval_mode" || return 1
   mkdir -p "$(dirname "$approval_file")" || return 1
+  # Record the sealed deferrals before the approval that relies on them; a
+  # narrowed set replaces the old one so a dropped deferral cannot return.
+  tmp_file="${deferrals_file}.tmp.$$"
+  if ! printf '%s\n' "$current_deferrals" > "$tmp_file" ||
+     ! command mv -f "$tmp_file" "$deferrals_file"; then
+    command rm -f "$tmp_file" 2>/dev/null || true
+    return 1
+  fi
   tmp_file="${approval_file}.tmp.$$"
   if ! printf '1\t%s\t%s\n' "$next_revision" "$current_hash" > "$tmp_file" ||
      [[ "$(dx_review_criteria_hash "$criteria_file" 2>/dev/null)" != "$current_hash" ]] ||
@@ -1196,7 +1292,12 @@ for line in context_lines:
         raise SystemExit(1)
     context_markers[marker] = (kind, detail)
 
-allowed_outcomes = {"met", "not_met", "blocked", "not_applicable"}
+allowed_outcomes = {"met", "not_met", "blocked", "not_applicable", "deferred"}
+# `deferred` is honoured only for an item the sealed criteria list under
+# deferred_criteria: the plan approval made it, not the reviewer.
+deferred_texts = set()
+if binding != "standalone":
+    deferred_texts = {entry["criterion"] for entry in criteria.get("deferred_criteria", [])}
 referenced_markers = set()
 outcomes = []
 for section in sections:
@@ -1211,6 +1312,10 @@ for section in sections:
             raise SystemExit(1)
         outcome = entry["outcome"]
         if not isinstance(outcome, str) or outcome not in allowed_outcomes:
+            raise SystemExit(1)
+        if outcome == "deferred" and (
+            section == "objectives" or criteria[section][index - 1] not in deferred_texts
+        ):
             raise SystemExit(1)
         refs = entry["evidence_refs"]
         if not isinstance(refs, list) or not 1 <= len(refs) <= 8:
@@ -1275,7 +1380,7 @@ if result == "CLEAN" or result.startswith(("NOTES:", "MECHANICAL:")):
         raise SystemExit(1)
     if payload["verified_findings"] != 0 or payload["fixes_applied"] != 0:
         raise SystemExit(1)
-    if any(outcome != "met" for outcome in outcomes):
+    if any(outcome not in {"met", "deferred"} for outcome in outcomes):
         raise SystemExit(1)
     required_coverage = all_domains if profile == "thorough" else core
     if not required_coverage.issubset(set(coverage)):
@@ -1286,7 +1391,7 @@ elif result.startswith("FINDINGS_FIXED:"):
         raise SystemExit(1)
     if payload["verified_findings"] != count or payload["fixes_applied"] != count:
         raise SystemExit(1)
-    if any(outcome != "met" for outcome in outcomes):
+    if any(outcome not in {"met", "deferred"} for outcome in outcomes):
         raise SystemExit(1)
     required_coverage = all_domains if profile == "thorough" else core
     if not required_coverage.issubset(set(coverage)):

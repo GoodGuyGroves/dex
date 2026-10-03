@@ -38,7 +38,7 @@ dx_override_gate_supported() {
     review.pass-timeout|review.recheck-seconds|\
     watch.pause-ttl|watch.cycle-timeout|watch.command-timeout|\
     complete.max-cycles|complete.wait-minutes|complete.ci-fix-attempts|\
-    pr.rebase-attempts|\
+    pr.rebase-attempts|pr.reviewers|\
     complete.reviewer-wait-minutes|complete.pending-minutes|\
     failure.attempts-per-strategy|failure.max-strategies|\
     maintain.max-prs|sync.budget-minutes|maintain.budget-minutes|\
@@ -90,6 +90,9 @@ dx_override_gate_value_valid() {
       ;;
     phase.jump)
       [[ "$value" =~ ^[0-6]$ ]]
+      ;;
+    pr.reviewers)
+      [[ "$value" == "none" || "$value" == "config" ]]
       ;;
   esac
 }
@@ -172,6 +175,9 @@ dx_override_set() {
   else
     [[ "$phase" == "-" ]] || return 2
   fi
+  # Phase 5 and 6 both read pr.reviewers, so a phase-scoped record would lapse
+  # between them; it is session-scoped only.
+  [[ "$gate" != "pr.reviewers" || "$scope" == "session" ]] || return 2
   [[ "$override_source" == "agent" || "$override_source" == "human" ]] \
     || return 2
   dx_override_reason_valid "$reason" || return 2
@@ -221,7 +227,9 @@ dx_override_waive() {
   dx_override_session_id_valid "$session_id" || return 2
   dx_override_gate_valid "$gate" || return 2
   dx_override_gate_supported "$gate" || return 2
-  [[ "$gate" != "review.max-waves" ]] || return 2
+  # A waiver ends the current phase, so these narrow values cannot be waived:
+  # waiving pr.reviewers would skip all of Phase 5, not just its reviewers.
+  [[ "$gate" != "review.max-waves" && "$gate" != "pr.reviewers" ]] || return 2
   dx_override_phase_valid "$phase" || return 2
   [[ "$phase" != "-" ]] || return 2
   [[ "$override_source" == "agent" || "$override_source" == "human" ]] \

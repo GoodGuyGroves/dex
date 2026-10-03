@@ -112,6 +112,20 @@ assert_eq "30" \
   "$(dx_override_effective "$DEX_SESSION_ID" loop.max-iterations 30 2)" \
   "cleared CLI override"
 
+# pr.reviewers is session-scoped: the default scope becomes session, so it
+# still holds in Phase 6, and an explicit phase scope is refused.
+bash "$CONTROL" override pr.reviewers none --source agent \
+  --reason "Fork PR: do not ping upstream reviewers" > "$TMP_DIR/reviewers-override.out"
+assert_eq "none" "$(dx_override_effective "$DEX_SESSION_ID" pr.reviewers config 6)" \
+  "pr.reviewers defaults to a session override"
+assert_rejected "$LINENO" bash "$CONTROL" override pr.reviewers none --scope phase \
+  --source agent --reason "Phase-scoped reviewer mode" > "$TMP_DIR/reviewers-phase.out" 2>&1
+assert_contains "session-scoped" "$TMP_DIR/reviewers-phase.out"
+bash "$CONTROL" clear-override pr.reviewers --source agent \
+  --reason "Back to the reviewer table" > "$TMP_DIR/reviewers-clear.out"
+assert_eq "config" "$(dx_override_effective "$DEX_SESSION_ID" pr.reviewers config 6)" \
+  "cleared pr.reviewers session override"
+
 WAIVER_SESSION="$(dx_session_repo_key)-agent-waiver"
 printf '%s\n' 2 > "$(dx_state_file "$WAIVER_SESSION")"
 printf '%s\n' inline > "$(dx_handoff_mode_file "$WAIVER_SESSION")"

@@ -18,6 +18,8 @@
 #   DX_TEST_PLATFORM  linux or macos (default: detected)
 #   DX_TEST_SHARD     one-based index/total, such as 1/2 (default: 1/1)
 #   DX_TEST_REPORT_DIR optional output directory exposed to hermetic test fixtures
+#   DX_TEST_BASE_REF  base ref whose manifest drift only warns (default: the
+#                     default branch's base ref, e.g. origin/main)
 # Fixtures receive DX_TEST_CASE_LOG_DIR for logs retained beside their output.
 set -uo pipefail
 
@@ -198,10 +200,65 @@ fi
 
 find "$SUITE_DIR" -maxdepth 1 -type f -name '*-test.sh' -print \
   | sed 's#^.*/##' | LC_ALL=C sort > "$RUN_STATE_DIR/discovered"
-missing_tests="$(LC_ALL=C comm -23 "$RUN_STATE_DIR/discovered" "$RUN_STATE_DIR/declared-sorted" \
-  | tr '\n' ' ' | sed 's/ $//')"
-extra_tests="$(LC_ALL=C comm -13 "$RUN_STATE_DIR/discovered" "$RUN_STATE_DIR/declared-sorted" \
-  | tr '\n' ' ' | sed 's/ $//')"
+LC_ALL=C comm -23 "$RUN_STATE_DIR/discovered" "$RUN_STATE_DIR/declared-sorted" \
+  > "$RUN_STATE_DIR/missing"
+LC_ALL=C comm -13 "$RUN_STATE_DIR/discovered" "$RUN_STATE_DIR/declared-sorted" \
+  > "$RUN_STATE_DIR/extra"
+
+# base_drift_lists — write the base's own missing and extra lists, measured
+# at the merge-base of HEAD and DX_TEST_BASE_REF (default: the default
+# branch's base ref). Returns 1, leaving every drift fatal, when the suite is
+# not in git or the base cannot be resolved.
+base_drift_lists() {
+  local manifest_dir manifest_path base_ref merge_base
+  git -C "$SUITE_DIR" rev-parse --git-dir > /dev/null 2>&1 || return 1
+  manifest_dir=$(cd "$(dirname "$MANIFEST")" 2>/dev/null && pwd) || return 1
+  manifest_path="$(git -C "$manifest_dir" rev-parse --show-prefix 2>/dev/null)$(basename "$MANIFEST")" \
+    || return 1
+  base_ref="${DX_TEST_BASE_REF:-}"
+  if [[ -z "$base_ref" ]]; then
+    # shellcheck source=lib/git.sh
+    base_ref=$(source "$ROOT/lib/git.sh" \
+      && dx_default_branch_base_ref "$SUITE_DIR" "" no-fetch 2>/dev/null) || return 1
+  fi
+  merge_base=$(git -C "$SUITE_DIR" merge-base HEAD "$base_ref" 2>/dev/null) || return 1
+  [[ -n "$merge_base" ]] || return 1
+  git -C "$SUITE_DIR" ls-tree --name-only "$merge_base" "./" 2>/dev/null \
+    | sed 's#^.*/##' | grep -- '-test\.sh$' | LC_ALL=C sort > "$RUN_STATE_DIR/base-discovered"
+  git -C "$SUITE_DIR" show "$merge_base:$manifest_path" 2>/dev/null \
+    | awk -F '\t' '!/^#/ && NF { print $1 }' | LC_ALL=C sort > "$RUN_STATE_DIR/base-declared" \
+    || return 1
+  LC_ALL=C comm -23 "$RUN_STATE_DIR/base-discovered" "$RUN_STATE_DIR/base-declared" \
+    > "$RUN_STATE_DIR/base-missing"
+  LC_ALL=C comm -13 "$RUN_STATE_DIR/base-discovered" "$RUN_STATE_DIR/base-declared" \
+    > "$RUN_STATE_DIR/base-extra"
+  BASE_DRIFT_REF="$base_ref"
+}
+
+: > "$RUN_STATE_DIR/base-missing"
+: > "$RUN_STATE_DIR/base-extra"
+BASE_DRIFT_REF=""
+if [[ -s "$RUN_STATE_DIR/missing" || -s "$RUN_STATE_DIR/extra" ]]; then
+  base_drift_lists || true
+fi
+words() { tr '\n' ' ' | sed 's/ $//'; }
+missing_tests="$(LC_ALL=C comm -23 "$RUN_STATE_DIR/missing" "$RUN_STATE_DIR/base-missing" | words)"
+extra_tests="$(LC_ALL=C comm -23 "$RUN_STATE_DIR/extra" "$RUN_STATE_DIR/base-extra" | words)"
+base_missing_tests="$(LC_ALL=C comm -12 "$RUN_STATE_DIR/missing" "$RUN_STATE_DIR/base-missing" | words)"
+base_extra_tests="$(LC_ALL=C comm -12 "$RUN_STATE_DIR/extra" "$RUN_STATE_DIR/base-extra" | words)"
+if [[ -n "$base_missing_tests" ]]; then
+  printf 'warning: tests missing from manifest, already on base: %s (base %s; not run)\n' \
+    "$base_missing_tests" "$BASE_DRIFT_REF" >&2
+fi
+if [[ -n "$base_extra_tests" ]]; then
+  printf 'warning: manifest entries without test files, already on base: %s (base %s; skipped)\n' \
+    "$base_extra_tests" "$BASE_DRIFT_REF" >&2
+  # A row with no file cannot run; drop it rather than report a failure.
+  LC_ALL=C comm -12 "$RUN_STATE_DIR/extra" "$RUN_STATE_DIR/base-extra" > "$RUN_STATE_DIR/skip"
+  awk -F '\t' 'NR == FNR { skip[$1] = 1; next } !($1 in skip)' \
+    "$RUN_STATE_DIR/skip" "$manifest_records" > "$manifest_records.kept"
+  mv "$manifest_records.kept" "$manifest_records"
+fi
 if [[ -n "$missing_tests" ]]; then
   printf 'tests missing from manifest: %s\n' "$missing_tests" >&2
   exit 1
