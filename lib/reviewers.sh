@@ -69,6 +69,22 @@ dx_reviewers_mode() {
   printf '%s\n' "$mode"
 }
 
+# dx_reviewers_summary_line [session_id] — under pr.reviewers none, print the
+# line the Phase 5 and 6 summaries carry, naming the recorded source (agent or
+# human) so a human can see who turned reviewers off; rc 1 and no output
+# otherwise. The override's free-text reason is left out because it can hold a
+# handle that would ping someone from PR or ticket text.
+dx_reviewers_summary_line() {
+  local line_session="${1:-${DEX_SESSION_ID:-}}" line_source=""
+  [[ -n "$line_session" ]] || line_session=$(dx_session_id 2>/dev/null) || line_session=""
+  [[ "$(dx_reviewers_mode "$line_session")" == "none" ]] || return 1
+  # dx_override_list prints gate, value, scope, phase, source, expiry, reason.
+  line_source=$(dx_override_list "$line_session" - 2>/dev/null | awk -F '\t' \
+    '$1 == "pr.reviewers" && $2 == "none" { print $5; exit }') || return 1
+  [[ "$line_source" == "agent" || "$line_source" == "human" ]] || return 1
+  printf 'Reviewers: none (pr.reviewers override set by %s)\n' "$line_source"
+}
+
 # __dx_reviewers_skip_notice <session_id> <what> — returns 0, after saying so
 # on stderr, when pr.reviewers is `none` and <what> must not happen.
 __dx_reviewers_skip_notice() {
