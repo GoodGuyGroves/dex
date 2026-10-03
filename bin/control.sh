@@ -47,6 +47,7 @@ Common gates:
   review.clean-passes (1-30), review.max-waves (1-30),
   review.pass-timeout, phase.timeout,
   watch.command-timeout, sync.budget-minutes, pr.rebase-attempts,
+  pr.reviewers (none|config; override only, never waived),
   maintain.budget-minutes, and guard.<guard-name>. A timeout value of 0
   disables that deadline where supported. Unknown gate names are rejected.
 EOF
