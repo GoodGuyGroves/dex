@@ -387,6 +387,18 @@ command rm -f "$(dx_review_criteria_approval_file "${SESSION_ID}-reseal")"
 seal_session "${SESSION_ID}-reseal" "[$ONE]" || fail 'an identical initial re-seal was refused'
 seal_reads "${SESSION_ID}-reseal" || fail 'an identical initial re-seal did not read back'
 
+# The review handoff stage copies the seal's files and resolves the binding
+# from that copy, so it must carry the snapshot a version 2 line binds.
+stage_dir="$TMP_DIR/handoff-stage"
+mkdir -p "$stage_dir"
+for suffix in $(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import review_acceptance; print(" ".join(review_acceptance.CRITERIA))' "$ROOT/scripts"); do
+  source_file="$DX_LOOP_DIR/${SESSION_ID}-bound.$suffix"
+  [[ ! -e "$source_file" ]] || cp "$source_file" "$stage_dir/"
+done
+(DX_LOOP_DIR="$stage_dir" dx_review_resolve_criteria_binding "${SESSION_ID}-bound" \
+  "$(sealed_hash_of "${SESSION_ID}-bound")" > /dev/null) \
+  || fail 'the review handoff stage could not read a seal holding a deferral'
+
 # Session cleanup removes the seal's deferral snapshot with the seal itself.
 deferrals_file="$(dx_review_criteria_deferrals_file "${SESSION_ID}-same")"
 [[ -f "$deferrals_file" ]] || assert_at $LINENO

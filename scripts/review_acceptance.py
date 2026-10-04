@@ -18,7 +18,7 @@ FIELDS = (
     "descriptor", "branch", "head",
 )
 OUTPUTS = ("review-state", "review-selection", "findings", "review-ledger", "review-proofs")
-CRITERIA = ("review-criteria.json", "review-criteria-approval")
+CRITERIA = ("review-criteria.json", "review-criteria-approval", "review-criteria-deferrals")
 MAX_FILE = 1048576
 MAX_TOTAL = 41943040
 MAX_ENTRIES = 256
